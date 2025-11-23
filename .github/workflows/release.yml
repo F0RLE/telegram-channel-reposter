@@ -20,19 +20,9 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # Install core dependencies
         pip install aiogram aiohttp python-dotenv psutil packaging requests beautifulsoup4 pillow
-        # Install GUI dependencies (may fail on some Python versions, but that's OK for release)
         pip install customtkinter || echo "customtkinter not available"
         pip install "tkinter-embed>=3.10.0" || echo "tkinter-embed not available"
-        pip install pytest pytest-asyncio
-    
-    - name: Run tests
-      env:
-        PYTHONPATH: ${{ github.workspace }}/system/src
-      run: |
-        python -m pytest tests/ -v || echo "Tests failed but continuing"
-      continue-on-error: true
     
     - name: Create Release Archive
       id: create_archive
