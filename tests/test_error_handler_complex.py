@@ -113,88 +113,57 @@ class TestComplexErrorHandler:
     
     def test_connection_error_handling(self):
         """Test connection error handling"""
-        handler = ErrorHandler()
-        
         # Simulate connection error
         error = ConnectionError("Connection refused")
-        result = handler.handle_error(error)
+        result = ErrorHandler.handle_api_error(error)
         
         assert result is not None
-        assert "connection" in result.lower() or "network" in result.lower()
+        assert "соединения" in result.lower() or "connection" in result.lower()
     
     def test_404_error_handling(self):
         """Test 404 error handling"""
-        handler = ErrorHandler()
-        
         # Simulate 404 error
-        class HTTP404Error(Exception):
-            def __init__(self):
-                self.status_code = 404
-                super().__init__("Not Found")
-        
-        error = HTTP404Error()
-        result = handler.handle_error(error)
+        error = Exception("404 Not Found")
+        result = ErrorHandler.handle_api_error(error)
         
         assert result is not None
-        assert "404" in result or "not found" in result.lower()
+        assert "404" in result or "не найден" in result.lower() or "not found" in result.lower()
     
     def test_429_rate_limit_error_handling(self):
         """Test 429 rate limit error handling"""
-        handler = ErrorHandler()
-        
         # Simulate 429 error
-        class HTTP429Error(Exception):
-            def __init__(self):
-                self.status_code = 429
-                super().__init__("Too Many Requests")
-        
-        error = HTTP429Error()
-        result = handler.handle_error(error)
+        error = Exception("429 Too Many Requests")
+        result = ErrorHandler.handle_api_error(error)
         
         assert result is not None
-        assert "429" in result or "rate limit" in result.lower() or "too many" in result.lower()
+        assert "429" in result or "лимит" in result.lower() or "rate limit" in result.lower()
     
     def test_401_unauthorized_error_handling(self):
         """Test 401 unauthorized error handling"""
-        handler = ErrorHandler()
-        
         # Simulate 401 error
-        class HTTP401Error(Exception):
-            def __init__(self):
-                self.status_code = 401
-                super().__init__("Unauthorized")
-        
-        error = HTTP401Error()
-        result = handler.handle_error(error)
+        error = Exception("401 Unauthorized")
+        result = ErrorHandler.handle_api_error(error)
         
         assert result is not None
-        assert "401" in result or "unauthorized" in result.lower() or "auth" in result.lower()
+        assert "401" in result or "авторизации" in result.lower() or "unauthorized" in result.lower()
     
     def test_500_server_error_handling(self):
         """Test 500 server error handling"""
-        handler = ErrorHandler()
-        
         # Simulate 500 error
-        class HTTP500Error(Exception):
-            def __init__(self):
-                self.status_code = 500
-                super().__init__("Internal Server Error")
-        
-        error = HTTP500Error()
-        result = handler.handle_error(error)
+        error = Exception("500 Internal Server Error")
+        result = ErrorHandler.handle_api_error(error)
         
         assert result is not None
-        assert "500" in result or "server" in result.lower() or "internal" in result.lower()
+        assert "500" in result or "сервера" in result.lower() or "server" in result.lower()
     
     def test_unknown_error_handling(self):
         """Test handling of unknown errors"""
-        handler = ErrorHandler()
-        
         # Simulate unknown error
         error = RuntimeError("Unknown error occurred")
-        result = handler.handle_error(error)
+        result = ErrorHandler.handle_api_error(error)
         
         assert result is not None
         assert isinstance(result, str)
         assert len(result) > 0
+        assert "ошибка" in result.lower() or "error" in result.lower()
 
