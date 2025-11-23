@@ -26,7 +26,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pytest pytest-asyncio pytest-cov
-        pip install -r system/src/requirements.txt || echo "Some dependencies failed to install"
+        # Install dependencies except GUI-related ones that may not be available for all Python versions
+        pip install aiogram aiohttp python-dotenv psutil packaging requests beautifulsoup4 pillow || echo "Some dependencies failed"
+        # Try to install GUI dependencies, but don't fail if they're not available
+        pip install customtkinter || echo "customtkinter not available for this Python version"
+        pip install "tkinter-embed>=3.10.0" || echo "tkinter-embed not available for this Python version" || echo "Some dependencies failed to install"
     
     - name: Run tests
       env:
