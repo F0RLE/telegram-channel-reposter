@@ -20,9 +20,14 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install pytest
         pip install aiogram aiohttp python-dotenv psutil packaging requests beautifulsoup4 pillow
         pip install customtkinter || echo "customtkinter not available"
         pip install "tkinter-embed>=3.10.0" || echo "tkinter-embed not available"
+    
+    - name: Run basic tests
+      run: |
+        python -m pytest tests/test_basic.py -v
     
     - name: Create Release Archive
       id: create_archive
