@@ -25,7 +25,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pytest
+        pip install pytest pytest-asyncio
         pip install aiogram aiohttp python-dotenv psutil packaging requests beautifulsoup4 pillow || echo "Some dependencies failed"
         pip install customtkinter || echo "customtkinter not available"
         pip install "tkinter-embed>=3.10.0" || echo "tkinter-embed not available"
