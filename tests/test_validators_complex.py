@@ -32,7 +32,7 @@ class TestComplexBotTokenValidation:
         valid_tokens = [
             "123456789:ABCdefGHIjklMNOpqrsTUVwxyz123456789",
             "987654321:ZYXwvuTSRqpoNMLkjihGFEdcba987654321",
-            "111222333:ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567",  # Exactly 35 chars
+            "111222333:ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789",  # Exactly 35 chars (26 letters + 9 digits)
         ]
         for token in valid_tokens:
             assert validate_bot_token(token) is True, f"Token should be valid: {token[:20]}..."
