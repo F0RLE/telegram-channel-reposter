@@ -59,7 +59,8 @@ async def _async_sd_api_request(payload: Dict[str, Any], timeout: int, max_retri
     @retry_with_backoff(config=retry_config)
     async def _make_request():
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
-            async with session.post(SD_API_URL, json=payload, ssl=True) as resp:
+            # Use ssl=False for local connections (127.0.0.1)
+            async with session.post(SD_API_URL, json=payload, ssl=False) as resp:
                 if resp.status != 200:
                     text = await resp.text()
                     error_msg = f"API Error {resp.status}: {text}"

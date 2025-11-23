@@ -1,10 +1,17 @@
-import sys
+﻿import sys
 import os
+import glob
+import subprocess
+import threading
+import queue
+import json
+import time
+import shutil
+import ctypes
+import urllib.request
 
-# Перенаправление stderr для отладки
 if not hasattr(sys, '_launcher_redirected'):
     sys._launcher_redirected = True
-    sys._original_stderr = sys.stderr
     sys.stderr = sys.stdout
 
 try:
@@ -15,24 +22,47 @@ try:
 except:
     pass
 
-import glob
-import subprocess
-import threading
-import queue
-import json
-import time
-import shutil
-import ctypes
+_launcher_dir = os.path.dirname(os.path.abspath(__file__))
+if _launcher_dir not in sys.path:
+    sys.path.insert(0, _launcher_dir)
 
-# Проверка критических зависимостей
+try:
+    from .installer import Installer
+    from .service_manager import ServiceManager
+    from .model_manager import ModelManager
+except (ImportError, ValueError):
+    try:
+        from installer import Installer
+        from service_manager import ServiceManager
+        from model_manager import ModelManager
+    except ImportError as e:
+        import traceback
+        print(f"ERROR: Failed to import required modules: {e}\n{traceback.format_exc()}")
+        raise
+
+try:
+    from .i18n import init_i18n, set_language, get_language, t, LANGUAGE_NAMES, SUPPORTED_LANGUAGES
+except (ImportError, ValueError):
+    from i18n import init_i18n, set_language, get_language, t, LANGUAGE_NAMES, SUPPORTED_LANGUAGES
+except ImportError:
+    def t(key, default=None, **kwargs):
+        return default or key
+    def init_i18n(lang=None):
+        return "en"
+    def set_language(lang):
+        return True
+    def get_language():
+        return "en"
+    LANGUAGE_NAMES = {"en": "English", "ru": "Русский"}
+    SUPPORTED_LANGUAGES = ["en", "ru"]
 missing_modules = []
 try:
-    import requests
+    import requests  # type: ignore
 except ImportError:
     missing_modules.append("requests")
 
 try:
-    import psutil
+    import psutil  # type: ignore
 except ImportError:
     missing_modules.append("psutil")
 
@@ -48,12 +78,11 @@ except ImportError:
     pass  # webbrowser обычно встроен
 
 try:
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw  # type: ignore
 except ImportError:
     Image = None
     ImageDraw = None
 
-# Если есть отсутствующие модули, показываем ошибку
 if missing_modules:
     def show_error(title, msg):
         try:
@@ -61,18 +90,14 @@ if missing_modules:
         except:
             print(f"[ERROR] {title}: {msg}", flush=True)
     
-    error_msg = (
-        "Отсутствуют необходимые модули Python!\n\n"
-        f"Не найдены: {', '.join(missing_modules)}\n\n"
-        "РЕШЕНИЕ:\n"
-        "1. Запустите 'Установка.bat' для установки всех зависимостей\n"
-        "2. Или установите вручную:\n"
-        f"   pip install {' '.join(missing_modules)}"
+    modules_str = ', '.join(missing_modules)
+    error_msg = t(
+        "ui.launcher.error.missing_modules_message",
+        default="Отсутствуют необходимые модули Python!\n\nНе найдены: {modules}\n\nРЕШЕНИЕ:\n1. Запустите 'Установка.bat' для установки всех зависимостей\n2. Или установите вручную:\n   pip install {modules}",
+        modules=modules_str
     )
-    show_error("Ошибка: Отсутствуют модули", error_msg)
+    show_error(t("ui.launcher.error.missing_modules", default="Ошибка: Отсутствуют модули"), error_msg)
     sys.exit(1)
-
-# Fix Tkinter paths
 def fix_tkinter_paths():
     base = os.path.dirname(sys.executable)
     lib = os.path.join(base, "Lib")
@@ -84,7 +109,7 @@ def fix_tkinter_paths():
         os.environ["TK_LIBRARY"] = tk_path
 
     try:
-        import tkinter_embed
+        import tkinter_embed  # type: ignore
         bin_dir = os.path.join(os.path.dirname(tkinter_embed.__file__), "data", "bin")
         if os.path.exists(bin_dir):
             os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
@@ -96,48 +121,19 @@ def fix_tkinter_paths():
 fix_tkinter_paths()
 
 def show_error(title, msg):
-    try:
-        ctypes.windll.user32.MessageBoxW(0, msg, title, 0x10)
-    except:
-        print(f"[ERROR] {title}: {msg}", flush=True)
+    show_error_ui(title, msg)
 
 try:
-    import customtkinter as ctk
-    from dotenv import set_key, get_key
+    import customtkinter as ctk  # type: ignore
+    from dotenv import set_key, get_key  # type: ignore
 except ImportError as e:
-    error_msg = f"Libraries not found!\nPlease run 'Установка.bat'.\n\nError: {str(e)}"
+    error_msg = t(
+        "ui.launcher.error.libraries_not_found",
+        default="Libraries not found!\nPlease run 'Установка.bat'.\n\nError: {error}",
+        error=str(e)
+    )
     show_error("Error", error_msg)
     sys.exit(1)
-
-# ==========================================
-# PATH CONFIGURATION
-# ==========================================
-# Структура папок:
-# APPDATA/TelegramBotData/
-#   ├── data/                    # Основные данные
-#   │   ├── Engine/              # Движок и сервисы
-#   │   │   ├── ollama/          # Ollama сервер
-#   │   │   │   ├── models/      # Модели Ollama
-#   │   │   │   └── data/        # Данные Ollama
-#   │   │   └── stable-diffusion-webui-reforge/  # SD WebUI
-#   │   ├── configs/             # Конфигурационные файлы
-#   │   ├── logs/                # Логи
-#   │   └── temp/                # Временные файлы
-#   └── env/                     # Окружение (Python, Git)
-# 
-# Структура исходного кода:
-# system/src/
-#   ├── launcher/                # Файлы лаунчера
-#   │   ├── __init__.py
-#   │   ├── launcher.pyw         # Главный файл лаунчера
-#   │   ├── channels.py          # Управление каналами
-#   │   └── ui_components.py     # UI компоненты
-#   ├── config/                  # Конфигурация
-#   ├── core/                    # Ядро бота
-#   ├── handlers/                # Обработчики команд
-#   ├── keyboards/               # Клавиатуры
-#   ├── modules/                 # Модули (LLM, парсер, генерация)
-#   └── main.py                  # Точка входа бота
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # system/src
 APPDATA_ROOT = os.path.join(os.environ["APPDATA"], "TelegramBotData")
 DATA_ROOT = os.path.join(APPDATA_ROOT, "data")
@@ -157,18 +153,18 @@ OLLAMA_EXE = os.path.join(OLLAMA_DIR, "ollama.exe")
 OLLAMA_MODELS_DIR = os.path.join(OLLAMA_DIR, "models")  # Универсальная папка для всех моделей
 OLLAMA_DATA_DIR = os.path.join(OLLAMA_DIR, "data")
 
-# MODELS_LLM_DIR будет загружаться из настроек или использовать универсальную папку по умолчанию
+# MODELS_LLM_DIR будет загружаться из настроек или использовать папку по умолчанию
 def get_models_llm_dir():
-    """Получает путь к папке с моделями из настроек или использует универсальную папку по умолчанию"""
+    """Получает путь к папке с моделями из настроек или использует папку по умолчанию"""
     try:
-        from dotenv import get_key
+        from dotenv import get_key  # type: ignore
         custom_path = get_key(FILE_ENV, "MODELS_LLM_DIR")
         if custom_path and os.path.exists(custom_path):
             return custom_path
     except:
         pass
-    # По умолчанию используем универсальную папку для всех моделей
-    return OLLAMA_MODELS_DIR
+    # По умолчанию используем папку: AppData\Roaming\TelegramBotData\data\Engine\LLM_Models
+    return os.path.join(DIR_ENGINE, "LLM_Models")
 
 MODELS_LLM_DIR = get_models_llm_dir()  # Будет обновляться при загрузке настроек
 
@@ -181,11 +177,9 @@ FILE_ENV = os.path.join(DIR_CONFIGS, ".env")
 FILE_CHANNELS = os.path.join(DIR_CONFIGS, "channels.json")
 FILE_GEN_CONFIG = os.path.join(DIR_CONFIGS, "generation_config.json")
 FILE_PID = os.path.join(DIR_TEMP, "launcher.pid")
-SCRIPT_GGUF = os.path.join(DIR_ENGINE, "run_llm_gguf.py")
 FILE_SD_CACHE = os.path.join(DIR_CONFIGS, "sd_compatibility_cache.json")
 
-SD_REPO = "https://github.com/lllyasviel/stable-diffusion-webui-forge.git"
-ADETAILER_REPO = "https://github.com/Bing-su/adetailer.git"
+# SD_REPO and ADETAILER_REPO are now in config.py
 MODEL_SD_URL = "https://civitai.com/api/download/models/2334591?type=Model&format=SafeTensor&size=full&fp=fp32"
 MODEL_SD_FILENAME = "cyberrealisticPony_v141.safetensors"
 
@@ -194,154 +188,145 @@ AD_MODELS_URLS = {
     "hand_yolov9c.pt": "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov9c.pt"
 }
 
-# ==========================================
-# MODERN COLOR SCHEME
-# ==========================================
+
+
 COLORS = {
-    'bg': '#0a0a0a',
-    'surface': '#141414',
-    'surface_light': '#1a1a1a',
-    'surface_dark': '#0f0f0f',
-    'primary': '#6366f1',
-    'primary_hover': '#818cf8',
-    'secondary': '#8b5cf6',
-    'success': '#10b981',
-    'danger': '#ef4444',
-    'warning': '#f59e0b',
-    'text': '#e5e7eb',
-    'text_secondary': '#9ca3af',
-    'text_muted': '#6b7280',
-    'border': '#262626',
-    'accent': '#3b82f6',
+    'bg': '#1e1f22',  # Very dark background (darker than Discord)
+    'surface': '#232428',  # Dark surface
+    'surface_light': '#2b2d31',  # Lighter surface
+    'surface_dark': '#18191c',  # Darkest surface
+    'sidebar': '#1e1f22',  # Sidebar background
+    'primary': '#5865f2',  # Discord blurple
+    'primary_hover': '#4752c4',  # Discord blurple hover
+    'primary_light': '#7289da',  # Discord blurple light
+    'secondary': '#5865f2',  # Discord blurple
+    'success': '#57f287',  # Discord green
+    'danger': '#ed4245',  # Discord red
+    'warning': '#fee75c',  # Discord yellow
+    'text': '#dbdee1',  # Light text
+    'text_secondary': '#b5bac1',  # Secondary text
+    'text_muted': '#949ba4',  # Muted text
+    'border': '#18191c',  # Border color
+    'accent': '#5865f2',  # Accent color
+    'card_bg': '#232428',  # Card background
+    'card_bg_light': '#2b2d31',  # Lighter card
+    'active': '#5865f2',  # Active state
+    'hover': '#2b2d31',  # Hover state
+    'glass': '#232428cc',  # Glassmorphism overlay
 }
 
 ctk.set_appearance_mode("Dark")
-ctk.set_default_color_theme("blue")
+ctk.set_default_color_theme("dark-blue")
 
-# ==========================================
-# HELPER FUNCTIONS
-# ==========================================
-def get_app_icon_path():
-    """Возвращает путь к иконке приложения"""
-    # Путь к новому логотипу
-    icon_path = os.path.join(BASE_DIR, "modules", "Images", "Launcher.ico")
-    
-    # Проверяем существование файла
-    if os.path.exists(icon_path):
-        return icon_path
-    
-    # Fallback: если файл не найден, возвращаем None
-    return None
-
-def load_app_icon(window):
-    """Загружает и устанавливает иконку приложения с улучшенным качеством"""
+try:
+    from .ui_helpers import load_app_icon, show_error as show_error_ui
+except (ImportError, ValueError):
     try:
-        icon_path = get_app_icon_path()
-        if not icon_path or not os.path.exists(icon_path):
-            return
-        
-        # Пробуем использовать PIL для конвертации в PNG и загрузки через iconphoto
-        if Image is not None:
-            try:
-                import tkinter as tk
-                from io import BytesIO
-                
-                # Загружаем иконку через PIL
-                img = Image.open(icon_path)
-                
-                # Конвертируем в RGBA если нужно
-                if img.mode != 'RGBA':
-                    img = img.convert('RGBA')
-                
-                # Создаем большую версию для лучшего качества (256x256)
-                large_size = 256
-                resized = img.resize((large_size, large_size), Image.Resampling.LANCZOS)
-                
-                # Сохраняем во временный PNG файл
-                temp_png = os.path.join(DIR_TEMP, "launcher_icon_temp.png")
-                os.makedirs(DIR_TEMP, exist_ok=True)
-                resized.save(temp_png, format='PNG')
-                
-                # Загружаем как PhotoImage
-                photo = tk.PhotoImage(file=temp_png)
-                window.iconphoto(True, photo)
-                # Сохраняем ссылку, чтобы изображение не удалилось
-                window._icon_photo = photo
-                
-                # Также устанавливаем через iconbitmap для совместимости
-                window.iconbitmap(icon_path)
-                return
-            except Exception as e:
-                # Если PIL не сработал, используем стандартный метод
-                pass
-        
-        # Стандартный метод через iconbitmap
-        window.iconbitmap(icon_path)
-        
-        # Дополнительно пробуем установить через Windows API для лучшего качества
-        try:
-            import ctypes
-            # Загружаем иконку через Windows API
-            hicon = ctypes.windll.shell32.ExtractIconW(
-                ctypes.windll.kernel32.GetModuleHandleW(None),
-                icon_path,
-                0
-            )
-            if hicon:
-                # Получаем HWND окна
-                hwnd = window.winfo_id()
-                # Устанавливаем иконку окна через Windows API
-                ctypes.windll.user32.SendMessageW(
-                    hwnd,
-                    0x0080,  # WM_SETICON
-                    0,  # ICON_SMALL
-                    hicon
-                )
-                ctypes.windll.user32.SendMessageW(
-                    hwnd,
-                    0x0080,  # WM_SETICON
-                    1,  # ICON_BIG
-                    hicon
-                )
-        except:
+        import sys
+        import os
+        launcher_dir = os.path.dirname(os.path.abspath(__file__))
+        if launcher_dir not in sys.path:
+            sys.path.insert(0, launcher_dir)
+        from ui_helpers import load_app_icon, show_error as show_error_ui
+    except ImportError:
+        def load_app_icon(window):
             pass
-            
-    except Exception as e:
-        # Если ничего не сработало, просто игнорируем ошибку
-        pass
+        def show_error_ui(title, msg):
+            try:
+                ctypes.windll.user32.MessageBoxW(0, msg, title, 0x10)
+            except:
+                print(f"[ERROR] {title}: {msg}", flush=True)
 
-# ==========================================
-# MAIN LAUNCHER CLASS
-# ==========================================
 class ModernLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
         
-        # Window setup
-        self.title("Bot Launcher")
+        saved_lang = None
+        try:
+            if os.path.exists(FILE_ENV):
+                with open(FILE_ENV, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        if line.startswith('LANGUAGE='):
+                            saved_lang = line.split('=', 1)[1].strip()
+                            if saved_lang and saved_lang not in SUPPORTED_LANGUAGES:
+                                saved_lang = None
+                            break
+        except:
+            pass
+        
+        if saved_lang:
+            current_lang = init_i18n(saved_lang)
+        else:
+            current_lang = init_i18n(None)
+            def save_language():
+                try:
+                    from dotenv import set_key  # type: ignore
+                    set_key(FILE_ENV, "LANGUAGE", current_lang)
+                except:
+                    pass
+            threading.Thread(target=save_language, daemon=True).start()
+            self._detected_lang = current_lang
+        
+        self.title(t("ui.launcher.title"))
         self.geometry("1400x900")
         self.minsize(1200, 800)
-
-        # Установка иконки с улучшенным качеством
-        load_app_icon(self)
-        
-        # State
-        self.procs = {"bot": None, "llm": None, "sd": None}
-        self.status_indicators = {}
+        self.after(100, lambda: load_app_icon(self))
         self.log_queue = queue.Queue()
-        self.stop_events = {k: threading.Event() for k in self.procs}
         self.consoles = {}
         self.entries = {} 
         self.selected_llm_model = tk.StringVar()
         self.current_topic = None
         self.current_frame = 0
         self.debug_mode = tk.BooleanVar(value=False)
+        self.current_language = current_lang
+        self.animations_enabled = True
+        
+        self.status_indicators = {}
+        self.service_buttons = {}
+        self.service_status_labels = {}
+        self.installer = Installer(log_callback=self.log)
+        self.model_manager = ModelManager(log_callback=self.log)
+        
+        def status_callback(name, status, color_key):
+            color_map = {
+                "gray": COLORS['text_muted'],
+                "orange": COLORS['warning'],
+                "green": COLORS['success'], 
+                "red": COLORS['danger']
+            }
+            color = color_map.get(color_key, COLORS['text_muted'])
+            self.after(0, lambda: self._set_service_indicator(name, color))
+            
+            btn_text = "▶" if status in ["stopped", "error"] else "⏹"
+            btn_color = COLORS['primary'] if status in ["stopped", "error"] else COLORS['danger']
+            self.after(0, lambda: self._set_service_button(name, text=btn_text, fg_color=btn_color))
+            
+            status_text_map = {
+                "stopped": t("ui.launcher.status.stopped"),
+                "starting": t("ui.launcher.status.starting_short"),
+                "running": t("ui.launcher.status.running"),
+                "error": t("ui.launcher.status.error")
+            }
+            status_text = status_text_map.get(status, status)
+            self.after(0, lambda: self._set_service_status_label(name, text=status_text, color=color))
 
+        # Инициализируем ServiceManager сразу
+        self._status_callback = status_callback
+        self.service_manager = ServiceManager(
+            log_callback=self.log,
+            status_callback=status_callback,
+            installer=self.installer,
+            log_queue=self.log_queue
+        )
+        
+        # Backward compatibility: expose procs for legacy code
+        self.procs = self.service_manager.procs
+        
         # Initialize
         try:
             self.init_filesystem()
         except Exception as e: 
-            show_error("FS Error", str(e))
+            show_error(t("ui.launcher.error.title"), t("ui.launcher.error.message", error=str(e)))
             sys.exit(1)
         
         if self.check_running(): 
@@ -349,49 +334,98 @@ class ModernLauncher(ctk.CTk):
         else: 
             self.register_pid()
             self.build_ui()
+            # Запускаем мониторинг после небольшой задержки, чтобы не блокировать UI
+            self.after(100, self.start_monitor)
         
-        self.start_monitor()
+        # Обработчик закрытия окна (устанавливаем здесь для надежности)
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def init_filesystem(self):
-        # Создаем все необходимые директории
-        directories = [
+        # Создаем только критически важные директории синхронно
+        critical_dirs = [
             DATA_ROOT, 
-            DIR_ENGINE, 
             DIR_CONFIGS, 
             DIR_LOGS, 
-            DIR_TEMP, 
-            MODELS_LLM_DIR, 
-            OLLAMA_DIR,
-            OLLAMA_MODELS_DIR,
-            OLLAMA_DATA_DIR,
-            os.path.join(DATA_ROOT, "backups")  # Папка для резервных копий
+            DIR_TEMP
         ]
-        for d in directories:
-            os.makedirs(d, exist_ok=True)
-        
-        if not os.path.exists(FILE_ENV):
-            open(FILE_ENV, "w", encoding="utf-8").close()
-        
-        # Файл channels.json создается только при первом добавлении канала через UI
-        # Не создаем его автоматически
-
-        if not os.path.exists(FILE_GEN_CONFIG):
-            with open(FILE_GEN_CONFIG, "w", encoding="utf-8") as f:
-                json.dump({"llm_temp": 0.7, "sd_steps": 30, "sd_cfg": 6.0}, f, indent=4)
-        
-        # Создаем начальную резервную копию
-        self._create_backup()
-
-    def check_running(self):
-        if os.path.exists(FILE_PID):
+        for d in critical_dirs:
             try:
-                with open(FILE_PID, 'r') as f:
-                    pid = int(f.read().strip())
-                if psutil.pid_exists(pid): 
-                    self.old_pid = pid
-                    return True
+                os.makedirs(d, exist_ok=True)
+            except:
+                pass  # Игнорируем ошибки при создании папок
+        
+        # Остальные директории создаем асинхронно
+        def create_remaining_dirs():
+            remaining_dirs = [
+                DIR_ENGINE, 
+                MODELS_LLM_DIR, 
+                OLLAMA_DIR,
+                OLLAMA_MODELS_DIR,
+                OLLAMA_DATA_DIR,
+                os.path.join(DATA_ROOT, "backups")
+            ]
+            for d in remaining_dirs:
+                try:
+                    os.makedirs(d, exist_ok=True)
+                except:
+                    pass
+        
+        threading.Thread(target=create_remaining_dirs, daemon=True).start()
+        
+        # Создаем файлы только если их нет
+        if not os.path.exists(FILE_ENV):
+            try:
+                open(FILE_ENV, "w", encoding="utf-8").close()
             except:
                 pass
+        
+        if not os.path.exists(FILE_GEN_CONFIG):
+            try:
+                with open(FILE_GEN_CONFIG, "w", encoding="utf-8") as f:
+                    json.dump({"llm_temp": 0.7, "sd_steps": 30, "sd_cfg": 6.0}, f, indent=4)
+            except:
+                pass
+        
+        # Создаем начальную резервную копию в фоновом потоке (отложено)
+        self.after(2000, lambda: threading.Thread(target=self._create_backup, daemon=True).start())
+
+    def check_running(self):
+        """Quick check if another launcher instance is running"""
+        if not os.path.exists(FILE_PID):
+            return False
+        
+        try:
+            with open(FILE_PID, 'r') as f:
+                pid = int(f.read().strip())
+            
+            # Быстрая проверка без детального анализа процесса
+            try:
+                if psutil.pid_exists(pid):
+                    # Простая проверка без детального статуса для скорости
+                    try:
+                        proc = psutil.Process(pid)
+                        if proc.is_running():
+                            self.old_pid = pid
+                            return True
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        try:
+                            os.remove(FILE_PID)
+                        except:
+                            pass
+                        return False
+            except Exception:
+                try:
+                    os.remove(FILE_PID)
+                except:
+                    pass
+                return False
+        except (ValueError, IOError, OSError):
+            try:
+                os.remove(FILE_PID)
+            except:
+                pass
+            return False
+        
         return False
 
     def register_pid(self):
@@ -413,19 +447,19 @@ class ModernLauncher(ctk.CTk):
         for w in self.winfo_children():
             w.destroy()
         
-        frame = ctk.CTkFrame(self, fg_color=COLORS['surface'])
+        frame = ctk.CTkFrame(self, fg_color=COLORS['card_bg'])
         frame.pack(fill="both", expand=True)
         
         ctk.CTkLabel(
             frame,
-            text="⚠️ Launcher уже запущен",
+            text="⚠️ " + t("ui.launcher.status.already_running"),
             font=("Segoe UI", 28, "bold"),
             text_color=COLORS['text']
         ).pack(pady=50)
         
         ctk.CTkButton(
             frame,
-            text="Остановить старый и запустить",
+            text=t("ui.launcher.button.kill_and_restart"),
             command=self.kill_old,
             fg_color=COLORS['danger'],
             hover_color="#dc2626",
@@ -443,167 +477,266 @@ class ModernLauncher(ctk.CTk):
 
         # Left sidebar
         self.create_sidebar()
-        
-        # Main content area
-        self.content_frame = ctk.CTkFrame(self, fg_color=COLORS['bg'])
-        self.content_frame.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
+        self.content_frame = ctk.CTkFrame(self, fg_color=COLORS['bg'], corner_radius=0)
+        self.content_frame.grid(row=0, column=1, sticky="nsew", padx=0, pady=0)
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
         
-        # Create pages
-        self.pages = [
-            self.create_console_page(),
-            self.create_settings_page(),
-            self.create_channels_page()
-        ]
+        # Lazy loading: создаем страницы только при первом показе
+        self.pages = [None, None, None]
+        self.pages_created = [False, False, False]
+        
+        # Создаем только первую страницу (консоль) сразу
+        self.pages[0] = self.create_console_page()
+        self.pages_created[0] = True
         
         self.show_page(0)
-        self.after(100, self.console_loop)
-        self.after(2000, self.service_status_loop)
+        
+        # Запускаем циклы с минимальной задержкой для быстрого старта
+        self.after(50, self.console_loop)
+        self.after(500, self.service_status_loop)
+        
+        # Добавляем начальное логирование (отложенное, чтобы не блокировать UI)
+        self.after(200, lambda: self.log(t("ui.launcher.log.startup", default="🚀 [SYSTEM] Launcher started successfully"), "SYSTEM"))
+        if hasattr(self, '_detected_lang'):
+            self.after(250, lambda: self.log(t("ui.launcher.log.language_detected", default="🌐 [SYSTEM] Detected system language: {lang}", lang=LANGUAGE_NAMES.get(self._detected_lang, self._detected_lang)), "SYSTEM"))
+        self.after(300, lambda: self.log(t("ui.launcher.log.ready", default="✅ [SYSTEM] Ready to use"), "SYSTEM"))
+    
+    def on_language_change(self, value):
+        """Handle language change"""
+        lang_code = value.split(' - ')[0] if ' - ' in value else value
+        if lang_code in SUPPORTED_LANGUAGES and lang_code != self.current_language:
+            # Set new language
+            set_language(lang_code)
+            self.current_language = lang_code
+            set_key(FILE_ENV, "LANGUAGE", lang_code)
+            # Log language change
+            self.log(t("ui.launcher.log.language_changed", default="🌐 [SYSTEM] Language changed to: {lang}", lang=LANGUAGE_NAMES.get(lang_code, lang_code)), "SYSTEM")
+            # Rebuild UI with new language
+            self.title(t("ui.launcher.title"))
+            self.build_ui()
+    
+    def create_glass_card(self, parent, **kwargs):
+        """Создает карточку с glassmorphism эффектом"""
+        default_kwargs = {
+            'fg_color': COLORS['card_bg'],
+            'corner_radius': 16,
+            'border_width': 1,
+            'border_color': COLORS['border']
+        }
+        default_kwargs.update(kwargs)
+        return ctk.CTkFrame(parent, **default_kwargs)
     
     def create_sidebar(self):
-        sidebar = ctk.CTkFrame(self, width=280, corner_radius=0, fg_color=COLORS['surface'])
-        sidebar.grid(row=0, column=0, sticky="nsew", padx=(10, 0))
+        """Создает боковую панель с glassmorphism дизайном"""
+        sidebar = ctk.CTkFrame(self, width=280, corner_radius=0, fg_color=COLORS['sidebar'])
+        sidebar.grid(row=0, column=0, sticky="nsew", padx=0)
         sidebar.grid_propagate(False)
-
-        # Logo/Title
-        title_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        title_frame.pack(fill="x", padx=20, pady=(30, 20))
         
+        # Logo section
+        logo_card = self.create_glass_card(sidebar, fg_color=COLORS['surface'])
+        logo_card.pack(fill="x", padx=16, pady=(20, 16))
+        
+        logo_content = ctk.CTkFrame(logo_card, fg_color="transparent")
+        logo_content.pack(fill="x", padx=16, pady=16)
+        
+        logo_icon = ctk.CTkFrame(logo_content, fg_color=COLORS['primary'], width=48, height=48, corner_radius=24)
+        logo_icon.pack(side="left", padx=(0, 12))
+        logo_icon.pack_propagate(False)
         ctk.CTkLabel(
-            title_frame,
-            text="Bot",
-            font=("Segoe UI", 32, "bold"),
-            text_color=COLORS['primary']
-        ).pack(anchor="w")
+            logo_icon,
+            text="▼",
+            font=("Segoe UI", 24),
+            text_color="white"
+        ).pack(expand=True)
         
+        title_frame = ctk.CTkFrame(logo_content, fg_color="transparent")
+        title_frame.pack(side="left", fill="x", expand=True)
         ctk.CTkLabel(
             title_frame,
             text="Launcher",
-            font=("Segoe UI", 16),
-            text_color=COLORS['text_secondary']
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            title_frame,
+            text="Control Panel",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_muted']
         ).pack(anchor="w")
         
-        # Navigation - создаем контейнер для навигационных кнопок
-        nav_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        nav_frame.pack(fill="x", padx=15, pady=(0, 20))
+        # Navigation
+        nav_card = self.create_glass_card(sidebar, fg_color=COLORS['surface'])
+        nav_card.pack(fill="x", padx=16, pady=(0, 16))
+        
+        nav_content = ctk.CTkFrame(nav_card, fg_color="transparent")
+        nav_content.pack(fill="x", padx=12, pady=12)
         
         self.nav_buttons = []
         nav_items = [
-            ("Консоль", "📊", 0),
-            ("Настройки", "⚙️", 1),
-            ("Каналы", "📡", 2)
+            (t("ui.launcher.logs", default="Console"), "📊", 0),
+            (t("ui.launcher.settings", default="Settings"), "⚙️", 1),
+            (t("ui.launcher.channels", default="Channels"), "📡", 2)
         ]
 
         for text, icon, idx in nav_items:
             btn = ctk.CTkButton(
-                nav_frame,
-                text=f"{icon}  {text}",
+                nav_content,
+                text=f"  {icon}  {text}",
                 command=lambda i=idx: self.show_page(i),
                 fg_color="transparent",
                 anchor="w",
                 height=50,
-                font=("Segoe UI", 15),
+                font=("Segoe UI", 14),
                 corner_radius=12,
-                hover_color=COLORS['surface_light'],
+                hover_color=COLORS['hover'],
                 text_color=COLORS['text_secondary']
             )
-            btn.pack(fill="x", pady=5)
+            btn.pack(fill="x", pady=4)
             self.nav_buttons.append(btn)
         
-        # Убеждаемся, что первая кнопка (Консоль) выделена при запуске
+        # Highlight first button
         if len(self.nav_buttons) > 0:
             self.nav_buttons[0].configure(
                 fg_color=COLORS['primary'],
                 text_color="white"
             )
         
-        # Spacer для разделения навигации и сервисов
-        spacer = ctk.CTkFrame(sidebar, fg_color="transparent", height=20)
-        spacer.pack(fill="x")
-        
-        # Services status (bottom)
-        services_frame = ctk.CTkFrame(sidebar, fg_color=COLORS['surface_light'], corner_radius=12)
-        services_frame.pack(fill="x", padx=15, pady=(20, 15), side="bottom")
+        # Services status
+        services_card = self.create_glass_card(sidebar, fg_color=COLORS['surface'])
+        services_card.pack(fill="x", padx=16, pady=(0, 16), side="bottom")
         
         ctk.CTkLabel(
-            services_frame,
-            text="Сервисы",
+            services_card,
+            text=t("ui.launcher.services"),
             font=("Segoe UI", 12, "bold"),
-            text_color=COLORS['text_muted']
-        ).pack(anchor="w", padx=15, pady=(15, 10))
+            text_color=COLORS['text']
+        ).pack(anchor="w", padx=16, pady=(16, 12))
         
-        for key, label in [("bot", "Telegram Bot"), ("llm", "LLM"), ("sd", "Stable Diffusion")]:
-            self.create_service_indicator(services_frame, key, label)
+        services_content = ctk.CTkFrame(services_card, fg_color="transparent")
+        services_content.pack(fill="x", padx=12, pady=(0, 12))
+        
+        for key, label in [("bot", t("ui.launcher.service.bot")), ("llm", t("ui.launcher.service.llm")), ("sd", t("ui.launcher.service.sd"))]:
+            self.create_service_indicator(services_content, key, label)
         
         # System monitor
-        monitor_frame = ctk.CTkFrame(sidebar, fg_color=COLORS['surface_light'], corner_radius=12)
-        monitor_frame.pack(fill="x", padx=15, pady=(0, 15), side="bottom")
+        monitor_card = self.create_glass_card(sidebar, fg_color=COLORS['surface'])
+        monitor_card.pack(fill="x", padx=16, pady=(0, 16), side="bottom")
+        
+        monitor_content = ctk.CTkFrame(monitor_card, fg_color="transparent")
+        monitor_content.pack(fill="x", padx=16, pady=16)
         
         self.lbl_net = ctk.CTkLabel(
-            monitor_frame,
-            text="🌐 Сеть: 0 MB/s",
-            font=("Consolas", 11),
-            text_color=COLORS['accent']
+            monitor_content,
+            text=t("ui.launcher.monitoring.network", speed="0"),
+            font=("Consolas", 13),
+            text_color=COLORS['primary_light']
         )
-        self.lbl_net.pack(anchor="w", padx=15, pady=(15, 5))
+        self.lbl_net.pack(anchor="w", pady=(0, 8))
         
         self.lbl_disk = ctk.CTkLabel(
-            monitor_frame,
-            text="💾 Диск: 0 MB/s",
-            font=("Consolas", 11),
+            monitor_content,
+            text=t("ui.launcher.monitoring.disk", speed="0"),
+            font=("Consolas", 13),
             text_color=COLORS['success']
         )
-        self.lbl_disk.pack(anchor="w", padx=15, pady=(0, 15))
+        self.lbl_disk.pack(anchor="w")
     
     def create_service_indicator(self, parent, key, label):
+        """Создает индикатор сервиса с glassmorphism стилем"""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", padx=10, pady=3)
+        frame.pack(fill="x", pady=4)
         
-        # Status dot
         dot = ctk.CTkLabel(
             frame,
             text="●",
-            font=("Arial", 14),
+            font=("Arial", 16),
             text_color=COLORS['text_muted'],
-            width=20
+            width=24
         )
         dot.pack(side="left")
         self.status_indicators[key] = dot
         
-        # Label
         ctk.CTkLabel(
             frame,
             text=label,
             font=("Segoe UI", 13),
             text_color=COLORS['text'],
             anchor="w"
-        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
+        ).pack(side="left", fill="x", expand=True, padx=(8, 0))
         
-        # Toggle button
-        self.service_buttons = getattr(self, 'service_buttons', {})
         btn = ctk.CTkButton(
             frame,
             text="▶",
-            width=30,
-            height=25,
+            width=36,
+            height=28,
             fg_color=COLORS['primary'],
             hover_color=COLORS['primary_hover'],
             command=lambda k=key: self.toggle_service(k),
-            font=("Segoe UI", 10)
+            font=("Segoe UI", 11),
+            corner_radius=8
         )
         btn.pack(side="right")
         self.service_buttons[key] = btn
 
     def show_page(self, idx):
         self.current_frame = idx
-        for i, page in enumerate(self.pages):
-            if i == idx:
-                page.grid(row=0, column=0, sticky="nsew")
-            else:
-                page.grid_forget()
         
-        # Update nav buttons
+        # Lazy loading: создаем страницу только при первом показе
+        if not self.pages_created[idx]:
+            try:
+                if idx == 1:
+                    # Создаем страницу настроек в фоне для плавности
+                    self.pages[1] = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
+                    loading_label = ctk.CTkLabel(
+                        self.pages[1],
+                        text=t("ui.launcher.loading", default="Загрузка..."),
+                        font=("Segoe UI", 16),
+                        text_color=COLORS['text_muted']
+                    )
+                    loading_label.pack(expand=True)
+                    self.pages[1].grid(row=0, column=0, sticky="nsew")
+                    self.pages_created[idx] = True
+                    
+                    # Создаем реальную страницу в фоне
+                    def create_settings_async():
+                        try:
+                            settings_page = self.create_settings_page()
+                            # Заменяем placeholder на реальную страницу
+                            self.pages[1].destroy()
+                            self.pages[1] = settings_page
+                            self.pages[1].grid(row=0, column=0, sticky="nsew")
+                        except Exception as e:
+                            self.log(f"❌ [SYSTEM] Ошибка создания страницы настроек: {e}", "SYSTEM")
+                    
+                    # Запускаем создание в отдельном потоке
+                    threading.Thread(target=create_settings_async, daemon=True).start()
+                elif idx == 2:
+                    self.pages[2] = self.create_channels_page()
+                    self.pages_created[idx] = True
+            except Exception as e:
+                self.log(f"❌ [SYSTEM] Ошибка создания страницы {idx}: {e}", "SYSTEM")
+                # Create error page
+                error_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
+                error_label = ctk.CTkLabel(
+                    error_frame,
+                    text=f"Error loading page: {str(e)}",
+                    text_color=COLORS['danger'],
+                    font=("Segoe UI", 16)
+                )
+                error_label.pack(expand=True)
+                self.pages[idx] = error_frame
+                self.pages_created[idx] = True
+        
+        for i, page in enumerate(self.pages):
+            if page is not None:
+                if i == idx:
+                    page.grid(row=0, column=0, sticky="nsew")
+                    page.lift()  # Bring to front
+                    page.update()  # Force update
+                else:
+                    page.grid_forget()
+        
         for i, btn in enumerate(self.nav_buttons):
             if i == idx:
                 btn.configure(
@@ -617,110 +750,251 @@ class ModernLauncher(ctk.CTk):
                 )
 
     def create_console_page(self):
-        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['surface'])
+        """Создает страницу консоли с glassmorphism дизайном и статус-карточками"""
+        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
         frame.grid_columnconfigure(0, weight=1)
-        frame.grid_rowconfigure(1, weight=1)
+        frame.grid_rowconfigure(2, weight=1)
         
         # Header
-        header = ctk.CTkFrame(frame, fg_color="transparent", height=60)
-        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 15))
+        header = ctk.CTkFrame(frame, fg_color="transparent", height=80)
+        header.grid(row=0, column=0, sticky="ew", padx=24, pady=(24, 16))
         header.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(
             header,
-            text="Консоль",
-            font=("Segoe UI", 28, "bold"),
+            text=t("ui.launcher.console.title", default="Dashboard"),
+            font=("Segoe UI", 36, "bold"),
             text_color=COLORS['text']
         ).grid(row=0, column=0, sticky="w")
         
         ctk.CTkButton(
             header,
-            text="Очистить",
-            width=100,
-            height=35,
-            fg_color=COLORS['surface_light'],
-            hover_color=COLORS['surface_dark'],
+            text=f"🗑️ {t('ui.launcher.logs.clear', default='Clear')}",
+            width=140,
+            height=40,
+            fg_color=COLORS['surface'],
+            hover_color=COLORS['surface_light'],
+            border_width=1,
+            border_color=COLORS['border'],
             command=self.clear_console,
-            font=("Segoe UI", 13)
+            font=("Segoe UI", 13),
+            corner_radius=12
         ).grid(row=0, column=1, sticky="e")
         
-        # Tabs с горячими клавишами
-        tabs = ctk.CTkTabview(frame, fg_color=COLORS['surface_light'], corner_radius=12)
-        tabs.grid(row=1, column=0, sticky="nsew", padx=30, pady=(0, 30))
+        # Status cards row
+        status_container = ctk.CTkFrame(frame, fg_color="transparent")
+        status_container.grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 16))
+        status_container.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="status")
         
-        # Сохраняем ссылку на tabs для горячих клавиш
+        status_cards_data = [
+            ("bot", "🤖", t("ui.launcher.service.bot"), COLORS['primary']),
+            ("llm", "🧠", t("ui.launcher.service.llm"), COLORS['secondary']),
+            ("sd", "🎨", t("ui.launcher.service.sd"), COLORS['success']),
+            ("system", "⚙️", "System", COLORS['text_muted'])
+        ]
+        
+        self.status_cards = {}
+        for idx, (key, icon, title, color) in enumerate(status_cards_data):
+            card = self.create_status_card(status_container, key, icon, title, color)
+            card.grid(row=0, column=idx, sticky="ew", padx=8)
+            self.status_cards[key] = card
+        
+        # Console area with tabs
+        console_card = self.create_glass_card(frame, fg_color=COLORS['surface'])
+        console_card.grid(row=2, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        console_card.grid_columnconfigure(0, weight=1)
+        console_card.grid_rowconfigure(0, weight=1)
+        
+        tabs = ctk.CTkTabview(console_card, fg_color=COLORS['surface'], corner_radius=16)
+        tabs.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        
         self.console_tabs = tabs
         
-        # Привязываем горячие клавиши для переключения вкладок (Ctrl+1-4)
-        self.bind("<Control-1>", lambda e: tabs.set("Все"))
-        self.bind("<Control-2>", lambda e: tabs.set("Bot"))
-        self.bind("<Control-3>", lambda e: tabs.set("LLM"))
-        self.bind("<Control-4>", lambda e: tabs.set("SD"))
+        all_tab = t("ui.launcher.logs.all", default="All")
+        bot_tab = t("ui.launcher.logs.bot", default="Bot")
+        llm_tab = t("ui.launcher.logs.llm", default="LLM")
+        sd_tab = t("ui.launcher.logs.sd", default="SD")
         
-        for tab_name in ["Все", "Bot", "LLM", "SD"]:
+        self.all_tab_name = all_tab
+        self.bot_tab_name = bot_tab
+        self.llm_tab_name = llm_tab
+        self.sd_tab_name = sd_tab
+        
+        self.bind("<Control-1>", lambda e: tabs.set(all_tab))
+        self.bind("<Control-2>", lambda e: tabs.set(bot_tab))
+        self.bind("<Control-3>", lambda e: tabs.set(llm_tab))
+        self.bind("<Control-4>", lambda e: tabs.set(sd_tab))
+        
+        for tab_name in [all_tab, bot_tab, llm_tab, sd_tab]:
             tab = tabs.add(tab_name)
             console = ctk.CTkTextbox(
                 tab,
-                font=("Consolas", 12),
+                font=("Consolas", 13),
                 fg_color=COLORS['bg'],
                 text_color=COLORS['text'],
-                corner_radius=8,
-                wrap="word"
+                corner_radius=12,
+                wrap="word",
+                border_width=1,
+                border_color=COLORS['border']
             )
-            console.pack(fill="both", expand=True, padx=5, pady=5)
-            # Включаем возможность выделения текста
+            console.pack(fill="both", expand=True, padx=8, pady=8)
             console.configure(state="normal")
-            # Добавляем контекстное меню для копирования
             self.setup_console_context_menu(console)
             self.consoles[tab_name] = console
         
         return frame
     
-    def create_services_page(self):
-        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['surface'])
-        frame.grid_columnconfigure(0, weight=1)
+    def create_status_card(self, parent, key, icon, title, color):
+        """Создает карточку статуса для dashboard"""
+        card = self.create_glass_card(parent, fg_color=COLORS['surface'])
+        card.grid_columnconfigure(0, weight=1)
         
-        # Header
-        header = ctk.CTkFrame(frame, fg_color="transparent", height=60)
-        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 20))
+        content = ctk.CTkFrame(card, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=16, pady=16)
+        
+        # Icon
+        icon_frame = ctk.CTkFrame(content, fg_color=color, width=48, height=48, corner_radius=24)
+        icon_frame.pack(anchor="w", pady=(0, 12))
+        icon_frame.pack_propagate(False)
+        ctk.CTkLabel(
+            icon_frame,
+            text=icon,
+            font=("Segoe UI", 24),
+            text_color="white"
+        ).pack(expand=True)
+        
+        # Title
+        ctk.CTkLabel(
+            content,
+            text=title,
+            font=("Segoe UI", 13),
+            text_color=COLORS['text_secondary']
+        ).pack(anchor="w", pady=(0, 4))
+        
+        # Status
+        status_label = ctk.CTkLabel(
+            content,
+            text=t("ui.launcher.status.stopped", default="Stopped"),
+            font=("Segoe UI", 16, "bold"),
+            text_color=COLORS['text_muted']
+        )
+        status_label.pack(anchor="w")
+        
+        # Store reference
+        if not hasattr(self, 'status_card_labels'):
+            self.status_card_labels = {}
+        self.status_card_labels[key] = status_label
+        
+        return card
+    
+    def create_services_page(self):
+        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(1, weight=1)
+        header = ctk.CTkFrame(frame, fg_color="transparent", height=70)
+        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 25))
+        header.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(
             header,
-            text="Управление сервисами",
-            font=("Segoe UI", 28, "bold"),
+            text=t("ui.launcher.services.title"),
+            font=("Segoe UI", 32, "bold"),
             text_color=COLORS['text']
-        ).pack(side="left")
-        
-        # Services cards
-        services_container = ctk.CTkFrame(frame, fg_color="transparent")
-        services_container.grid(row=1, column=0, sticky="ew", padx=30, pady=(0, 30))
-        services_container.grid_columnconfigure((0, 1, 2), weight=1)
+        ).grid(row=0, column=0, sticky="w")
+        summary_container = ctk.CTkFrame(frame, fg_color="transparent")
+        summary_container.grid(row=1, column=0, sticky="ew", padx=30, pady=(0, 25))
+        summary_container.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="summary")
         
         services = [
-            ("bot", "Telegram Bot", "🤖", "Управление Telegram ботом"),
-            ("llm", "LLM Server", "🧠", "Сервер языковой модели"),
-            ("sd", "Stable Diffusion", "🎨", "Генерация изображений")
+            ("bot", t("ui.launcher.service.telegram_bot"), "🤖"),
+            ("llm", t("ui.launcher.service.llm_server"), "🧠"),
+            ("sd", t("ui.launcher.service.stable_diffusion"), "🎨"),
+            ("system", "System", "⚙️")
         ]
         
-        for idx, (key, title, icon, desc) in enumerate(services):
+        for idx, (key, title, icon) in enumerate(services):
+            card = self.create_summary_card(summary_container, key, title, icon)
+            card.grid(row=0, column=idx, sticky="ew", padx=8)
+        
+        # Services detail cards (3 cards in row)
+        services_container = ctk.CTkFrame(frame, fg_color="transparent")
+        services_container.grid(row=2, column=0, sticky="ew", padx=30, pady=(0, 30))
+        services_container.grid_columnconfigure((0, 1, 2), weight=1, uniform="service")
+        
+        detail_services = [
+            ("bot", t("ui.launcher.service.telegram_bot"), "🤖", t("ui.launcher.service.description.bot")),
+            ("llm", t("ui.launcher.service.llm_server"), "🧠", t("ui.launcher.service.description.llm")),
+            ("sd", t("ui.launcher.service.stable_diffusion"), "🎨", t("ui.launcher.service.description.sd"))
+        ]
+        
+        for idx, (key, title, icon, desc) in enumerate(detail_services):
             card = self.create_service_card(services_container, key, title, icon, desc)
             card.grid(row=0, column=idx, sticky="ew", padx=10)
         
         return frame
     
-    def create_service_card(self, parent, key, title, icon, desc):
-        card = ctk.CTkFrame(parent, fg_color=COLORS['surface_light'], corner_radius=16)
+    def create_summary_card(self, parent, key, title, icon):
+        """Create dashboard-style summary card (like the 4 cards in top row)"""
+        card = ctk.CTkFrame(parent, fg_color=COLORS['card_bg'], corner_radius=12, height=140)
+        card.grid_propagate(False)
         card.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            card,
+            text=title,
+            font=("Segoe UI", 13),
+            text_color=COLORS['text_secondary'],
+            anchor="w"
+        ).grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 8))
+        value_label = ctk.CTkLabel(
+            card,
+            text="—",
+            font=("Segoe UI", 32, "bold"),
+            text_color=COLORS['text'],
+            anchor="w"
+        )
+        value_label.grid(row=1, column=0, sticky="ew", padx=20, pady=(0, 8))
+        status_frame = ctk.CTkFrame(card, fg_color="transparent")
+        status_frame.grid(row=2, column=0, sticky="ew", padx=20, pady=(0, 20))
         
-        # Icon and title
+        dot = ctk.CTkLabel(
+            status_frame,
+            text="●",
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_muted']
+        )
+        dot.pack(side="left", padx=(0, 6))
+        
+        status_text = ctk.CTkLabel(
+            status_frame,
+            text=t("ui.launcher.status.stopped"),
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_muted']
+        )
+        status_text.pack(side="left")
+        
+        # Store references for updates
+        if not hasattr(self, 'summary_cards'):
+            self.summary_cards = {}
+        self.summary_cards[key] = {
+            'value': value_label,
+            'status': status_text,
+            'dot': dot
+        }
+        
+        return card
+    
+    def create_service_card(self, parent, key, title, icon, desc):
+        """Create detailed service card (Dashboard style)"""
+        card = ctk.CTkFrame(parent, fg_color=COLORS['card_bg'], corner_radius=12)
+        card.grid_columnconfigure(0, weight=1)
         header = ctk.CTkFrame(card, fg_color="transparent")
-        header.pack(fill="x", padx=20, pady=(20, 10))
+        header.pack(fill="x", padx=20, pady=(20, 12))
         
         ctk.CTkLabel(
             header,
             text=icon,
-            font=("Segoe UI", 40)
-        ).pack(side="left", padx=(0, 15))
+            font=("Segoe UI", 36)
+        ).pack(side="left", padx=(0, 12))
         
         title_frame = ctk.CTkFrame(header, fg_color="transparent")
         title_frame.pack(side="left", fill="x", expand=True)
@@ -740,14 +1014,12 @@ class ModernLauncher(ctk.CTk):
             text_color=COLORS['text_secondary'],
             anchor="w"
         ).pack(anchor="w")
-        
-        # Status
         status_frame = ctk.CTkFrame(card, fg_color="transparent")
-        status_frame.pack(fill="x", padx=20, pady=10)
+        status_frame.pack(fill="x", padx=20, pady=12)
         
         status_label = ctk.CTkLabel(
             status_frame,
-            text="Остановлен",
+            text=t("ui.launcher.status.stopped"),
             font=("Segoe UI", 13),
             text_color=COLORS['text_muted']
         )
@@ -755,85 +1027,224 @@ class ModernLauncher(ctk.CTk):
         self.status_labels = getattr(self, 'status_labels', {})
         self.status_labels[key] = status_label
         
-        # Control button
-        ctk.CTkButton(
+        # Создаем кнопку и сохраняем в словарь для обновления
+        service_btn = ctk.CTkButton(
             card,
-            text="Запустить",
+            text=t("ui.launcher.button.start"),
             command=lambda k=key: self.toggle_service(k),
             fg_color=COLORS['primary'],
             hover_color=COLORS['primary_hover'],
             font=("Segoe UI", 14, "bold"),
-            height=45
-        ).pack(fill="x", padx=20, pady=(0, 20))
+            height=45,
+            corner_radius=8
+        )
+        service_btn.pack(fill="x", padx=20, pady=(0, 20))
+        
+        # Сохраняем кнопку в словарь для обновления
+        self.service_buttons = getattr(self, 'service_buttons', {})
+        self.service_buttons[key] = service_btn
         
         return card
     
     def create_settings_page(self):
-        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['surface'])
+        """Создает страницу настроек"""
+        # Инициализируем словари для вкладок, если еще не инициализированы
+        if not hasattr(self, 'settings_tab_frames'):
+            self.settings_tab_frames = {}
+        if not hasattr(self, 'settings_tab_buttons'):
+            self.settings_tab_buttons = []
+        
+        # Загружаем настройки асинхронно (не блокируем UI)
+        def load_settings_async():
+            try:
+                self._load_gen_config()
+                self._load_settings()
+            except Exception as e:
+                self.log(f"❌ [SETTINGS] Ошибка загрузки настроек: {e}", "SYSTEM")
+        
+        # Запускаем загрузку в фоне
+        threading.Thread(target=load_settings_async, daemon=True).start()
+        
+        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_rowconfigure(1, weight=1)
         
-        # Header
-        header = ctk.CTkFrame(frame, fg_color="transparent", height=60)
-        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 20))
+        header = ctk.CTkFrame(frame, fg_color="transparent", height=70)
+        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 25))
         header.grid_columnconfigure(0, weight=1)
         
         ctk.CTkLabel(
             header,
-            text="Настройки",
-            font=("Segoe UI", 28, "bold"),
+            text=t("ui.launcher.settings"),
+            font=("Segoe UI", 32, "bold"),
             text_color=COLORS['text']
         ).grid(row=0, column=0, sticky="w")
-        
-        ctk.CTkButton(
+        info_label = ctk.CTkLabel(
             header,
-            text="Сохранить",
-            width=120,
-            height=40,
-            fg_color=COLORS['success'],
-            hover_color="#059669",
-            command=self.save_settings,
-            font=("Segoe UI", 14, "bold")
-        ).grid(row=0, column=1, sticky="e")
+            text=t("ui.launcher.settings.auto_save_info", default="⚡ Настройки сохраняются автоматически"),
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_muted']
+        )
+        info_label.grid(row=0, column=1, sticky="e", padx=(0, 20))
 
-        # Вкладки настроек
-        tabs = ctk.CTkTabview(frame, fg_color=COLORS['surface_light'], corner_radius=12)
-        tabs.grid(row=1, column=0, sticky="nsew", padx=30, pady=(0, 30))
+        # Settings tabs container
+        tabs_container = ctk.CTkFrame(frame, fg_color=COLORS['surface'], corner_radius=8)
+        tabs_container.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        tabs_container.grid_columnconfigure(0, weight=1)
+        tabs_container.grid_rowconfigure(1, weight=1)
         
-        # Вкладка 1: Основные настройки
-        tab_main = tabs.add("⚙️ Основные")
-        self._create_main_settings_tab(tab_main)
+        # Tab buttons row
+        tab_buttons_frame = ctk.CTkFrame(tabs_container, fg_color="transparent")
+        tab_buttons_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
+        tab_buttons_frame.grid_columnconfigure((0, 1, 2), weight=1)
         
-        # Вкладка 2: Настройки текста
-        tab_text = tabs.add("📝 Текст")
-        self._create_text_settings_tab(tab_text)
+        # Content area
+        content_area = ctk.CTkFrame(tabs_container, fg_color=COLORS['bg'], corner_radius=8)
+        content_area.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+        content_area.grid_columnconfigure(0, weight=1)
+        content_area.grid_rowconfigure(0, weight=1)
         
-        # Вкладка 3: Генерация изображений
-        tab_image = tabs.add("🎨 Изображения")
-        self._create_image_settings_tab(tab_image)
+        # Create tab frames
+        self.settings_tab_frames = {}
+        self.settings_tab_buttons = []
+        
+        tab_configs = [
+            ("general", "⚙️ " + t("ui.launcher.settings.general"), self._create_main_settings_tab),
+            ("text", "📝 " + t("ui.launcher.settings.text"), self._create_text_settings_tab),
+            ("image", "🎨 " + t("ui.launcher.settings.images"), self._create_image_settings_tab)
+        ]
+        
+        for idx, (key, label, create_func) in enumerate(tab_configs):
+            # Create button
+            btn = ctk.CTkButton(
+                tab_buttons_frame,
+                text=label,
+                command=lambda k=key: self._switch_settings_tab(k),
+                fg_color=COLORS['primary'] if idx == 0 else COLORS['surface_light'],
+                hover_color=COLORS['primary_hover'] if idx == 0 else COLORS['surface'],
+                text_color="white" if idx == 0 else COLORS['text_secondary'],
+                font=("Segoe UI", 13, "bold" if idx == 0 else "normal"),
+                corner_radius=8,
+                height=40
+            )
+            btn.grid(row=0, column=idx, sticky="ew", padx=4, pady=8)
+            self.settings_tab_buttons.append((key, btn))
+            
+            # Create content frame
+            tab_frame = ctk.CTkFrame(content_area, fg_color=COLORS['bg'])
+            tab_frame.grid(row=0, column=0, sticky="nsew")
+            tab_frame.grid_columnconfigure(0, weight=1)
+            tab_frame.grid_rowconfigure(0, weight=1)
+            
+            # Create content
+            try:
+                create_func(tab_frame)
+            except Exception as e:
+                self.log(f"❌ [SETTINGS] Ошибка создания вкладки {key}: {e}", "SYSTEM")
+                # Create error label
+                error_label = ctk.CTkLabel(
+                    tab_frame,
+                    text=t("ui.launcher.error.tab_load_failed", default="Ошибка загрузки вкладки"),
+                    text_color=COLORS['danger']
+                )
+                error_label.pack(expand=True)
+            
+            # Hide all except first
+            if idx > 0:
+                tab_frame.grid_remove()
+            
+            self.settings_tab_frames[key] = tab_frame
+        
+        # Set first tab as active
+        self.current_settings_tab = "general"
         
         return frame
     
+    def _switch_settings_tab(self, tab_key):
+        """Переключает вкладку настроек"""
+        if not hasattr(self, 'settings_tab_frames') or not self.settings_tab_frames:
+            return
+        if tab_key not in self.settings_tab_frames:
+            return
+        
+        # Hide all tabs
+        for key, tab_frame in self.settings_tab_frames.items():
+            tab_frame.grid_remove()
+        
+        # Show selected tab
+        self.settings_tab_frames[tab_key].grid()
+        
+        # Update button styles
+        for key, btn in self.settings_tab_buttons:
+            if key == tab_key:
+                btn.configure(
+                    fg_color=COLORS['primary'],
+                    hover_color=COLORS['primary_hover'],
+                    text_color="white",
+                    font=("Segoe UI", 13, "bold")
+                )
+            else:
+                btn.configure(
+                    fg_color=COLORS['surface_light'],
+                    hover_color=COLORS['surface'],
+                    text_color=COLORS['text_secondary'],
+                    font=("Segoe UI", 13, "normal")
+                )
+        
+        self.current_settings_tab = tab_key
+    
     def _create_main_settings_tab(self, parent):
         """Создает вкладку основных настроек"""
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+        scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
         scroll.pack(fill="both", expand=True, padx=20, pady=20)
         scroll.grid_columnconfigure(0, weight=1)
         
         # Telegram Bot settings
-        bot_card = self.create_setting_card(scroll, "Telegram Bot", [
-            ("BOT_TOKEN", "Bot Token", "Токен бота от @BotFather"),
-            ("TARGET_CHANNEL_ID", "Channel ID", "ID целевого канала")
+        bot_card = self.create_setting_card(scroll, t("ui.launcher.service.telegram_bot"), [
+            ("BOT_TOKEN", t("ui.launcher.settings.bot_token"), t("ui.launcher.settings.bot_token.placeholder", default="Bot token from @BotFather")),
+            ("TARGET_CHANNEL_ID", t("ui.launcher.settings.target_channel"), t("ui.launcher.settings.target_channel.placeholder", default="Target channel ID"))
         ])
         bot_card.pack(fill="x", pady=(0, 15))
         
+        # Language selection
+        lang_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
+        lang_card.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(
+            lang_card,
+            text=t("ui.launcher.settings.language"),
+            font=("Segoe UI", 16, "bold"),
+            text_color=COLORS['text']
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 15))
+        
+        lang_frame = ctk.CTkFrame(lang_card, fg_color="transparent")
+        lang_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
+        
+        ctk.CTkLabel(
+            lang_frame,
+            text=t("ui.launcher.settings.select_language"),
+            font=("Segoe UI", 13),
+            text_color=COLORS['text_secondary']
+        ).pack(side="left", padx=(0, 10))
+        
+        self.language_var = tk.StringVar(value=self.current_language)
+        lang_menu = ctk.CTkOptionMenu(
+            lang_frame,
+            values=[f"{code} - {LANGUAGE_NAMES[code]}" for code in SUPPORTED_LANGUAGES],
+            variable=self.language_var,
+            command=self.on_language_change,
+            font=("Segoe UI", 13),
+            width=200
+        )
+        lang_menu.pack(side="left")
+        
         # Debug режим
-        debug_card = ctk.CTkFrame(scroll, fg_color=COLORS['surface_light'], corner_radius=12)
+        debug_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
         debug_card.pack(fill="x", pady=(0, 15))
         
         ctk.CTkLabel(
             debug_card,
-            text="Отладка",
+            text=t("ui.launcher.settings.debug", default="Debug"),
             font=("Segoe UI", 16, "bold"),
             text_color=COLORS['text']
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 15))
@@ -843,14 +1254,14 @@ class ModernLauncher(ctk.CTk):
         
         ctk.CTkLabel(
             debug_frame,
-            text="Режим отладки",
+            text=t("ui.launcher.settings.debug_mode", default="Debug mode"),
             font=("Segoe UI", 13),
             text_color=COLORS['text_secondary']
         ).pack(side="left", padx=(0, 10))
         
         debug_switch = ctk.CTkSwitch(
             debug_frame,
-            text="Показывать debug сообщения",
+            text=t("ui.launcher.settings.show_debug", default="Show debug messages"),
             variable=self.debug_mode,
             font=("Segoe UI", 13),
             onvalue=True,
@@ -867,156 +1278,504 @@ class ModernLauncher(ctk.CTk):
             pass
     
     def _create_text_settings_tab(self, parent):
-        """Создает вкладку настроек текста"""
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        """Создает компактную вкладку настроек генерации текста"""
+        scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
+        scroll.pack(fill="both", expand=True, padx=16, pady=16)
         scroll.grid_columnconfigure(0, weight=1)
         
-        # Папка с моделями
-        models_dir_card = ctk.CTkFrame(scroll, fg_color=COLORS['surface_light'], corner_radius=12)
-        models_dir_card.pack(fill="x", pady=(0, 15))
+        gen_config = {}
+        if os.path.exists(FILE_GEN_CONFIG):
+            try:
+                with open(FILE_GEN_CONFIG, 'r', encoding='utf-8') as f:
+                    gen_config = json.load(f)
+            except:
+                pass
+        
+        # LLM Generation Settings - Compact
+        llm_gen_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
+        llm_gen_card.pack(fill="x", pady=(0, 12))
+        llm_gen_card.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(
+            llm_gen_card,
+            text=t("ui.launcher.settings.text_generation", default="Генерация текста"),
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text']
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=15, pady=(12, 10))
+        
+        # Temperature
+        ctk.CTkLabel(
+            llm_gen_card,
+            text=t("ui.launcher.settings.llm_temp", default="Температура"),
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_secondary']
+        ).grid(row=1, column=0, sticky="w", padx=15, pady=6)
+        
+        temp_var = tk.DoubleVar(value=float(gen_config.get("llm_temp", 0.7)))
+        temp_slider = ctk.CTkSlider(
+            llm_gen_card,
+            from_=0.0,
+            to=2.0,
+            number_of_steps=200,
+            variable=temp_var,
+            width=250
+        )
+        temp_slider.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
+        
+        temp_label = ctk.CTkLabel(
+            llm_gen_card,
+            textvariable=temp_var,
+            font=("Segoe UI", 12, "bold"),
+            text_color=COLORS['text'],
+            width=50
+        )
+        temp_label.grid(row=1, column=2, padx=(0, 15), pady=6)
+        self.llm_temp_var = temp_var
+        temp_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # Context Window
+        ctk.CTkLabel(
+            llm_gen_card,
+            text=t("ui.launcher.settings.llm_ctx", default="Контекст"),
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_secondary']
+        ).grid(row=2, column=0, sticky="w", padx=15, pady=6)
+        
+        ctx_var = tk.IntVar(value=int(gen_config.get("llm_ctx", 4096)))
+        ctx_entry = ctk.CTkEntry(
+            llm_gen_card,
+            textvariable=ctx_var,
+            font=("Segoe UI", 12),
+            width=120
+        )
+        ctx_entry.grid(row=2, column=1, sticky="w", padx=8, pady=6)
+        self.llm_ctx_var = ctx_var
+        ctx_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        ctk.CTkLabel(
+            llm_gen_card,
+            text="токенов",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_muted']
+        ).grid(row=2, column=2, sticky="w", padx=(0, 15), pady=6)
+        
+        # LLM Model Management - Unified
+        llm_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
+        llm_card.pack(fill="both", expand=True, pady=(0, 12))
+        llm_card.grid_columnconfigure(0, weight=1)
+        llm_card.grid_rowconfigure(1, weight=1)
+        
+        ctk.CTkLabel(
+            llm_card,
+            text=t("ui.launcher.settings.llm_model_management", default="Модели LLM"),
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text']
+        ).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 10))
+        
+        # Container for unified models tab content
+        models_content = ctk.CTkFrame(llm_card, fg_color="transparent")
+        models_content.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 12))
+        models_content.grid_columnconfigure(0, weight=1)
+        models_content.grid_rowconfigure(1, weight=1)
+        
+        self._create_unified_llm_models_tab(models_content)
+        
+        # Models folder - Compact
+        models_dir_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
+        models_dir_card.pack(fill="x", pady=(0, 12))
         models_dir_card.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(
             models_dir_card,
-            text="Папка с моделями",
-            font=("Segoe UI", 16, "bold"),
-            text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=20, pady=(20, 10))
-        
-        ctk.CTkLabel(
-            models_dir_card,
-            text="Путь к папке с GGUF моделями:",
-            font=("Segoe UI", 13),
+            text=t("ui.launcher.settings.models_folder_label", default="Папка моделей"),
+            font=("Segoe UI", 12),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=(20, 10), pady=10)
+        ).grid(row=0, column=0, sticky="w", padx=15, pady=8)
         
-        # Поле с путем
+        current_path = get_models_llm_dir()
         models_dir_entry = ctk.CTkEntry(
             models_dir_card,
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 11),
             fg_color=COLORS['bg'],
-            border_color=COLORS['border']
+            border_color=COLORS['border'],
+            height=32
         )
-        models_dir_entry.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=10)
-        
-        # Загружаем текущий путь
-        current_path = get_models_llm_dir()
         models_dir_entry.insert(0, current_path)
-        self.models_dir_entry = models_dir_entry  # Сохраняем ссылку для сохранения
-        
-        # Кнопка выбора папки
-        def select_models_folder():
-            folder = filedialog.askdirectory(
-                title="Выберите папку с моделями",
-                initialdir=current_path if os.path.exists(current_path) else OLLAMA_MODELS_DIR
-            )
-            if folder:
-                models_dir_entry.delete(0, "end")
-                models_dir_entry.insert(0, folder)
+        models_dir_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8), pady=8)
+        self.models_dir_entry = models_dir_entry
         
         ctk.CTkButton(
             models_dir_card,
-            text="📁 Выбрать папку",
-            width=150,
-            command=select_models_folder,
+            text="📁",
+            width=40,
+            height=32,
+            command=lambda: self._select_models_folder(models_dir_entry),
             fg_color=COLORS['primary'],
             hover_color=COLORS['primary_hover'],
             font=("Segoe UI", 12)
-        ).grid(row=1, column=2, padx=(0, 20), pady=10)
-        
-        # LLM Model settings
-        llm_card = self.create_setting_card(scroll, "LLM Model", [
-            ("model", "Модель", "Выберите GGUF модель")
-        ])
-        llm_card.pack(fill="x", pady=(0, 15))
-        
-        # Scan LLM models
-        self.scan_llm_models()
-        
-        # Кнопка удаления LLM (Ollama)
-        delete_llm_card = ctk.CTkFrame(scroll, fg_color=COLORS['surface_light'], corner_radius=12)
-        delete_llm_card.pack(fill="x", pady=(0, 15))
-        
-        ctk.CTkLabel(
-            delete_llm_card,
-            text="Управление LLM",
-            font=("Segoe UI", 16, "bold"),
-            text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 10))
-        
-        info_label = ctk.CTkLabel(
-            delete_llm_card,
-            text="Удалить Ollama и все связанные файлы (модели, данные)",
-            font=("Segoe UI", 12),
-            text_color=COLORS['text_secondary']
-        )
-        info_label.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 15))
-        
-        delete_btn = ctk.CTkButton(
-            delete_llm_card,
-            text="🗑️ Удалить LLM",
-            width=150,
-            height=40,
-            command=self._delete_ollama,
-            fg_color=COLORS['danger'],
-            hover_color="#dc2626",
-            font=("Segoe UI", 13, "bold")
-        )
-        delete_btn.grid(row=1, column=1, sticky="e", padx=(0, 20), pady=(0, 15))
+        ).grid(row=0, column=2, padx=(0, 15), pady=8)
     
     def _create_image_settings_tab(self, parent):
-        """Создает вкладку настроек генерации изображений"""
-        scroll = ctk.CTkScrollableFrame(parent, fg_color="transparent")
-        scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        """Создает вкладку настроек генерации изображений с Discord-стилем"""
+        scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
+        scroll.pack(fill="both", expand=True, padx=16, pady=16)
         scroll.grid_columnconfigure(0, weight=1)
         
-        # Кнопка удаления SD (Stable Diffusion)
-        delete_sd_card = ctk.CTkFrame(scroll, fg_color=COLORS['surface_light'], corner_radius=12)
-        delete_sd_card.pack(fill="x", pady=(0, 15))
+        gen_config = {}
+        if os.path.exists(FILE_GEN_CONFIG):
+            try:
+                with open(FILE_GEN_CONFIG, 'r', encoding='utf-8') as f:
+                    gen_config = json.load(f)
+            except:
+                pass
+        
+        # Card 1: Параметры генерации
+        gen_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
+        gen_card.pack(fill="x", pady=(0, 16))
+        gen_card.grid_columnconfigure(1, weight=1)
+        
+        card_header = ctk.CTkFrame(gen_card, fg_color="transparent")
+        card_header.pack(fill="x", padx=20, pady=(20, 16))
         
         ctk.CTkLabel(
-            delete_sd_card,
-            text="Управление Stable Diffusion",
-            font=("Segoe UI", 16, "bold"),
+            card_header,
+            text="🎨 " + t("ui.launcher.settings.image_generation", default="Параметры генерации"),
+            font=("Segoe UI", 18, "bold"),
             text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 10))
+        ).pack(side="left")
         
-        info_label = ctk.CTkLabel(
-            delete_sd_card,
-            text="Удалить Stable Diffusion и все связанные файлы (модели, расширения, виртуальное окружение)",
-            font=("Segoe UI", 12),
+        card_content = ctk.CTkFrame(gen_card, fg_color="transparent")
+        card_content.pack(fill="x", padx=20, pady=(0, 20))
+        card_content.grid_columnconfigure(1, weight=1)
+        
+        # Steps with live value
+        ctk.CTkLabel(
+            card_content,
+            text=t("ui.launcher.settings.sd_steps", default="Количество шагов"),
+            font=("Segoe UI", 14),
             text_color=COLORS['text_secondary']
+        ).grid(row=0, column=0, sticky="w", padx=(0, 16), pady=12)
+        
+        steps_var = tk.IntVar(value=int(gen_config.get("sd_steps", 30)))
+        steps_frame = ctk.CTkFrame(card_content, fg_color="transparent")
+        steps_frame.grid(row=0, column=1, sticky="ew", pady=12)
+        steps_frame.grid_columnconfigure(0, weight=1)
+        
+        steps_slider = ctk.CTkSlider(
+            steps_frame,
+            from_=1,
+            to=100,
+            number_of_steps=99,
+            variable=steps_var,
+            progress_color=COLORS['primary'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
         )
-        info_label.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 15))
+        steps_slider.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        
+        steps_label = ctk.CTkLabel(
+            steps_frame,
+            textvariable=steps_var,
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['primary'],
+            width=60,
+            fg_color=COLORS['surface_light'],
+            corner_radius=8
+        )
+        steps_label.grid(row=0, column=1)
+        self.sd_steps_var = steps_var
+        steps_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # CFG Scale with live value
+        ctk.CTkLabel(
+            card_content,
+            text=t("ui.launcher.settings.sd_cfg", default="CFG Scale"),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        ).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=12)
+        
+        cfg_var = tk.DoubleVar(value=float(gen_config.get("sd_cfg", 6.0)))
+        cfg_frame = ctk.CTkFrame(card_content, fg_color="transparent")
+        cfg_frame.grid(row=1, column=1, sticky="ew", pady=12)
+        cfg_frame.grid_columnconfigure(0, weight=1)
+        
+        cfg_slider = ctk.CTkSlider(
+            cfg_frame,
+            from_=1.0,
+            to=20.0,
+            number_of_steps=190,
+            variable=cfg_var,
+            progress_color=COLORS['primary'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
+        )
+        cfg_slider.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        
+        cfg_label = ctk.CTkLabel(
+            cfg_frame,
+            textvariable=cfg_var,
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['primary'],
+            width=60,
+            fg_color=COLORS['surface_light'],
+            corner_radius=8
+        )
+        cfg_label.grid(row=0, column=1)
+        self.sd_cfg_var = cfg_var
+        cfg_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # Card 2: Размер изображения
+        size_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
+        size_card.pack(fill="x", pady=(0, 16))
+        size_card.grid_columnconfigure(1, weight=1)
+        
+        size_header = ctk.CTkFrame(size_card, fg_color="transparent")
+        size_header.pack(fill="x", padx=20, pady=(20, 16))
+        
+        ctk.CTkLabel(
+            size_header,
+            text="📐 " + t("ui.launcher.settings.image_size", default="Размер изображения"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        size_content = ctk.CTkFrame(size_card, fg_color="transparent")
+        size_content.pack(fill="x", padx=20, pady=(0, 20))
+        size_content.grid_columnconfigure((1, 3), weight=1)
+        
+        # Width
+        ctk.CTkLabel(
+            size_content,
+            text=t("ui.launcher.settings.sd_width", default="Ширина"),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        ).grid(row=0, column=0, sticky="w", padx=(0, 12), pady=12)
+        
+        width_var = tk.IntVar(value=int(gen_config.get("sd_width", 896)))
+        width_entry = ctk.CTkEntry(
+            size_content,
+            textvariable=width_var,
+            font=("Segoe UI", 13),
+            width=140,
+            fg_color=COLORS['bg'],
+            border_color=COLORS['border'],
+            corner_radius=8
+        )
+        width_entry.grid(row=0, column=1, sticky="w", padx=(0, 24), pady=12)
+        self.sd_width_var = width_var
+        width_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # Height
+        ctk.CTkLabel(
+            size_content,
+            text=t("ui.launcher.settings.sd_height", default="Высота"),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        ).grid(row=0, column=2, sticky="w", padx=(0, 12), pady=12)
+        
+        height_var = tk.IntVar(value=int(gen_config.get("sd_height", 1152)))
+        height_entry = ctk.CTkEntry(
+            size_content,
+            textvariable=height_var,
+            font=("Segoe UI", 13),
+            width=140,
+            fg_color=COLORS['bg'],
+            border_color=COLORS['border'],
+            corner_radius=8
+        )
+        height_entry.grid(row=0, column=3, sticky="w", pady=12)
+        self.sd_height_var = height_var
+        height_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # Card 3: Параметры сэмплинга
+        sampling_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
+        sampling_card.pack(fill="x", pady=(0, 16))
+        sampling_card.grid_columnconfigure(1, weight=1)
+        
+        sampling_header = ctk.CTkFrame(sampling_card, fg_color="transparent")
+        sampling_header.pack(fill="x", padx=20, pady=(20, 16))
+        
+        ctk.CTkLabel(
+            sampling_header,
+            text="⚙️ " + t("ui.launcher.settings.sampling", default="Параметры сэмплинга"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        sampling_content = ctk.CTkFrame(sampling_card, fg_color="transparent")
+        sampling_content.pack(fill="x", padx=20, pady=(0, 20))
+        sampling_content.grid_columnconfigure(1, weight=1)
+        
+        # Sampler
+        ctk.CTkLabel(
+            sampling_content,
+            text=t("ui.launcher.settings.sd_sampler", default="Семплер"),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        ).grid(row=0, column=0, sticky="w", padx=(0, 16), pady=12)
+        
+        sampler_options = ["DPM++ 2M", "DPM++ 2M Karras", "DPM++ SDE", "DPM++ SDE Karras", "Euler", "Euler a", "LMS", "LMS Karras", "DDIM", "PLMS"]
+        sampler_var = tk.StringVar(value=gen_config.get("sd_sampler", "DPM++ 2M"))
+        sampler_menu = ctk.CTkOptionMenu(
+            sampling_content,
+            values=sampler_options,
+            variable=sampler_var,
+            width=220,
+            font=("Segoe UI", 13),
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
+        )
+        sampler_menu.grid(row=0, column=1, sticky="w", pady=12)
+        self.sd_sampler_var = sampler_var
+        sampler_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # Scheduler
+        ctk.CTkLabel(
+            sampling_content,
+            text=t("ui.launcher.settings.sd_scheduler", default="Планировщик"),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        ).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=12)
+        
+        scheduler_options = ["Karras", "Exponential", "SGM Uniform", "Simple", "DDIM Uniform"]
+        scheduler_var = tk.StringVar(value=gen_config.get("sd_scheduler", "Karras"))
+        scheduler_menu = ctk.CTkOptionMenu(
+            sampling_content,
+            values=scheduler_options,
+            variable=scheduler_var,
+            width=220,
+            font=("Segoe UI", 13),
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
+        )
+        scheduler_menu.grid(row=1, column=1, sticky="w", pady=12)
+        self.sd_scheduler_var = scheduler_var
+        scheduler_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # Card 4: Промпты
+        prompts_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
+        prompts_card.pack(fill="x", pady=(0, 16))
+        prompts_card.grid_columnconfigure(1, weight=1)
+        
+        prompts_header = ctk.CTkFrame(prompts_card, fg_color="transparent")
+        prompts_header.pack(fill="x", padx=20, pady=(20, 16))
+        
+        ctk.CTkLabel(
+            prompts_header,
+            text="✍️ " + t("ui.launcher.settings.prompts", default="Промпты"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        prompts_content = ctk.CTkFrame(prompts_card, fg_color="transparent")
+        prompts_content.pack(fill="x", padx=20, pady=(0, 20))
+        prompts_content.grid_columnconfigure(1, weight=1)
+        
+        # Positive Prompt Prefix
+        ctk.CTkLabel(
+            prompts_content,
+            text=t("ui.launcher.settings.sd_positive_prefix", default="Префикс позитивного промпта"),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        ).grid(row=0, column=0, sticky="nw", padx=(0, 16), pady=12)
+        
+        positive_prefix_var = tk.StringVar(value=gen_config.get("sd_positive_prefix", "score_9, score_8_up, score_7_up, source_anime, "))
+        positive_prefix_entry = ctk.CTkTextbox(
+            prompts_content,
+            height=70,
+            font=("Segoe UI", 12),
+            wrap="word",
+            fg_color=COLORS['bg'],
+            border_color=COLORS['border'],
+            corner_radius=8
+        )
+        positive_prefix_entry.insert("1.0", positive_prefix_var.get())
+        positive_prefix_entry.grid(row=0, column=1, sticky="ew", pady=12)
+        self.sd_positive_prefix_entry = positive_prefix_entry
+        def save_positive_prefix(*args):
+            self.after(500, self._save_generation_config())
+        positive_prefix_entry.bind("<KeyRelease>", save_positive_prefix)
+        
+        # Negative Prompt
+        ctk.CTkLabel(
+            prompts_content,
+            text=t("ui.launcher.settings.sd_negative_prompt", default="Негативный промпт"),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        ).grid(row=1, column=0, sticky="nw", padx=(0, 16), pady=12)
+        
+        negative_prompt_default = gen_config.get("sd_negative_prompt", "score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs, text, username, artist name")
+        negative_prompt_entry = ctk.CTkTextbox(
+            prompts_content,
+            height=90,
+            font=("Segoe UI", 12),
+            wrap="word",
+            fg_color=COLORS['bg'],
+            border_color=COLORS['border'],
+            corner_radius=8
+        )
+        negative_prompt_entry.insert("1.0", negative_prompt_default)
+        negative_prompt_entry.grid(row=1, column=1, sticky="ew", pady=12)
+        self.sd_negative_prompt_entry = negative_prompt_entry
+        def save_negative_prompt(*args):
+            self.after(500, self._save_generation_config())
+        negative_prompt_entry.bind("<KeyRelease>", save_negative_prompt)
+        
+        # Card 5: Управление SD
+        delete_sd_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
+        delete_sd_card.pack(fill="x", pady=(0, 16))
+        
+        delete_sd_header = ctk.CTkFrame(delete_sd_card, fg_color="transparent")
+        delete_sd_header.pack(fill="x", padx=20, pady=(20, 16))
+        
+        ctk.CTkLabel(
+            delete_sd_header,
+            text="🗑️ " + t("ui.launcher.settings.sd_management", default="Управление Stable Diffusion"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        delete_sd_content = ctk.CTkFrame(delete_sd_card, fg_color="transparent")
+        delete_sd_content.pack(fill="x", padx=20, pady=(0, 20))
+        delete_sd_content.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(
+            delete_sd_content,
+            text=t("ui.launcher.settings.delete_sd_description", default="Удалить Stable Diffusion и все связанные файлы"),
+            font=("Segoe UI", 13),
+            text_color=COLORS['text_secondary']
+        ).grid(row=0, column=0, sticky="w", padx=(0, 16), pady=12)
         
         delete_btn = ctk.CTkButton(
-            delete_sd_card,
+            delete_sd_content,
             text="🗑️ Удалить SD",
-            width=150,
+            width=140,
             height=40,
             command=self._delete_sd,
             fg_color=COLORS['danger'],
             hover_color="#dc2626",
-            font=("Segoe UI", 13, "bold")
+            font=("Segoe UI", 13, "bold"),
+            corner_radius=8
         )
-        delete_btn.grid(row=1, column=1, sticky="e", padx=(0, 20), pady=(0, 15))
+        delete_btn.grid(row=0, column=1, sticky="e", pady=12)
         
         # Настройки модели SD
-        model_card = ctk.CTkFrame(scroll, fg_color=COLORS['surface_light'], corner_radius=12)
+        model_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
         model_card.pack(fill="x", pady=(0, 15))
         model_card.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(
             model_card,
-            text="Модель Stable Diffusion",
+            text=t("ui.launcher.settings.sd_model"),
             font=("Segoe UI", 16, "bold"),
             text_color=COLORS['text']
         ).grid(row=0, column=0, columnspan=3, sticky="w", padx=20, pady=(20, 15))
         
         ctk.CTkLabel(
             model_card,
-            text="Ссылка на модель:",
+            text=t("ui.launcher.settings.sd_model_url"),
             font=("Segoe UI", 13),
             text_color=COLORS['text_secondary']
         ).grid(row=1, column=0, sticky="w", padx=20, pady=(0, 10))
@@ -1046,7 +1805,7 @@ class ModernLauncher(ctk.CTk):
         # Кнопка скачивания модели
         download_btn = ctk.CTkButton(
             model_card,
-            text="📥 Скачать модель",
+            text=t("ui.launcher.button.download_model", default="📥 Скачать модель"),
             width=150,
             height=35,
             command=lambda: self._download_sd_model(model_url_entry.get()),
@@ -1074,7 +1833,7 @@ class ModernLauncher(ctk.CTk):
         self.sd_model_info_label = model_info_label
     
     def create_setting_card(self, parent, title, fields):
-        card = ctk.CTkFrame(parent, fg_color=COLORS['surface_light'], corner_radius=12)
+        card = ctk.CTkFrame(parent, fg_color=COLORS['card_bg'], corner_radius=12)
         card.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(
@@ -1108,11 +1867,11 @@ class ModernLauncher(ctk.CTk):
                 
                 ctk.CTkButton(
                     card,
-                    text="Обновить",
+                    text=t("ui.launcher.settings.update"),
                     width=80,
                     command=self.scan_llm_models,
                     fg_color=COLORS['surface_dark'],
-                    hover_color=COLORS['surface_light']
+                    hover_color=COLORS['card_bg']
                 ).grid(row=row, column=2, padx=(5, 20), pady=10)
             else:
                 entry = ctk.CTkEntry(
@@ -1131,87 +1890,120 @@ class ModernLauncher(ctk.CTk):
         return card
     
     def create_channels_page(self):
-        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['surface'])
-        frame.grid_columnconfigure(1, weight=1)
-        frame.grid_rowconfigure(1, weight=1)
+        """Создает страницу управления каналами в стиле Master-Detail"""
+        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_columnconfigure(1, weight=3)
+        frame.grid_rowconfigure(0, weight=1)
         
-        # Используем встроенную реализацию
-        self._create_channels_page_legacy(frame)
+        # Левая панель (25%): Темы
+        topics_panel = ctk.CTkFrame(frame, fg_color=COLORS['surface'], corner_radius=0)
+        topics_panel.grid(row=0, column=0, sticky="nsew", padx=(0, 1))
+        topics_panel.grid_columnconfigure(0, weight=1)
+        topics_panel.grid_rowconfigure(0, weight=1)
+        topics_panel.grid_rowconfigure(1, weight=0)
         
-        return frame
-    
-    def _create_channels_page_legacy(self, frame):
-        """Старая реализация страницы каналов (fallback)"""
-        # Header
-        header = ctk.CTkFrame(frame, fg_color="transparent", height=60)
-        header.grid(row=0, column=0, columnspan=2, sticky="ew", padx=30, pady=(30, 20))
-        header.grid_columnconfigure(0, weight=1)
+        # Заголовок левой панели
+        topics_header = ctk.CTkLabel(
+            topics_panel,
+            text=t("ui.launcher.channels.topics", default="Темы"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text'],
+            anchor="w"
+        )
+        topics_header.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
         
-        ctk.CTkLabel(
-            header,
-            text="Управление каналами",
-            font=("Segoe UI", 28, "bold"),
-            text_color=COLORS['text']
-        ).grid(row=0, column=0, sticky="w")
+        # Список тем (ScrollableFrame)
+        self.scroll_topics = ctk.CTkScrollableFrame(
+            topics_panel,
+            fg_color=COLORS['bg'],
+            corner_radius=0
+        )
+        self.scroll_topics.grid(row=0, column=0, sticky="nsew", padx=10, pady=(0, 10))
+        self.scroll_topics.grid_columnconfigure(0, weight=1)
         
-        # Add channel input
-        add_frame = ctk.CTkFrame(header, fg_color=COLORS['surface_light'], corner_radius=20)
-        add_frame.grid(row=0, column=1, sticky="e")
+        # Кнопка "+ Новая тема" (закреплена внизу)
+        new_topic_btn = ctk.CTkButton(
+            topics_panel,
+            text=t("ui.launcher.channels.new_topic", default="Новая тема"),
+            fg_color=COLORS['primary'],
+            hover_color=COLORS['primary_hover'],
+            font=("Segoe UI", 14, "bold"),
+            height=45,
+            corner_radius=8,
+            command=self.new_topic
+        )
+        new_topic_btn.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
+        
+        # Правая панель (75%): Каналы
+        channels_panel = ctk.CTkFrame(frame, fg_color=COLORS['bg'], corner_radius=0)
+        channels_panel.grid(row=0, column=1, sticky="nsew")
+        channels_panel.grid_columnconfigure(0, weight=1)
+        channels_panel.grid_rowconfigure(1, weight=1)
+        
+        # Верхняя шапка правой панели
+        channels_header = ctk.CTkFrame(channels_panel, fg_color="transparent")
+        channels_header.grid(row=0, column=0, sticky="ew", padx=24, pady=(24, 16))
+        channels_header.grid_columnconfigure(0, weight=1)
+        channels_header.grid_columnconfigure(1, weight=0)
+        
+        # Название текущей темы (слева)
+        self.topic_title_label = ctk.CTkLabel(
+            channels_header,
+            text=t("ui.launcher.channels.select_topic", default="Выберите тему"),
+            font=("Segoe UI", 24, "bold"),
+            text_color=COLORS['text'],
+            anchor="w"
+        )
+        self.topic_title_label.grid(row=0, column=0, sticky="w")
+        
+        # Группа ввода канала (справа)
+        input_group = ctk.CTkFrame(channels_header, fg_color=COLORS['surface'], corner_radius=8)
+        input_group.grid(row=0, column=1, sticky="e", padx=(20, 0))
         
         self.entry_chan = ctk.CTkEntry(
-            add_frame,
-            placeholder_text="@username или ссылка",
-            width=250,
+            input_group,
+            placeholder_text=t("ui.launcher.channels.entry_placeholder", default="Ссылка или @username"),
             font=("Segoe UI", 13),
+            width=280,
+            height=40,
             fg_color=COLORS['bg'],
             border_color=COLORS['border']
         )
-        self.entry_chan.pack(side="left", padx=15, pady=8)
+        self.entry_chan.pack(side="left", padx=(12, 8), pady=8)
+        self.entry_chan.bind("<Return>", lambda e: self.add_channel())
         
-        ctk.CTkButton(
-            add_frame,
+        add_btn = ctk.CTkButton(
+            input_group,
             text="+",
-            width=50,
-            fg_color=COLORS['success'],
-            hover_color="#059669",
-            command=self.add_channel,
-            font=("Segoe UI", 18, "bold")
-        ).pack(side="left", padx=(0, 8), pady=8)
-        
-        # Topics sidebar
-        topics_frame = ctk.CTkFrame(frame, width=280, fg_color=COLORS['surface_light'], corner_radius=12)
-        topics_frame.grid(row=1, column=0, sticky="nsew", padx=(30, 10), pady=(0, 30))
-        topics_frame.grid_propagate(False)
-        
-        ctk.CTkLabel(
-            topics_frame,
-            text="Темы",
-            font=("Segoe UI", 14, "bold"),
-            text_color=COLORS['text_muted']
-        ).pack(pady=(20, 10))
-        
-        self.scroll_topics = ctk.CTkScrollableFrame(topics_frame, fg_color="transparent")
-        self.scroll_topics.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        
-        ctk.CTkButton(
-            topics_frame,
-            text="+ Новая тема",
+            width=40,
+            height=40,
             fg_color=COLORS['primary'],
             hover_color=COLORS['primary_hover'],
-            command=self.new_topic,
-            font=("Segoe UI", 13),
-            height=40
-        ).pack(fill="x", padx=15, pady=(0, 15))
+            font=("Segoe UI", 20, "bold"),
+            corner_radius=8,
+            command=self.add_channel
+        )
+        add_btn.pack(side="left", padx=(0, 12), pady=8)
         
-        # Channels list
-        self.scroll_chans = ctk.CTkScrollableFrame(frame, fg_color="transparent")
-        self.scroll_chans.grid(row=1, column=1, sticky="nsew", padx=(0, 30), pady=(0, 30))
+        # Список каналов (ScrollableFrame)
+        self.scroll_chans = ctk.CTkScrollableFrame(
+            channels_panel,
+            fg_color=COLORS['bg'],
+            corner_radius=0
+        )
+        self.scroll_chans.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        self.scroll_chans.grid_columnconfigure(0, weight=1)
         
+        # Инициализация
+        if not hasattr(self, 'current_topic'):
+            self.current_topic = None
         self.refresh_channels()
+        
+        return frame
     
-    # ==========================================
     # SERVICE MANAGEMENT
-    # ==========================================
+    
     def safe_widget_configure(self, widget, **kwargs):
         """Безопасный вызов configure из фоновых потоков."""
         if widget is None:
@@ -1244,7 +2036,8 @@ class ModernLauncher(ctk.CTk):
                 self.safe_widget_configure(button, **kwargs)
 
     def _set_service_status_label(self, name, text=None, color=None):
-        label = getattr(self, 'status_labels', {}).get(name)
+        # Update both old status labels and new status cards
+        label = self.service_status_labels.get(name)
         if label:
             kwargs = {}
             if text is not None:
@@ -1253,1913 +2046,746 @@ class ModernLauncher(ctk.CTk):
                 kwargs["text_color"] = color
             if kwargs:
                 self.safe_widget_configure(label, **kwargs)
+        
+        # Update status card if exists
+        if hasattr(self, 'status_card_labels') and name in self.status_card_labels:
+            card_label = self.status_card_labels.get(name)
+            if card_label:
+                kwargs = {}
+                if text is not None:
+                    kwargs["text"] = text
+                if color is not None:
+                    kwargs["text_color"] = color
+                if kwargs:
+                    self.safe_widget_configure(card_label, **kwargs)
+        
+        # Also update summary card if it exists
+        if hasattr(self, 'summary_cards') and name in self.summary_cards:
+            card = self.summary_cards[name]
+            if text is not None:
+                self.safe_widget_configure(card['status'], text=text)
+                if "running" in text.lower() or "запущен" in text.lower():
+                    self.safe_widget_configure(card['dot'], text_color=COLORS['success'])
+                elif "error" in text.lower() or "ошибка" in text.lower():
+                    self.safe_widget_configure(card['dot'], text_color=COLORS['danger'])
+                else:
+                    self.safe_widget_configure(card['dot'], text_color=COLORS['text_muted'])
+            
+            if color is not None:
+                self.safe_widget_configure(card['status'], text_color=color)
+    
+    def _get_service_name(self, name):
+        """Получает локализованное название сервиса"""
+        service_names = {
+            "bot": t("ui.launcher.service.telegram_bot", default="Telegram Бот"),
+            "llm": t("ui.launcher.service.llm_server", default="LLM Сервер"),
+            "sd": t("ui.launcher.service.stable_diffusion", default="Stable Diffusion")
+        }
+        return service_names.get(name, name)
 
     def toggle_service(self, name):
         threading.Thread(target=self._manage_service, args=(name,), daemon=True).start()
 
     def _manage_service(self, name):
-        if self.procs[name]:
-            service_names = {"bot": "Telegram Бот", "llm": "LLM Сервер", "sd": "Stable Diffusion"}
-            service_name = service_names.get(name, name)
-            self.log(f"⏹️ Остановка сервиса: {service_name}...", name.upper())
-            self.stop_events[name].set()
-            self.kill_tree(self.procs[name].pid)
-            self.procs[name] = None
-            self._set_service_indicator(name, COLORS['text_muted'])
-            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-            self._set_service_status_label(name, text="Остановлен", color=COLORS['text_muted'])
-            self.log(f"✅ Сервис {service_name} остановлен", name.upper())
-            return
-
-        self.stop_events[name].clear()
-        self._set_service_indicator(name, COLORS['warning'])
-        self._set_service_button(name, text="⏸", fg_color=COLORS['danger'])
-        self._set_service_status_label(name, text="Запуск...", color=COLORS['warning'])
-        # Не логируем запуск - бот сам выведет сообщение
-
-        env = os.environ.copy()
-        if os.path.exists(os.path.dirname(GIT_CMD)):
-            env["PATH"] = os.path.dirname(GIT_CMD) + os.pathsep + env["PATH"]
-
-        cmd = []
-        cwd = BASE_DIR
-
-        if name == "bot":
-            script = os.path.join(BASE_DIR, "main.py")
-            if not os.path.exists(script):
-                self.log("❌ Ошибка: файл main.py не найден!", "BOT")
-                return
-            
-            # Валидация токена перед запуском
-            from dotenv import get_key
-            bot_token = get_key(FILE_ENV, "BOT_TOKEN")
-            if not bot_token or not bot_token.strip():
-                self.log("❌ Ошибка: токен бота не настроен!", "BOT")
-                self.log("💡 Решение: Укажите токен в настройках (вкладка 'Основные')", "BOT")
-                self._set_service_indicator(name, COLORS['danger'])
-                self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                return
-            
-            # Убиваем все старые процессы бота перед запуском нового
-            self._kill_bot_processes()
-            
-            env["BOT_CONFIG_DIR"] = DIR_CONFIGS
-            env["PYTHONPATH"] = BASE_DIR
-            cmd = [PYTHON_EXE, "-u", script]
-
-        elif name == "llm":
-            # Проверяем наличие Ollama
-            if not os.path.exists(OLLAMA_EXE):
-                # Проверяем, установлен ли Ollama глобально
-                possible_paths = [
-                    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama.exe"),
-                    os.path.join(os.environ.get("ProgramFiles", ""), "Ollama", "ollama.exe"),
-                    os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Ollama", "ollama.exe"),
-                ]
-                
-                ollama_found = False
-                for path in possible_paths:
-                    if os.path.exists(path):
-                        try:
-                            import shutil
-                            os.makedirs(OLLAMA_DIR, exist_ok=True)
-                            shutil.copy2(path, OLLAMA_EXE)
-                            self.log(f"✅ [LLM] Ollama найден и скопирован", "LLM")
-                            ollama_found = True
-                            break
-                        except Exception as e:
-                            self.log(f"⚠️ [LLM] Не удалось скопировать Ollama: {e}", "LLM")
-                
-                if not ollama_found:
-                    # Предлагаем установить Ollama
-                    self.log("📦 [LLM] Ollama не найден", "LLM")
-                    result = messagebox.askyesno(
-                        "Установка Ollama",
-                        "Ollama не установлен.\n\n"
-                        "Хотите установить Ollama автоматически?\n\n"
-                        "Это займет несколько минут.",
-                        icon="question"
-                    )
-                    
-                    if result:
-                        self.log(f"📦 [LLM] Начинаю установку Ollama...", "LLM")
-                        if not self._download_ollama():
-                            self.log(f"❌ [LLM] Не удалось установить Ollama", "LLM")
-                            messagebox.showerror(
-                                "Ошибка установки",
-                                "Не удалось установить Ollama автоматически.\n\n"
-                                "Установите вручную с https://ollama.com/download"
-                            )
-                            self._set_service_indicator(name, COLORS['danger'])
-                            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                            return
-                    else:
-                        self.log("❌ [LLM] Установка Ollama отменена пользователем", "LLM")
-                        self._set_service_indicator(name, COLORS['danger'])
-                        self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                        return
-            
-            # Получаем выбранную модель через диалог
-            selected_model = self._select_llm_model()
-            if not selected_model:
-                self.log("❌ [LLM] Модель не выбрана", "LLM")
-                self._set_service_indicator(name, COLORS['danger'])
-                self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                return
-            
-            model_name = selected_model['name']
-            model_type = selected_model['type']  # 'ollama' или 'gguf'
-            model_path = selected_model.get('path', None)
-            
-            # Если это GGUF файл, импортируем в Ollama
-            if model_type == 'gguf' and model_path:
-                # Сначала проверяем наличие модели
-                self.log(f"📦 [LLM] Проверяю наличие модели {model_name} в Ollama...", "LLM")
-                
-                # Запускаем Ollama сервер в фоне для импорта
-                if not self._check_ollama_model(model_name):
-                    self.log(f"📦 [LLM] Модель не найдена, запускаю Ollama для импорта...", "LLM")
-                    
-                    # СНАЧАЛА закрываем все старые процессы Ollama
-                    self.log(f"🔄 [LLM] Закрытие старых процессов Ollama перед импортом...", "LLM")
-                    killed = self._kill_all_ollama_processes()
-                    if killed > 0:
-                        self.log(f"✅ [LLM] Закрыто старых процессов Ollama: {killed}", "LLM")
-                        time.sleep(2)  # Даем время на завершение процессов
-                    
-                    # Запускаем Ollama сервер временно для импорта
-                    # Используем стандартный порт 11434 для Ollama
-                    temp_env = os.environ.copy()
-                    temp_env["OLLAMA_HOST"] = "127.0.0.1:11434"
-                    temp_env["OLLAMA_ORIGINS"] = "*"
-                    temp_env["OLLAMA_MODELS"] = OLLAMA_MODELS_DIR
-                    temp_env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
-                    
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = subprocess.SW_HIDE
-                    
-                    self.log(f"🚀 [LLM] Запуск временного Ollama сервера...", "LLM")
-                    temp_ollama = subprocess.Popen(
-                        [OLLAMA_EXE, "serve"],
-                        cwd=OLLAMA_DIR,
-                        env=temp_env,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        startupinfo=startupinfo
-                    )
-                    
-                    # Ждем запуска сервера (проверяем стандартный порт 11434)
-                    self.log(f"⏳ [LLM] Ожидание запуска Ollama сервера...", "LLM")
-                    server_ready = False
-                    for i in range(30):  # Ждем до 30 секунд
-                        time.sleep(1)
-                        try:
-                            import urllib.request
-                            req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
-                            with urllib.request.urlopen(req, timeout=2) as response:
-                                if response.status == 200:
-                                    self.log(f"✅ [LLM] Ollama сервер запущен", "LLM")
-                                    server_ready = True
-                                    break
-                        except Exception as e:
-                            if i == 29:
-                                self.log(f"⚠️ [LLM] Ollama сервер не отвечает после 30 секунд: {e}", "LLM")
-                    
-                    if not server_ready:
-                        # Закрываем процесс если сервер не запустился
-                        try:
-                            temp_ollama.terminate()
-                            time.sleep(1)
-                            if temp_ollama.poll() is None:
-                                temp_ollama.kill()
-                        except:
-                            pass
-                        self.log(f"❌ [LLM] Не удалось запустить Ollama сервер", "LLM")
-                        messagebox.showerror(
-                            "Ошибка запуска Ollama",
-                            f"Не удалось запустить Ollama сервер для импорта модели.\n\n"
-                            "Попробуйте:\n"
-                            "• Перезапустить лаунчер\n"
-                            "• Проверить, не запущен ли Ollama вручную\n"
-                            "• Переустановить Ollama"
-                        )
-                        self._set_service_indicator(name, COLORS['danger'])
-                        self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                        return
-                    
-                    # Импортируем модель (НЕ закрываем процессы внутри функции!)
-                    self.log(f"📦 [LLM] Импортирую модель {model_name} в Ollama...", "LLM")
-                    import_success = self._import_gguf_to_ollama(model_path, model_name, temp_env)
-                    
-                    # Закрываем временный процесс Ollama после импорта
-                    self.log(f"🔄 [LLM] Закрытие временного Ollama сервера...", "LLM")
-                    try:
-                        temp_ollama.terminate()
-                        time.sleep(2)
-                        if temp_ollama.poll() is None:
-                            temp_ollama.kill()
-                            time.sleep(1)
-                        # Убеждаемся, что все процессы закрыты
-                        self._kill_all_ollama_processes()
-                    except Exception as e:
-                        self.log(f"⚠️ [LLM] Ошибка при закрытии временного сервера: {e}", "LLM")
-                        self._kill_all_ollama_processes()
-                    
-                    if not import_success:
-                        self.log(f"⚠️ [LLM] Не удалось импортировать модель", "LLM")
-                        messagebox.showerror(
-                            "Ошибка импорта",
-                            f"Не удалось импортировать модель {model_name} в Ollama.\n\n"
-                            f"Проверьте файл: {model_path}\n\n"
-                            "Возможные причины:\n"
-                            "• Файл поврежден\n"
-                            "• Недостаточно места на диске\n"
-                            "• Неверный формат GGUF файла"
-                        )
-                        self._set_service_indicator(name, COLORS['danger'])
-                        self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                        return
-            
-            # Сохраняем выбранную модель в настройках
-            if hasattr(self, 'selected_llm_model'):
-                if model_type == 'ollama':
-                    self.selected_llm_model.set(model_name)
-                else:
-                    self.selected_llm_model.set(os.path.basename(model_path) if model_path else model_name)
-            
-            # Убиваем все старые процессы Ollama перед запуском
-            self.log(f"🔄 [LLM] Проверка и закрытие старых процессов Ollama...", "LLM")
-            killed = self._kill_all_ollama_processes()
-            if killed > 0:
-                self.log(f"✅ [LLM] Закрыто старых процессов Ollama: {killed}", "LLM")
-                time.sleep(2)  # Даем время на завершение процессов
-            
-            # Настраиваем переменные окружения для Ollama
-            # Используем стандартный порт 11434 для Ollama
-            env["OLLAMA_HOST"] = "127.0.0.1:11434"
-            env["OLLAMA_ORIGINS"] = "*"
-            env["OLLAMA_MODELS"] = OLLAMA_MODELS_DIR
-            env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
-            
-            # Запускаем Ollama сервер скрыто
-            cmd = [OLLAMA_EXE, "serve"]
-            cwd = OLLAMA_DIR
-            
-            self.log(f"🚀 [LLM] Запуск Ollama сервера на порту 11434...", "LLM")
-            self.log(f"📋 [LLM] Модель: {model_name}", "LLM")
-
-        elif name == "sd":
-            # Проверяем и устанавливаем/обновляем SD при первом запуске
-            launch_script = os.path.join(SD_DIR, "launch.py")
-            if not os.path.exists(SD_DIR) or not os.path.exists(launch_script):
-                self.log(f"📦 [SD] Stable Diffusion не установлен, начинаю установку...", "SD")
-                if not self._install_sd():
-                    self.log(f"❌ [SD] Не удалось установить Stable Diffusion автоматически", "SD")
-                    self.log(f"💡 [SD] Проверьте подключение к интернету и попробуйте снова", "SD")
-                    self._set_service_indicator(name, COLORS['danger'])
-                    self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                    return
-            else:
-                # Проверяем обновления (быстрая проверка)
-                try:
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = subprocess.SW_HIDE
-                    
-                    # Быстрая проверка обновлений (только fetch, без pull)
-                    result = subprocess.run(
-                        [GIT_CMD, "fetch", "origin"],
-                        cwd=SD_DIR,
-                        capture_output=True,
-                        text=True,
-                        timeout=10,  # Уменьшен таймаут
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        startupinfo=startupinfo
-                    )
-                    
-                    # Проверяем, есть ли изменения (быстрая проверка)
-                    result = subprocess.run(
-                        [GIT_CMD, "rev-parse", "@{u}"],
-                        cwd=SD_DIR,
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        startupinfo=startupinfo
-                    )
-                    
-                    if result.returncode == 0:
-                        remote_hash = result.stdout.strip()
-                        local_result = subprocess.run(
-                            [GIT_CMD, "rev-parse", "HEAD"],
-                            cwd=SD_DIR,
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                            startupinfo=startupinfo
-                        )
-                        if local_result.returncode == 0:
-                            local_hash = local_result.stdout.strip()
-                            if remote_hash != local_hash:
-                                self.log(f"🔄 [SD] Обнаружены обновления, обновляю...", "SD")
-                                self._update_sd()
-                            else:
-                                self.log(f"✅ [SD] Установлена последняя версия", "SD")
-                        else:
-                            self.log(f"✅ [SD] Установлена последняя версия", "SD")
-                    else:
-                        self.log(f"✅ [SD] Установлена последняя версия", "SD")
-                except:
-                    self.log(f"✅ [SD] Установлена последняя версия", "SD")
-            
-            venv = os.path.join(SD_DIR, "venv")
-            py = None
-            
-            # Проверяем наличие venv и создаем если нужно
-            if not os.path.exists(venv):
-                self.log(f"📦 [SD] Виртуальное окружение не найдено, создаю...", "SD")
-                if not self._create_sd_venv():
-                    self.log(f"❌ [SD] Не удалось создать виртуальное окружение", "SD")
-                    self._set_service_indicator(name, COLORS['danger'])
-                    self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                    return
-            else:
-                # Проверяем, правильно ли установлен PyTorch
-                venv_py = os.path.join(venv, "Scripts", "python.exe")
-                if os.path.exists(venv_py):
-                    try:
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        startupinfo.wShowWindow = subprocess.SW_HIDE
-                        
-                        # Проверяем кэш совместимости для ускорения
-                        cache_valid = False
-                        try:
-                            if os.path.exists(FILE_SD_CACHE):
-                                import json
-                                import time
-                                with open(FILE_SD_CACHE, 'r', encoding='utf-8') as f:
-                                    cache = json.load(f)
-                                # Проверяем, что кэш актуален (не старше 1 часа)
-                                if time.time() - cache.get('timestamp', 0) < 3600:
-                                    if cache.get('torch_ok') and cache.get('xformers_ok'):
-                                        cache_valid = True
-                                        self.log(f"✅ [SD] Используется кэш проверки совместимости", "SD")
-                        except:
-                            pass
-                        
-                        if not cache_valid:
-                            self.log(f"🔍 [SD] Проверка совместимости PyTorch...", "SD")
-                            
-                            # Проверяем поддержку CUDA на устройстве (быстрая проверка)
-                            cuda_supported = False
-                            cuda_version = None
-                            try:
-                                nvidia_check = subprocess.run(
-                                    ["nvidia-smi"],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=3,  # Уменьшен таймаут
-                                    creationflags=subprocess.CREATE_NO_WINDOW
-                                )
-                                if nvidia_check.returncode == 0:
-                                    cuda_supported = True
-                                    # Пробуем извлечь версию CUDA
-                                    import re
-                                    version_match = re.search(r'CUDA Version: (\d+\.\d+)', nvidia_check.stdout)
-                                    if version_match:
-                                        cuda_version = version_match.group(1)
-                                        self.log(f"✅ [SD] Обнаружена CUDA версии {cuda_version}", "SD")
-                                    else:
-                                        self.log(f"✅ [SD] CUDA обнаружена", "SD")
-                            except:
-                                self.log(f"⚠️ [SD] CUDA не обнаружена, будет использоваться CPU", "SD")
-                            
-                            # Быстрая проверка PyTorch (только импорт)
-                            check_torch = subprocess.run(
-                                [venv_py, "-c", "import torch; print('TORCH_OK'); print('CUDA_AVAILABLE:', torch.cuda.is_available())"],
-                                capture_output=True,
-                                text=True,
-                                timeout=5,  # Уменьшен таймаут
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            
-                            torch_has_cuda = False
-                            torch_needs_reinstall = False
-                            
-                            if check_torch.returncode == 0:
-                                output = check_torch.stdout.strip()
-                                if "TORCH_OK" in output:
-                                    if "CUDA_AVAILABLE: True" in output:
-                                        torch_has_cuda = True
-                                        # Если PyTorch с CUDA, но устройство не поддерживает - переустанавливаем
-                                        if not cuda_supported:
-                                            torch_needs_reinstall = True
-                                            self.log(f"⚠️ [SD] PyTorch установлен с CUDA, но устройство не поддерживает CUDA", "SD")
-                                        else:
-                                            self.log(f"✅ [SD] PyTorch с CUDA установлен и совместим", "SD")
-                                    else:
-                                        # PyTorch (CPU) установлен
-                                        if cuda_supported:
-                                            # Если CUDA доступна, но PyTorch CPU - нужно переустановить с CUDA
-                                            torch_needs_reinstall = True
-                                            self.log(f"⚠️ [SD] CUDA обнаружена, но PyTorch установлен как CPU версия", "SD")
-                                            self.log(f"🔄 [SD] Переустанавливаю PyTorch с поддержкой CUDA...", "SD")
-                                        else:
-                                            self.log(f"✅ [SD] PyTorch (CPU) установлен", "SD")
-                                else:
-                                    # Ошибка импорта - возможно, нужно переустановить
-                                    torch_needs_reinstall = True
-                                    self.log(f"⚠️ [SD] Ошибка при проверке PyTorch: {check_torch.stderr}", "SD")
-                            else:
-                                # Ошибка выполнения - возможно, PyTorch не установлен или поврежден
-                                error_output = check_torch.stderr.strip()
-                                if "RuntimeError" in error_output or "CUDA" in error_output.upper():
-                                    torch_needs_reinstall = True
-                                    self.log(f"⚠️ [SD] Обнаружена ошибка совместимости PyTorch/CUDA", "SD")
-                                else:
-                                    self.log(f"⚠️ [SD] PyTorch не установлен или поврежден", "SD")
-                                    torch_needs_reinstall = True
-                        else:
-                            # Используем кэш - пропускаем проверки
-                            torch_needs_reinstall = False
-                            torch_has_cuda = True
-                            cuda_supported = True
-                        
-                        # Переустанавливаем PyTorch, если нужно
-                        if torch_needs_reinstall:
-                            self.log(f"🔄 [SD] Переустанавливаю PyTorch...", "SD")
-                            
-                            # Удаляем старую версию
-                            self.log(f"🗑️ [SD] Удаление старой версии PyTorch...", "SD")
-                            uninstall_result = subprocess.run(
-                                [venv_py, "-m", "pip", "uninstall", "torch", "torchvision", "torchaudio", "xformers", "-y"],
-                                capture_output=True,
-                                text=True,
-                                timeout=300,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            
-                            # Устанавливаем правильную версию
-                            if cuda_supported:
-                                # Проверяем наличие Visual C++ Redistributables
-                                self.log(f"🔍 [SD] Проверка Visual C++ Redistributables...", "SD")
-                                vc_redist_installed = False
-                                try:
-                                    # Проверяем наличие vcruntime140.dll в системных папках
-                                    import sys
-                                    system32 = os.path.join(os.environ.get('SystemRoot', 'C:\\Windows'), 'System32')
-                                    vcruntime_path = os.path.join(system32, 'vcruntime140.dll')
-                                    if os.path.exists(vcruntime_path):
-                                        vc_redist_installed = True
-                                        self.log(f"✅ [SD] Visual C++ Redistributables обнаружены", "SD")
-                                    else:
-                                        self.log(f"⚠️ [SD] Visual C++ Redistributables не найдены", "SD")
-                                        self.log(f"💡 [SD] Рекомендуется установить Visual C++ Redistributables", "SD")
-                                        self.log(f"💡 [SD] Скачайте с: https://aka.ms/vs/17/release/vc_redist.x64.exe", "SD")
-                                except:
-                                    pass
-                                
-                                # Пробуем установить PyTorch с CUDA
-                                # Определяем правильную версию CUDA для установки
-                                torch_installed = False
-                                
-                                # Определяем список версий CUDA для попытки установки
-                                # Основные версии: cu130 (CUDA 13.0+), cu121 (CUDA 12.x), cu118 (fallback)
-                                if cuda_version:
-                                    try:
-                                        major = int(cuda_version.split('.')[0])
-                                        if major >= 13:
-                                            cuda_versions_to_try = ["cu130", "cu121", "cu118"]
-                                        else:
-                                            cuda_versions_to_try = ["cu121", "cu118"]
-                                    except:
-                                        cuda_versions_to_try = ["cu130", "cu121", "cu118"]
-                                else:
-                                    cuda_versions_to_try = ["cu130", "cu121", "cu118"]
-                                
-                                # Пробуем установить PyTorch с каждой версией CUDA
-                                # Используем стабильную версию 2.9.1 (как указано на pytorch.org)
-                                installed_cuda_ver = None
-                                for cuda_ver in cuda_versions_to_try:
-                                    self.log(f"📦 [SD] Попытка установки PyTorch 2.9.1 с CUDA {cuda_ver}...", "SD")
-                                    install_result = subprocess.run(
-                                        [venv_py, "-m", "pip", "install", "torch==2.9.1", "torchvision", "torchaudio", 
-                                         "--index-url", f"https://download.pytorch.org/whl/{cuda_ver}", "--no-cache-dir"],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=1800,
-                                        creationflags=subprocess.CREATE_NO_WINDOW,
-                                        startupinfo=startupinfo
-                                    )
-                                    
-                                    if install_result.returncode == 0:
-                                        # Проверяем, что PyTorch действительно работает
-                                        test_result = subprocess.run(
-                                            [venv_py, "-c", "import torch; print('OK')"],
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=10,
-                                            creationflags=subprocess.CREATE_NO_WINDOW,
-                                            startupinfo=startupinfo
-                                        )
-                                        
-                                        if test_result.returncode == 0 and "OK" in test_result.stdout:
-                                            self.log(f"✅ [SD] PyTorch с CUDA {cuda_ver} установлен и работает", "SD")
-                                            torch_installed = True
-                                            installed_cuda_ver = cuda_ver
-                                            break
-                                        else:
-                                            self.log(f"⚠️ [SD] PyTorch установлен, но не работает: {test_result.stderr}", "SD")
-                                    else:
-                                        self.log(f"⚠️ [SD] Не удалось установить PyTorch с CUDA {cuda_ver}", "SD")
-                                
-                                # Если всё ещё не работает, пробуем установить без индекса (из PyPI)
-                                if not torch_installed:
-                                    self.log(f"📦 [SD] Попытка установки PyTorch из PyPI (автоматический выбор)...", "SD")
-                                    install_result = subprocess.run(
-                                        [venv_py, "-m", "pip", "install", "torch", "torchvision", "torchaudio", "--no-cache-dir"],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=1800,
-                                        creationflags=subprocess.CREATE_NO_WINDOW,
-                                        startupinfo=startupinfo
-                                    )
-                                    
-                                    if install_result.returncode == 0:
-                                        test_result = subprocess.run(
-                                            [venv_py, "-c", "import torch; print('OK')"],
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=10,
-                                            creationflags=subprocess.CREATE_NO_WINDOW,
-                                            startupinfo=startupinfo
-                                        )
-                                        
-                                        if test_result.returncode == 0 and "OK" in test_result.stdout:
-                                            self.log(f"✅ [SD] PyTorch установлен из PyPI", "SD")
-                                            torch_installed = True
-                                
-                                if torch_installed:
-                                    # Устанавливаем xformers только если PyTorch с CUDA работает
-                                    try:
-                                        check_cuda = subprocess.run(
-                                            [venv_py, "-c", "import torch; print('CUDA_OK' if torch.cuda.is_available() else 'CPU')"],
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=10,
-                                            creationflags=subprocess.CREATE_NO_WINDOW,
-                                            startupinfo=startupinfo
-                                        )
-                                        
-                                        if check_cuda.returncode == 0 and "CUDA_OK" in check_cuda.stdout:
-                                            self.log(f"📦 [SD] Установка xformers...", "SD")
-                                            # Используем ту же версию CUDA, что и для PyTorch
-                                            xformers_cuda_ver = installed_cuda_ver if installed_cuda_ver else "cu130"
-                                            xformers_result = subprocess.run(
-                                                [venv_py, "-m", "pip", "install", "xformers", 
-                                                 "--index-url", f"https://download.pytorch.org/whl/{xformers_cuda_ver}", "--no-cache-dir"],
-                                                capture_output=True,
-                                                text=True,
-                                                timeout=600,
-                                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                                startupinfo=startupinfo
-                                            )
-                                            if xformers_result.returncode != 0:
-                                                # Пробуем без индекса
-                                                xformers_result = subprocess.run(
-                                                    [venv_py, "-m", "pip", "install", "xformers", "--no-cache-dir"],
-                                                    capture_output=True,
-                                                    text=True,
-                                                    timeout=600,
-                                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                                    startupinfo=startupinfo
-                                                )
-                                            
-                                            # Проверяем работоспособность xformers
-                                            try:
-                                                check_xformers = subprocess.run(
-                                                    [venv_py, "-c", "import xformers; print('XFORMERS_OK')"],
-                                                    capture_output=True,
-                                                    text=True,
-                                                    timeout=10,
-                                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                                    startupinfo=startupinfo
-                                                )
-                                                if check_xformers.returncode == 0 and "XFORMERS_OK" in check_xformers.stdout:
-                                                    self.log(f"✅ [SD] xformers работает корректно", "SD")
-                                                else:
-                                                    self.log(f"⚠️ [SD] xformers несовместим с текущим PyTorch, удаляю...", "SD")
-                                                    subprocess.run(
-                                                        [venv_py, "-m", "pip", "uninstall", "xformers", "-y"],
-                                                        capture_output=True,
-                                                        text=True,
-                                                        timeout=60,
-                                                        creationflags=subprocess.CREATE_NO_WINDOW,
-                                                        startupinfo=startupinfo
-                                                    )
-                                            except:
-                                                pass
-                                    except:
-                                        pass
-                                
-                                if not torch_installed:
-                                    self.log(f"⚠️ [SD] Не удалось установить PyTorch с CUDA, устанавливаю CPU версию...", "SD")
-                                    install_result = subprocess.run(
-                                        [venv_py, "-m", "pip", "install", "torch", "torchvision", "torchaudio", "--no-cache-dir"],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=1800,
-                                        creationflags=subprocess.CREATE_NO_WINDOW,
-                                        startupinfo=startupinfo
-                                    )
-                                if install_result.returncode == 0:
-                                    self.log(f"✅ [SD] PyTorch (CPU) установлен", "SD")
-                                else:
-                                    self.log(f"❌ [SD] Ошибка установки PyTorch: {install_result.stderr}", "SD")
-                    except Exception as e:
-                        self.log(f"⚠️ [SD] Ошибка при проверке PyTorch: {e}", "SD")
-            
-            # Проверяем наличие модели при первом запуске
-            has_model = False
-            if os.path.exists(MODELS_SD_DIR):
-                try:
-                    has_model = any(f.endswith(('.safetensors', '.ckpt')) for f in os.listdir(MODELS_SD_DIR) if os.path.isfile(os.path.join(MODELS_SD_DIR, f)))
-                except:
-                    has_model = False
-            
-            if not has_model:
-                self.log(f"📦 [SD] Модель не найдена, начинаю автоматическое скачивание...", "SD")
-                # Получаем URL модели из настроек
-                try:
-                    from dotenv import get_key
-                    model_url = get_key(FILE_ENV, "SD_MODEL_URL")
-                    if not model_url:
-                        model_url = MODEL_SD_URL
-                except:
-                    model_url = MODEL_SD_URL
-                
-                if not self._download_sd_model(model_url, show_dialog=False):
-                    self.log(f"❌ [SD] Не удалось скачать модель автоматически", "SD")
-                    self.log(f"💡 [SD] Скачайте модель вручную в настройках или поместите файл в: {MODELS_SD_DIR}", "SD")
-                    self._set_service_indicator(name, COLORS['danger'])
-                    self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                    return
-            
-            # Финальная проверка PyTorch перед запуском
-            venv_py = os.path.join(venv, "Scripts", "python.exe")
-            if os.path.exists(venv_py):
-                try:
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                    startupinfo.wShowWindow = subprocess.SW_HIDE
-                    
-                    self.log(f"🔍 [SD] Финальная проверка PyTorch перед запуском...", "SD")
-                    
-                    # Проверяем, что PyTorch работает и совместим
-                    # Пробуем импортировать torch и проверить совместимость
-                    check_script = """
-import torch
-import sys
-try:
-    # Пробуем проверить CUDA
-    if torch.cuda.is_available():
-        # Пробуем создать тензор на CUDA для проверки совместимости
+        """Управляет запуском/остановкой сервиса"""
         try:
-            x = torch.tensor([1.0]).cuda()
-            print("CUDA_OK")
-        except Exception as e:
-            print(f"CUDA_ERROR: {e}")
-            sys.exit(1)
-    else:
-        print("CPU_OK")
-    
-    # Проверяем версию PyTorch
-    print(f"TORCH_VERSION:{torch.__version__}")
-    sys.exit(0)
-except Exception as e:
-    print(f"TORCH_ERROR: {e}")
-    sys.exit(1)
-"""
-                    
-                    final_check = subprocess.run(
-                        [venv_py, "-c", check_script],
-                        capture_output=True,
-                        text=True,
-                        timeout=15,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        startupinfo=startupinfo
-                    )
-                    
-                    # Проверяем, есть ли CUDA на устройстве
-                    cuda_on_device = False
-                    try:
-                        nvidia_check = subprocess.run(
-                            ["nvidia-smi"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
-                            creationflags=subprocess.CREATE_NO_WINDOW
-                        )
-                        if nvidia_check.returncode == 0:
-                            cuda_on_device = True
-                    except:
-                        pass
-                    
-                    output = final_check.stdout.strip() if final_check.returncode == 0 else ""
-                    error_output = final_check.stderr.strip() if final_check.stderr else ""
-                    full_output = output + " " + error_output
-                    
-                    # Если PyTorch не может загрузиться (ошибка DLL или xformers), пробуем исправить
-                    if final_check.returncode != 0 or "OSError" in full_output or "WinError" in full_output or "fbgemm" in full_output.lower() or "dll" in full_output.lower() or "xformers" in full_output.lower():
-                        self.log(f"⚠️ [SD] Обнаружена ошибка загрузки библиотек", "SD")
-                        self.log(f"📋 [SD] Детали ошибки: {full_output[:200]}", "SD")
-                        
-                        # Если ошибка связана с xformers, удаляем его и пробуем без него
-                        if "xformers" in full_output.lower() and "torch" not in full_output.lower():
-                            self.log(f"🔄 [SD] Проблема с xformers. Удаляю его...", "SD")
-                            subprocess.run(
-                                [venv_py, "-m", "pip", "uninstall", "xformers", "-y"],
-                                capture_output=True,
-                                text=True,
-                                timeout=60,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            self.log(f"✅ [SD] xformers удален. Пробую запустить SD...", "SD")
-                            # Повторная проверка не нужна, сразу идем дальше к запуску
-                        
-                        # Если ошибка PyTorch, переустанавливаем
-                        elif cuda_on_device:
-                            self.log(f"🔄 [SD] Переустанавливаю PyTorch с CUDA и зависимостями...", "SD")
-                            
-                            # Удаляем проблемную версию
-                            uninstall_result = subprocess.run(
-                                [venv_py, "-m", "pip", "uninstall", "torch", "torchvision", "torchaudio", "xformers", "-y"],
-                                capture_output=True,
-                                text=True,
-                                timeout=300,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            
-                            # Пробуем установить PyTorch из PyPI (автоматический выбор зависимостей)
-                            self.log(f"📦 [SD] Установка PyTorch из PyPI (автоматический выбор зависимостей)...", "SD")
-                            install_result = subprocess.run(
-                                [venv_py, "-m", "pip", "install", "torch", "torchvision", "torchaudio", "--no-cache-dir"],
-                                capture_output=True,
-                                text=True,
-                                timeout=1800,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            
-                            if install_result.returncode == 0:
-                                # Проверяем, работает ли теперь
-                                test_check = subprocess.run(
-                                    [venv_py, "-c", "import torch; print('OK')"],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10,
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                    startupinfo=startupinfo
-                                )
-                                
-                                if test_check.returncode == 0 and "OK" in test_check.stdout:
-                                    self.log(f"✅ [SD] PyTorch переустановлен и работает", "SD")
-                                else:
-                                    self.log(f"❌ [SD] PyTorch всё ещё не работает после переустановки", "SD")
-                                    self.log(f"💡 [SD] Установите Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe", "SD")
-                                    self._set_service_indicator(name, COLORS['danger'])
-                                    self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                                    return
-                            else:
-                                self.log(f"❌ [SD] Не удалось переустановить PyTorch: {install_result.stderr}", "SD")
-                                self._set_service_indicator(name, COLORS['danger'])
-                                self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                                return
-                        else:
-                            self.log(f"❌ [SD] PyTorch не может загрузиться: {full_output[:200]}", "SD")
-                            self.log(f"💡 [SD] Установите Visual C++ Redistributables: https://aka.ms/vs/17/release/vc_redist.x64.exe", "SD")
-                            self._set_service_indicator(name, COLORS['danger'])
-                            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                            return
-                    
-                    # Если CUDA доступна на устройстве, но PyTorch CPU - переустанавливаем с CUDA
-                    elif cuda_on_device and "CPU_OK" in output:
-                        self.log(f"⚠️ [SD] CUDA обнаружена, но PyTorch установлен как CPU версия", "SD")
-                        self.log(f"🔄 [SD] Переустанавливаю PyTorch с поддержкой CUDA...", "SD")
-                        
-                        # Удаляем CPU версию
-                        uninstall_result = subprocess.run(
-                            [venv_py, "-m", "pip", "uninstall", "torch", "torchvision", "torchaudio", "xformers", "-y"],
-                            capture_output=True,
-                            text=True,
-                            timeout=300,
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                            startupinfo=startupinfo
-                        )
-                        
-                        # Определяем версию CUDA для установки
-                        detected_cuda_version = None
-                        try:
-                            nvidia_check = subprocess.run(
-                                ["nvidia-smi"],
-                                capture_output=True,
-                                text=True,
-                                timeout=5,
-                                creationflags=subprocess.CREATE_NO_WINDOW
-                            )
-                            if nvidia_check.returncode == 0:
-                                import re
-                                version_match = re.search(r'CUDA Version: (\d+\.\d+)', nvidia_check.stdout)
-                                if version_match:
-                                    detected_cuda_version = version_match.group(1)
-                        except:
-                            pass
-                        
-                        # Основные версии: cu130 (CUDA 13.0+), cu121 (CUDA 12.x), cu118 (fallback)
-                        if detected_cuda_version:
-                            try:
-                                major = int(detected_cuda_version.split('.')[0])
-                                if major >= 13:
-                                    cuda_versions = ["cu130", "cu121", "cu118"]
-                                else:
-                                    cuda_versions = ["cu121", "cu118"]
-                            except:
-                                cuda_versions = ["cu130", "cu121", "cu118"]
-                        else:
-                            cuda_versions = ["cu130", "cu121", "cu118"]
-                        
-                        torch_installed = False
-                        
-                        for cuda_ver in cuda_versions:
-                            self.log(f"📦 [SD] Попытка установки PyTorch 2.9.1 с CUDA {cuda_ver}...", "SD")
-                            install_result = subprocess.run(
-                                [venv_py, "-m", "pip", "install", "torch==2.9.1", "torchvision", "torchaudio", 
-                                 "--index-url", f"https://download.pytorch.org/whl/{cuda_ver}", "--no-cache-dir"],
-                                capture_output=True,
-                                text=True,
-                                timeout=1800,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            
-                            if install_result.returncode == 0:
-                                # Проверяем, что PyTorch действительно работает
-                                test_result = subprocess.run(
-                                    [venv_py, "-c", "import torch; print('OK')"],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10,
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                    startupinfo=startupinfo
-                                )
-                                
-                                if test_result.returncode == 0 and "OK" in test_result.stdout:
-                                    self.log(f"✅ [SD] PyTorch с CUDA {cuda_ver} установлен и работает", "SD")
-                                    torch_installed = True
-                                    
-                                    # Устанавливаем xformers
-                                    self.log(f"📦 [SD] Установка xformers...", "SD")
-                                    xformers_result = subprocess.run(
-                                        [venv_py, "-m", "pip", "install", "xformers", 
-                                         "--index-url", f"https://download.pytorch.org/whl/{cuda_ver}", "--no-cache-dir"],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=600,
-                                        creationflags=subprocess.CREATE_NO_WINDOW,
-                                        startupinfo=startupinfo
-                                    )
-                                    break
-                                else:
-                                    self.log(f"⚠️ [SD] PyTorch установлен, но не работает: {test_result.stderr}", "SD")
-                        
-                        if not torch_installed:
-                            self.log(f"❌ [SD] Не удалось установить PyTorch с CUDA", "SD")
-                            self._set_service_indicator(name, COLORS['danger'])
-                            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                            return
-                    
-                    elif final_check.returncode != 0 or "ERROR" in output or "ERROR" in final_check.stderr:
-                        error_msg = final_check.stdout + final_check.stderr
-                        self.log(f"❌ [SD] PyTorch не совместим с устройством: {error_msg}", "SD")
-                        
-                        if not cuda_on_device:
-                            self.log(f"🔄 [SD] Устройство не поддерживает CUDA, переустанавливаю PyTorch (CPU)...", "SD")
-                            # Переустанавливаем CPU версию
-                            uninstall_result = subprocess.run(
-                                [venv_py, "-m", "pip", "uninstall", "torch", "torchvision", "torchaudio", "xformers", "-y"],
-                                capture_output=True,
-                                text=True,
-                                timeout=300,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            install_result = subprocess.run(
-                                [venv_py, "-m", "pip", "install", "torch", "torchvision", "torchaudio", "--no-cache-dir"],
-                                capture_output=True,
-                                text=True,
-                                timeout=1800,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            if install_result.returncode == 0:
-                                self.log(f"✅ [SD] PyTorch (CPU) переустановлен, продолжаю запуск...", "SD")
-                            else:
-                                self.log(f"❌ [SD] Не удалось переустановить PyTorch: {install_result.stderr}", "SD")
-                                self._set_service_indicator(name, COLORS['danger'])
-                                self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                                return
-                        else:
-                            self.log(f"❌ [SD] PyTorch не совместим с версией CUDA на устройстве", "SD")
-                            self.log(f"💡 [SD] Попробуйте удалить SD и установить заново", "SD")
-                            self._set_service_indicator(name, COLORS['danger'])
-                            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                            return
-                    else:
-                        if "CUDA_OK" in output:
-                            self.log(f"✅ [SD] PyTorch с CUDA работает корректно", "SD")
-                        elif "CPU_OK" in output:
-                            self.log(f"✅ [SD] PyTorch (CPU) работает корректно", "SD")
-                        
-                        # Проверяем совместимость xformers с PyTorch
-                        if "CUDA_OK" in output or "CPU_OK" in output:
-                            self.log(f"🔍 [SD] Проверка совместимости xformers...", "SD")
-                            try:
-                                # Проверяем, установлен ли xformers и совместим ли он
-                                # Проверяем версию PyTorch и пытаемся использовать xformers
-                                # Упрощенная быстрая проверка xformers
-                                check_xformers_script = """
-import torch
-import sys
-import warnings
-warnings.filterwarnings('ignore')
-
-try:
-    import xformers
-    # Простая проверка - только импорт, без реального использования
-    # Это быстрее и достаточно для проверки совместимости
-    print("XFORMERS_OK")
-    sys.exit(0)
-except ImportError:
-    print("XFORMERS_NOT_INSTALLED")
-    sys.exit(0)
-except Exception as e:
-    error_msg = str(e).lower()
-    if "singleton" in error_msg or "entry point" in error_msg or "dll" in error_msg:
-        print("XFORMERS_INCOMPATIBLE")
-    else:
-        print("XFORMERS_OK")  # Если не критичная ошибка, считаем что работает
-    sys.exit(0)
-"""
-                                xformers_check = subprocess.run(
-                                    [venv_py, "-c", check_xformers_script],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=10,
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                    startupinfo=startupinfo
-                                )
-                                
-                                xformers_output = xformers_check.stdout.strip()
-                                
-                                if "XFORMERS_INCOMPATIBLE" in xformers_output or "XFORMERS_ERROR" in xformers_output or "XFORMERS_VERSION_MISMATCH" in xformers_output:
-                                    self.log(f"⚠️ [SD] xformers несовместим с текущей версией PyTorch", "SD")
-                                    self.log(f"🔄 [SD] Переустанавливаю xformers...", "SD")
-                                    
-                                    # Удаляем старый xformers
-                                    subprocess.run(
-                                        [venv_py, "-m", "pip", "uninstall", "xformers", "-y"],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=60,
-                                        creationflags=subprocess.CREATE_NO_WINDOW,
-                                        startupinfo=startupinfo
-                                    )
-                                    
-                                    # Определяем версию CUDA для xformers
-                                    xformers_cuda_ver = "cu130"
-                                    if cuda_on_device:
-                                        try:
-                                            nvidia_check = subprocess.run(
-                                                ["nvidia-smi"],
-                                                capture_output=True,
-                                                text=True,
-                                                timeout=5,
-                                                creationflags=subprocess.CREATE_NO_WINDOW
-                                            )
-                                            if nvidia_check.returncode == 0:
-                                                import re
-                                                version_match = re.search(r'CUDA Version: (\d+\.\d+)', nvidia_check.stdout)
-                                                if version_match:
-                                                    cuda_version_str = version_match.group(1)
-                                                    major = int(cuda_version_str.split('.')[0])
-                                                    if major >= 13:
-                                                        xformers_cuda_ver = "cu130"
-                                                    else:
-                                                        xformers_cuda_ver = "cu121"
-                                        except:
-                                            pass
-                                    
-                                    # Устанавливаем xformers заново (без указания версии, чтобы pip выбрал совместимую)
-                                    self.log(f"📦 [SD] Установка совместимой версии xformers для PyTorch 2.5.1...", "SD")
-                                    # Пробуем установить последнюю версию xformers, совместимую с PyTorch 2.5+
-                                    xformers_result = subprocess.run(
-                                        [venv_py, "-m", "pip", "install", "xformers", "--upgrade", "--force-reinstall",
-                                         "--index-url", f"https://download.pytorch.org/whl/{xformers_cuda_ver}", "--no-cache-dir"],
-                                        capture_output=True,
-                                        text=True,
-                                        timeout=600,
-                                        creationflags=subprocess.CREATE_NO_WINDOW,
-                                        startupinfo=startupinfo
-                                    )
-                                    
-                                    if xformers_result.returncode == 0:
-                                        # Устанавливаем дополнительные зависимости для SD
-                                        self.log(f"📦 [SD] Установка дополнительных зависимостей (triton, joblib)...", "SD")
-                                        additional_deps = ["triton", "joblib"]
-                                        for dep in additional_deps:
-                                            try:
-                                                dep_result = subprocess.run(
-                                                    [venv_py, "-m", "pip", "install", dep, "--no-cache-dir"],
-                                                    capture_output=True,
-                                                    text=True,
-                                                    timeout=300,
-                                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                                    startupinfo=startupinfo
-                                                )
-                                                if dep_result.returncode == 0:
-                                                    self.log(f"✅ [SD] {dep} установлен", "SD")
-                                                else:
-                                                    self.log(f"⚠️ [SD] Не удалось установить {dep} (не критично)", "SD")
-                                            except:
-                                                pass  # Не критично
-                                        
-                                        # Проверяем, работает ли теперь
-                                        verify_xformers = subprocess.run(
-                                            [venv_py, "-c", check_xformers_script],
-                                            capture_output=True,
-                                            text=True,
-                                            timeout=15,
-                                            creationflags=subprocess.CREATE_NO_WINDOW,
-                                            startupinfo=startupinfo
-                                        )
-                                        
-                                        verify_output = verify_xformers.stdout.strip()
-                                        if "XFORMERS_OK" in verify_output:
-                                            self.log(f"✅ [SD] xformers переустановлен и работает", "SD")
-                                        elif "XFORMERS_VERSION_MISMATCH" in verify_output:
-                                            self.log(f"⚠️ [SD] xformers всё ещё несовместим, SD будет работать без него", "SD")
-                                            # Удаляем несовместимый xformers
-                                            subprocess.run(
-                                                [venv_py, "-m", "pip", "uninstall", "xformers", "-y"],
-                                                capture_output=True,
-                                                text=True,
-                                                timeout=60,
-                                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                                startupinfo=startupinfo
-                                            )
-                                        else:
-                                            self.log(f"⚠️ [SD] xformers всё ещё не работает, SD будет работать без него", "SD")
-                                    else:
-                                        self.log(f"⚠️ [SD] Не удалось переустановить xformers, SD будет работать без него", "SD")
-                                elif "XFORMERS_OK" in xformers_output:
-                                    self.log(f"✅ [SD] xformers совместим и работает", "SD")
-                                    # Устанавливаем дополнительные зависимости для SD
-                                    self.log(f"📦 [SD] Установка дополнительных зависимостей (triton, joblib)...", "SD")
-                                    additional_deps = ["triton", "joblib"]
-                                    for dep in additional_deps:
-                                        try:
-                                            dep_result = subprocess.run(
-                                                [venv_py, "-m", "pip", "install", dep, "--no-cache-dir"],
-                                                capture_output=True,
-                                                text=True,
-                                                timeout=300,
-                                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                                startupinfo=startupinfo
-                                            )
-                                            if dep_result.returncode == 0:
-                                                self.log(f"✅ [SD] {dep} установлен", "SD")
-                                            else:
-                                                self.log(f"⚠️ [SD] Не удалось установить {dep} (не критично)", "SD")
-                                        except:
-                                            pass  # Не критично
-                                elif "XFORMERS_NOT_INSTALLED" in xformers_output:
-                                    self.log(f"ℹ️ [SD] xformers не установлен (необязательно)", "SD")
-                            except:
-                                pass
-                except:
-                    pass
-            
-            # Сначала пробуем использовать Python из venv
-            if os.path.exists(venv):
-                venv_py = os.path.join(venv, "Scripts", "python.exe")
-                if os.path.exists(venv_py):
-                    # Проверяем, работает ли Python из venv
-                    try:
-                        startupinfo = subprocess.STARTUPINFO()
-                        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                        startupinfo.wShowWindow = subprocess.SW_HIDE
-                        
-                        test_result = subprocess.run(
-                            [venv_py, "--version"],
-                            capture_output=True,
-                            timeout=5,
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                            startupinfo=startupinfo
-                        )
-                        if test_result.returncode == 0:
-                            py = venv_py
-                            self.log(f"✅ [SD] Используется Python из venv: {venv_py}", "SD")
-                        else:
-                            self.log(f"⚠️ [SD] Python из venv не работает, используем системный Python", "SD")
-                    except Exception as e:
-                        self.log(f"⚠️ [SD] Ошибка проверки Python из venv: {e}, используем системный Python", "SD")
-            
-            # Если venv не работает, используем системный Python
-            if not py:
-                if os.path.exists(PYTHON_EXE):
-                    py = PYTHON_EXE
-                    self.log(f"✅ [SD] Используется системный Python: {PYTHON_EXE}", "SD")
-                else:
-                    self.log("❌ [SD] Ошибка: Python не найден. Запустите Установка.bat", "SD")
-                    self._set_service_indicator(name, COLORS['danger'])
-                    self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-                    return
-            
-            launch_script = os.path.join(SD_DIR, "launch.py")
-            if not os.path.exists(launch_script):
-                self.log(f"❌ [SD] Ошибка: файл launch.py не найден в: {SD_DIR}", "SD")
-                self.log("💡 [SD] Решение: Проверьте установку Stable Diffusion", "SD")
-                self._set_service_indicator(name, COLORS['danger'])
-                self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
+            # Проверяем, что service_manager инициализирован
+            if not self.service_manager:
+                self.log(t("ui.launcher.log.service_manager_not_ready", default="❌ [{service}] Service manager not ready", service=name.upper()), name.upper())
                 return
             
-            # Настраиваем переменные окружения для SD
-            # Если используем системный Python, добавляем пути к библиотекам venv
-            if py == PYTHON_EXE and os.path.exists(venv):
-                venv_site_packages = os.path.join(venv, "Lib", "site-packages")
-                if os.path.exists(venv_site_packages):
-                    # Добавляем site-packages из venv в PYTHONPATH
-                    if "PYTHONPATH" in env:
-                        env["PYTHONPATH"] = venv_site_packages + os.pathsep + env["PYTHONPATH"]
-                    else:
-                        env["PYTHONPATH"] = venv_site_packages
+            # Логируем действие сразу
+            if self.service_manager.procs.get(name):
+                # Сервис запущен - останавливаем
+                self.log(t("ui.launcher.log.stopping_service", default="⏹️ [{service}] Остановка сервиса...", service=name.upper()), name.upper())
+                # Обновляем кнопку сразу
+                self.after(0, lambda: self._set_service_button(name, text="⏸", fg_color=COLORS['primary']))
+                threading.Thread(target=self.service_manager.stop_service, args=(name,), daemon=True).start()
+            else:
+                # Сервис не запущен - запускаем
+                self.log(t("ui.launcher.log.starting_service", default="▶️ [{service}] Запуск сервиса...", service=name.upper()), name.upper())
+                # Обновляем кнопку сразу
+                self.after(0, lambda: self._set_service_button(name, text="⏸", fg_color=COLORS['primary']))
+                self.after(0, lambda: self._set_service_status_label(name, text=t("ui.launcher.status.starting", default="Запуск..."), color=COLORS['warning']))
+                
+                # For LLM we use model from settings
+                llm_config = None
+                if name == "llm":
+                    llm_config = self._get_llm_model_from_settings()
+                    if not llm_config:
+                        self.log(t("ui.launcher.log.model_not_selected", default="❌ [LLM] Модель не выбрана в настройках"), "LLM")
+                        # Возвращаем кнопку в исходное состояние
+                        self.after(0, lambda: self._set_service_button(name, text="▶", fg_color=COLORS['primary']))
+                        self.after(0, lambda: self._set_service_status_label(name, text=t("ui.launcher.status.stopped", default="Остановлен"), color=COLORS['text_muted']))
+                        messagebox.showwarning(
+                            t("ui.launcher.model.no_model", default="Модель не выбрана"),
+                            t("ui.launcher.model.select_in_settings", default="Выберите модель в настройках перед запуском")
+                        )
+                        return
+                
+                # Run start in thread
+                threading.Thread(target=self.service_manager.start_service, 
+                               args=(name, llm_config), daemon=True).start()
+        except Exception as e:
+            self.log(t("ui.launcher.log.service_error", default="❌ [{service}] Ошибка: {error}", service=name.upper(), error=str(e)), name.upper())
+            # Возвращаем кнопку в исходное состояние при ошибке
+            self.after(0, lambda: self._set_service_button(name, text="▶", fg_color=COLORS['primary']))
+            self.after(0, lambda: self._set_service_status_label(name, text=t("ui.launcher.status.error", default="Ошибка"), color=COLORS['danger']))
+            import traceback
+            self.log(f"❌ [{name.upper()}] Критическая ошибка: {e}", name.upper())
+
+    # Old _manage_service code removed - functionality moved to service_manager.py
+    # Old methods (_download_ollama, _install_sd, etc.) removed - moved to installer.py
+    
+    def _create_unified_llm_models_tab(self, parent):
+        """Создает объединенное меню управления моделями LLM"""
+        # Popular models from Ollama
+        POPULAR_MODELS = {
+            "gemma3": {
+                "name": "gemma3",
+                "sizes": ["270m", "1b", "4b", "12b", "27b"],
+                "description": "Google's most capable model"
+            },
+            "qwen3": {
+                "name": "qwen3",
+                "sizes": ["0.6b", "1.7b", "4b", "8b", "14b", "30b", "32b", "235b"],
+                "description": "Latest Qwen generation"
+            },
+            "gpt-oss": {
+                "name": "gpt-oss",
+                "sizes": ["20b", "120b"],
+                "description": "OpenAI's open-weight models"
+            },
+            "llama3.1": {
+                "name": "llama3.1",
+                "sizes": ["8b", "70b", "405b"],
+                "description": "Meta's state-of-the-art model"
+            },
+            "deepseek-r1": {
+                "name": "deepseek-r1",
+                "sizes": ["1.5b", "7b", "8b", "14b", "32b", "70b", "671b"],
+                "description": "Open reasoning models"
+            },
+            "qwen2.5": {
+                "name": "qwen2.5",
+                "sizes": ["0.5b", "1.5b", "3b", "7b", "14b", "32b", "72b"],
+                "description": "Qwen 2.5 models"
+            }
+        }
+        
+        # Download section
+        download_frame = ctk.CTkFrame(parent, fg_color=COLORS['bg'], corner_radius=12)
+        download_frame.grid(row=0, column=0, sticky="ew", pady=(0, 16))
+        download_frame.grid_columnconfigure(0, weight=1)
+        download_frame.grid_rowconfigure(1, weight=1)
+        
+        ctk.CTkLabel(
+            download_frame,
+            text=t("ui.launcher.model.download_popular", default="Скачать популярную модель"),
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text']
+        ).grid(row=0, column=0, sticky="w", padx=16, pady=(16, 12))
+        
+        download_controls = ctk.CTkFrame(download_frame, fg_color="transparent")
+        download_controls.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 16))
+        download_controls.grid_columnconfigure(1, weight=1)
+        
+        model_names = list(POPULAR_MODELS.keys())
+        self.selected_model_var = tk.StringVar(value=model_names[0] if model_names else "")
+        model_menu = ctk.CTkOptionMenu(
+            download_controls,
+            values=model_names,
+            variable=self.selected_model_var,
+            width=180,
+            font=("Segoe UI", 13),
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover'],
+            command=lambda v: self._update_model_sizes(POPULAR_MODELS[v]['sizes'])
+        )
+        model_menu.grid(row=0, column=0, sticky="w", padx=(0, 8))
+        
+        initial_sizes = POPULAR_MODELS[model_names[0]]['sizes'] if model_names else []
+        self.selected_size_var = tk.StringVar(value=initial_sizes[0] if initial_sizes else "")
+        self.size_menu = ctk.CTkOptionMenu(
+            download_controls,
+            values=initial_sizes,
+            variable=self.selected_size_var,
+            width=120,
+            font=("Segoe UI", 13),
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
+        )
+        self.size_menu.grid(row=0, column=1, sticky="w", padx=(0, 8))
+        self.popular_models = POPULAR_MODELS
+        
+        download_btn = ctk.CTkButton(
+            download_controls,
+            text="📥 Скачать",
+            width=120,
+            height=36,
+            command=self._download_selected_model,
+            fg_color=COLORS['primary'],
+            hover_color=COLORS['primary_hover'],
+            font=("Segoe UI", 13, "bold"),
+            corner_radius=8
+        )
+        download_btn.grid(row=0, column=2, sticky="e")
+        
+        # Installed models
+        installed_label = ctk.CTkLabel(
+            parent,
+            text=t("ui.launcher.model.installed_models", default="Установленные модели"),
+            font=("Segoe UI", 16, "bold"),
+            text_color=COLORS['text']
+        )
+        installed_label.grid(row=1, column=0, sticky="w", pady=(0, 12))
+        
+        models_list_card = self.create_glass_card(parent, fg_color=COLORS['bg'])
+        models_list_card.grid(row=2, column=0, sticky="nsew", pady=(0, 16))
+        parent.grid_rowconfigure(2, weight=1)
+        models_list_card.grid_columnconfigure(0, weight=1)
+        models_list_card.grid_rowconfigure(0, weight=1)
+        
+        self.ollama_models_frame = ctk.CTkScrollableFrame(
+            models_list_card,
+            fg_color="transparent",
+            height=220,
+            corner_radius=12
+        )
+        self.ollama_models_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        
+        # GGUF files
+        gguf_label = ctk.CTkLabel(
+            parent,
+            text=t("ui.launcher.model.gguf_files", default="GGUF файлы"),
+            font=("Segoe UI", 16, "bold"),
+            text_color=COLORS['text']
+        )
+        gguf_label.grid(row=3, column=0, sticky="w", pady=(0, 12))
+        
+        gguf_list_card = self.create_glass_card(parent, fg_color=COLORS['bg'])
+        gguf_list_card.grid(row=4, column=0, sticky="nsew")
+        parent.grid_rowconfigure(4, weight=1)
+        gguf_list_card.grid_columnconfigure(0, weight=1)
+        gguf_list_card.grid_rowconfigure(0, weight=1)
+        
+        self.gguf_models_frame = ctk.CTkScrollableFrame(
+            gguf_list_card,
+            fg_color="transparent",
+            height=180,
+            corner_radius=12
+        )
+        self.gguf_models_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        
+        self.after(500, self.scan_llm_models)
+    
+    def _update_model_sizes(self, sizes):
+        """Обновляет список размеров модели"""
+        self.size_menu.configure(values=sizes)
+        if sizes:
+            self.selected_size_var.set(sizes[0])
+    
+    def _download_selected_model(self):
+        """Скачивает выбранную модель"""
+        model_name = self.selected_model_var.get()
+        size = self.selected_size_var.get()
+        if not model_name or not size:
+            return
+        
+        full_model_name = f"{model_name}:{size}"
+        self._download_ollama_model(full_model_name)
+    
+    def _select_models_folder(self, entry):
+        """Выбор папки с моделями"""
+        current_path = entry.get().strip() or get_models_llm_dir()
+        folder = filedialog.askdirectory(
+            title=t("ui.launcher.settings.select_models_folder"),
+            initialdir=current_path if os.path.exists(current_path) else OLLAMA_MODELS_DIR
+        )
+        if folder:
+            entry.delete(0, "end")
+            entry.insert(0, folder)
+            set_key(FILE_ENV, "MODELS_LLM_DIR", folder)
+            global MODELS_LLM_DIR
+            MODELS_LLM_DIR = folder
+            self.scan_llm_models()
+    
+    def _create_ollama_models_tab(self, parent):
+        """Legacy method - redirects to unified"""
+        self._create_unified_llm_models_tab(parent)
+    
+    def _create_gguf_models_tab(self, parent):
+        """Legacy method - not used in unified view"""
+        pass
+    
+    def _download_ollama_model(self, model_name):
+        """Скачивает модель Ollama"""
+        if not model_name or not model_name.strip():
+            messagebox.showwarning(
+                t("ui.launcher.model.no_name", default="Имя модели не указано"),
+                t("ui.launcher.model.enter_name", default="Введите имя модели (например: llama3.2:3b)")
+            )
+            return
+        
+        model_name = model_name.strip()
+        threading.Thread(
+            target=self._download_ollama_model_thread,
+            args=(model_name,),
+            daemon=True
+        ).start()
+    
+    def _download_ollama_model_thread(self, model_name):
+        """Поток для скачивания модели Ollama"""
+        try:
+            self.log(t("ui.launcher.log.downloading_model", default="📥 [LLM] Скачивание модели {model}...", model=model_name), "LLM")
             
-            # Проверяем поддержку CUDA для определения флагов запуска
-            cuda_supported = False
+            if not os.path.exists(OLLAMA_EXE):
+                if not self.installer.download_ollama():
+                    self.log(t("ui.launcher.log.ollama_not_installed", default="❌ [LLM] Ollama не установлен"), "LLM")
+                    return
+            
+            # Проверяем, запущен ли сервер Ollama
+            server_running = False
             try:
-                check_result = subprocess.run(
-                    ["nvidia-smi"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                )
-                if check_result.returncode == 0:
-                    cuda_supported = True
+                req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
+                with urllib.request.urlopen(req, timeout=3) as response:
+                    if response.status == 200:
+                        server_running = True
+                        self.log("[LLM] Используется существующий сервер Ollama", "LLM")
             except:
                 pass
             
-            # Формируем команду запуска
-            cmd = [py, "launch.py", "--api", "--nowebui", "--port", "7860", "--skip-python-version-check"]
-            if cuda_supported:
-                cmd.extend(["--xformers", "--cuda-stream"])
-            else:
-                self.log(f"ℹ️ [SD] CUDA не обнаружена, запускаю в CPU режиме", "SD")
-            
-            cwd = SD_DIR
-        else:
-            self.log(f"❌ Ошибка: Неизвестный сервис: {name}", name.upper())
-            self._set_service_indicator(name, COLORS['danger'])
-            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-            return
-        
-        if not cmd:
-            self.log(f"❌ Ошибка: Не удалось создать команду для сервиса {name}", name.upper())
-            self._set_service_indicator(name, COLORS['danger'])
-            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-            return
-        
-        self.run_process(name, cmd, cwd, env)
-
-    def _download_ollama(self):
-        """Автоматически загружает Ollama для Windows"""
-        try:
-            import urllib.request
-            import json
-            import shutil
-            import zipfile
-            
-            self.log(f"📥 [LLM] Поиск Ollama...", "LLM")
-            
-            # Пробуем найти ollama.exe в стандартных местах после установки
-            possible_paths = [
-                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama.exe"),
-                os.path.join(os.environ.get("ProgramFiles", ""), "Ollama", "ollama.exe"),
-                os.path.join(os.environ.get("ProgramFiles(x86)", ""), "Ollama", "ollama.exe"),
-            ]
-            
-            # Проверяем, установлен ли Ollama глобально
-            for path in possible_paths:
-                if os.path.exists(path):
-                    try:
-                        shutil.copy2(path, OLLAMA_EXE)
-                        self.log(f"✅ [LLM] Ollama скопирован из {path}", "LLM")
-                        return True
-                    except Exception as e:
-                        self.log(f"⚠️ [LLM] Не удалось скопировать: {e}", "LLM")
-            
-            # Если не найден, пробуем скачать
-            self.log(f"📦 [LLM] Ollama не найден, начинаю загрузку...", "LLM")
-            
-            try:
-                # Сначала пробуем прямой URL с официального сайта
-                direct_url = "https://ollama.com/download/OllamaSetup.exe"
-                self.log(f"🔍 [LLM] Попытка загрузки с официального сайта...", "LLM")
-                
-                try:
-                    # Проверяем доступность файла
-                    req = urllib.request.Request(direct_url)
-                    req.add_header('User-Agent', 'Mozilla/5.0')
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        file_size = int(response.headers.get('Content-Length', 0))
-                        download_url = direct_url
-                        self.log(f"✅ [LLM] Найден установщик на официальном сайте ({file_size / 1024 / 1024:.1f} MB)", "LLM")
-                except:
-                    # Если прямой URL не работает, пробуем GitHub Releases
-                    self.log(f"🔍 [LLM] Прямой URL недоступен, пробую GitHub Releases...", "LLM")
-                    releases_url = "https://api.github.com/repos/ollama/ollama/releases/latest"
-                    
-                    with urllib.request.urlopen(releases_url, timeout=10) as response:
-                        release_data = json.loads(response.read().decode())
-                    
-                    # Ищем Windows установщик (более гибкий поиск)
-                    download_url = None
-                    file_size = 0
-                    
-                    # Паттерны для поиска Windows установщика
-                    patterns = ["windows", "win", "setup", "installer"]
-                    
-                    for asset in release_data.get("assets", []):
-                        name_lower = asset["name"].lower()
-                        # Проверяем, что это .exe файл и содержит один из паттернов
-                        if asset["name"].endswith(".exe") and any(p in name_lower for p in patterns):
-                            download_url = asset["browser_download_url"]
-                            file_size = asset.get("size", 0)
-                            self.log(f"✅ [LLM] Найден установщик в GitHub: {asset['name']}", "LLM")
-                            break
-                    
-                    if not download_url:
-                        self.log(f"❌ [LLM] Не найден Windows установщик в релизе", "LLM")
-                        self.log(f"💡 [LLM] Доступные файлы в релизе:", "LLM")
-                        for asset in release_data.get("assets", [])[:5]:  # Показываем первые 5
-                            self.log(f"   - {asset['name']}", "LLM")
-                        return False
-                
-                # Загружаем установщик
-                temp_installer = os.path.join(DIR_TEMP, "OllamaSetup.exe")
-                os.makedirs(DIR_TEMP, exist_ok=True)
-                
-                size_mb = file_size / 1024 / 1024 if file_size > 0 else 0
-                self.log(f"⬇️ [LLM] Загрузка Ollama ({size_mb:.1f} MB)...", "LLM")
-                
-                # Создаем запрос с User-Agent для избежания блокировок
-                req = urllib.request.Request(download_url)
-                req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-                
-                # Загружаем файл с прогресс-баром
-                downloaded = 0
-                last_percent = -1
-                
-                with urllib.request.urlopen(req, timeout=300) as response:
-                    # Получаем реальный размер файла из заголовков
-                    total_size = int(response.headers.get('Content-Length', file_size))
-                    total_mb = total_size / 1024 / 1024
-                    
-                    with open(temp_installer, 'wb') as out_file:
-                        while True:
-                            chunk = response.read(8192)  # Читаем по 8KB
-                            if not chunk:
-                                break
-                            out_file.write(chunk)
-                            downloaded += len(chunk)
-                            
-                            # Обновляем прогресс каждые 10%
-                            if total_size > 0:
-                                percent = (downloaded * 100) // total_size
-                                if percent != last_percent and (percent % 10 == 0 or downloaded == len(chunk)):
-                                    downloaded_mb = downloaded / 1024 / 1024
-                                    self.log(f"📥 [LLM] Загружено: {downloaded_mb:.1f} / {total_mb:.1f} MB ({percent}%)", "LLM")
-                                    last_percent = percent
-                self.log(f"✅ [LLM] Установщик загружен", "LLM")
-                
-                # Запускаем установщик в полностью автоматическом режиме
-                self.log(f"⚙️ [LLM] Установка Ollama (автоматический режим, без окна)...", "LLM")
-                import subprocess
-                
-                # Используем флаги для полностью автоматической установки
-                # /S - тихая установка (silent mode)
-                # Создаем процесс без окна
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                
-                proc = subprocess.Popen(
-                    [temp_installer, "/S"],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    creationflags=subprocess.CREATE_NO_WINDOW,  # Скрываем окно полностью
-                    startupinfo=startupinfo,
-                    shell=False
-                )
-                
-                # Ждем завершения установки (максимум 5 минут)
-                self.log(f"⏳ [LLM] Ожидание завершения установки (это может занять несколько минут)...", "LLM")
-                try:
-                    proc.wait(timeout=300)
-                    return_code = proc.returncode
-                    if return_code == 0:
-                        self.log(f"✅ [LLM] Установщик завершился успешно", "LLM")
-                    else:
-                        self.log(f"⚠️ [LLM] Установщик завершился с кодом: {return_code}", "LLM")
-                except subprocess.TimeoutExpired:
-                    self.log(f"⚠️ [LLM] Установка занимает слишком много времени, принудительно завершаю...", "LLM")
-                    proc.kill()
-                    proc.wait()
-                    return_code = -1
-                
-                # Ждем немного, чтобы файлы точно были установлены
-                time.sleep(5)
-                
-                # Закрываем все процессы Ollama, которые могли запуститься автоматически после установки
-                self.log(f"🔄 [LLM] Закрытие процессов Ollama после установки...", "LLM")
-                killed = self._kill_all_ollama_processes()
-                if killed > 0:
-                    self.log(f"✅ [LLM] Закрыто процессов Ollama: {killed}", "LLM")
-                    time.sleep(2)  # Даем время на завершение процессов
-                
-                # Пробуем найти ollama.exe (проверяем несколько раз с задержкой)
-                found = False
-                for attempt in range(5):
-                    for path in possible_paths:
-                        if os.path.exists(path):
-                            try:
-                                os.makedirs(OLLAMA_DIR, exist_ok=True)
-                                shutil.copy2(path, OLLAMA_EXE)
-                                self.log(f"✅ [LLM] Ollama успешно установлен и скопирован", "LLM")
-                                found = True
-                                break
-                            except Exception as e:
-                                self.log(f"⚠️ [LLM] Попытка {attempt + 1}/5: Не удалось скопировать: {e}", "LLM")
-                    
-                    if found:
-                        break
-                    if attempt < 4:
-                        time.sleep(2)  # Ждем перед следующей попыткой
-                
-                # Удаляем установщик
-                try:
-                    os.remove(temp_installer)
-                except:
-                    pass
-                
-                if found:
-                    return True
-                else:
-                    self.log(f"⚠️ [LLM] Установка завершена, но ollama.exe не найден", "LLM")
-                    self.log(f"💡 [LLM] Попробуйте перезапустить лаунчер или установите вручную", "LLM")
-                    return False
-                    
-            except urllib.error.URLError as e:
-                self.log(f"❌ [LLM] Ошибка подключения к интернету: {e}", "LLM")
-                self.log(f"💡 [LLM] Установите Ollama вручную с https://ollama.com/download", "LLM")
-                return False
-            except Exception as e:
-                self.log(f"❌ [LLM] Ошибка при загрузке: {e}", "LLM")
-                self.log(f"💡 [LLM] Установите Ollama вручную с https://ollama.com/download", "LLM")
-                return False
-            
-        except Exception as e:
-            self.log(f"❌ [LLM] Критическая ошибка при загрузке Ollama: {e}", "LLM")
-            return False
-    
-    def _get_ollama_models(self):
-        """Получает список моделей из Ollama"""
-        models = []
-        try:
-            if not os.path.exists(OLLAMA_EXE):
-                return models  # Ollama не установлен
+            # Если сервер не запущен, используем метод из model_manager
+            if not server_running:
+                if hasattr(self.model_manager, 'is_ollama_running'):
+                    if not self.model_manager.is_ollama_running():
+                        self.log("[LLM] Сервер Ollama не запущен, команда pull запустит его автоматически", "LLM")
             
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
             
-            result = subprocess.run(
-                [OLLAMA_EXE, "list"],
-                capture_output=True,
-                text=True,
-                timeout=10,
+            # Устанавливаем переменные окружения для pull
+            pull_env = os.environ.copy()
+            pull_env["OLLAMA_HOST"] = "127.0.0.1:11434"
+            pull_env["OLLAMA_MODELS"] = get_models_llm_dir()
+            
+            process = subprocess.Popen(
+                [OLLAMA_EXE, "pull", model_name],
                 cwd=OLLAMA_DIR,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                for line in lines[1:]:  # Пропускаем заголовок
-                    if line.strip():
-                        parts = line.split()
-                        if parts:
-                            model_name = parts[0]
-                            models.append(model_name)
-        except Exception as e:
-            # Не логируем ошибку, просто возвращаем пустой список
-            pass
-        return models
-    
-    def _get_gguf_models(self):
-        """Получает список GGUF файлов из папки Downloads"""
-        models = []
-        try:
-            if os.path.exists(MODELS_LLM_DIR):
-                for file in os.listdir(MODELS_LLM_DIR):
-                    if file.lower().endswith('.gguf'):
-                        file_path = os.path.join(MODELS_LLM_DIR, file)
-                        if os.path.isfile(file_path):
-                            models.append({
-                                'name': os.path.splitext(file)[0],
-                                'file': file,
-                                'path': file_path
-                            })
-        except Exception as e:
-            self.log(f"⚠️ [LLM] Ошибка при сканировании GGUF файлов: {e}", "LLM")
-        return models
-    
-    def _select_llm_model(self):
-        """Показывает диалог выбора модели LLM"""
-        try:
-            # Получаем списки моделей
-            ollama_models = self._get_ollama_models()
-            gguf_models = self._get_gguf_models()
-            
-            if not ollama_models and not gguf_models:
-                messagebox.showwarning(
-                    "Модели не найдены",
-                    "Не найдено ни одной модели!\n\n"
-                    "• Модели Ollama: импортируйте через 'ollama pull <model>'\n"
-                    f"• GGUF файлы: поместите в папку {MODELS_LLM_DIR}"
-                )
-                return None
-            
-            # Создаем диалог выбора
-            dialog = ctk.CTkToplevel(self)
-            dialog.title("Выбор модели LLM")
-            dialog.geometry("500x400")
-            dialog.transient(self)
-            dialog.grab_set()
-            
-            # Центрируем окно
-            dialog.update_idletasks()
-            x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
-            y = (dialog.winfo_screenheight() // 2) - (400 // 2)
-            dialog.geometry(f"500x400+{x}+{y}")
-            
-            selected_model = {'result': None}
-            
-            # Заголовок
-            ctk.CTkLabel(
-                dialog,
-                text="Выберите модель LLM",
-                font=("Segoe UI", 18, "bold")
-            ).pack(pady=15)
-            
-            # Создаем вкладки
-            tabs = ctk.CTkTabview(dialog)
-            tabs.pack(fill="both", expand=True, padx=20, pady=10)
-            
-            # Вкладка 1: Модели Ollama
-            if ollama_models:
-                tab_ollama = tabs.add("Модели Ollama")
-                scroll_ollama = ctk.CTkScrollableFrame(tab_ollama)
-                scroll_ollama.pack(fill="both", expand=True, padx=10, pady=10)
-                
-                for model in ollama_models:
-                    btn = ctk.CTkButton(
-                        scroll_ollama,
-                        text=model,
-                        command=lambda m=model: self._model_selected(dialog, selected_model, {'name': m, 'type': 'ollama'}),
-                        width=400,
-                        height=40,
-                        font=("Segoe UI", 13)
-                    )
-                    btn.pack(pady=5, padx=10, fill="x")
-            else:
-                tab_ollama = tabs.add("Модели Ollama")
-                ctk.CTkLabel(
-                    tab_ollama,
-                    text="Модели Ollama не найдены\n\nИмпортируйте через:\nollama pull <model>",
-                    font=("Segoe UI", 12),
-                    text_color=COLORS['text_muted']
-                ).pack(pady=50)
-            
-            # Вкладка 2: GGUF файлы
-            if gguf_models:
-                tab_gguf = tabs.add("GGUF файлы")
-                scroll_gguf = ctk.CTkScrollableFrame(tab_gguf)
-                scroll_gguf.pack(fill="both", expand=True, padx=10, pady=10)
-                
-                for model_info in gguf_models:
-                    btn = ctk.CTkButton(
-                        scroll_gguf,
-                        text=f"{model_info['name']}\n({os.path.basename(model_info['file'])})",
-                        command=lambda m=model_info: self._model_selected(dialog, selected_model, {'name': m['name'], 'type': 'gguf', 'path': m['path']}),
-                        width=400,
-                        height=50,
-                        font=("Segoe UI", 12)
-                    )
-                    btn.pack(pady=5, padx=10, fill="x")
-            else:
-                tab_gguf = tabs.add("GGUF файлы")
-                ctk.CTkLabel(
-                    tab_gguf,
-                    text=f"GGUF файлы не найдены\n\nПоместите .gguf файлы в:\n{MODELS_LLM_DIR}",
-                    font=("Segoe UI", 12),
-                    text_color=COLORS['text_muted']
-                ).pack(pady=50)
-            
-            # Кнопка отмены
-            ctk.CTkButton(
-                dialog,
-                text="Отмена",
-                command=lambda: self._model_selected(dialog, selected_model, None),
-                width=150,
-                height=35,
-                fg_color=COLORS['surface_dark'],
-                hover_color=COLORS['surface_light']
-            ).pack(pady=15)
-            
-            # Ждем закрытия диалога
-            dialog.wait_window()
-            
-            return selected_model['result']
-            
-        except Exception as e:
-            self.log(f"❌ [LLM] Ошибка при выборе модели: {e}", "LLM")
-            return None
-    
-    def _model_selected(self, dialog, selected_model, model_info):
-        """Обработчик выбора модели"""
-        selected_model['result'] = model_info
-        dialog.destroy()
-    
-    def _check_ollama_model(self, model_name):
-        """Проверяет, есть ли модель в Ollama"""
-        try:
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            
-            # Запускаем ollama list для проверки моделей
-            result = subprocess.run(
-                [OLLAMA_EXE, "list"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                cwd=OLLAMA_DIR,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            if result.returncode == 0:
-                return model_name in result.stdout
-            return False
-        except:
-            return False
-    
-    def _import_gguf_to_ollama(self, model_path, model_name, env=None):
-        """Автоматически импортирует GGUF модель в Ollama
-        
-        Args:
-            model_path: Путь к GGUF файлу
-            model_name: Имя модели для Ollama
-            env: Словарь переменных окружения (если None, используется текущее окружение)
-        """
-        try:
-            # Создаем Modelfile для импорта GGUF
-            modelfile_path = os.path.join(OLLAMA_DIR, f"{model_name}.Modelfile")
-            
-            with open(modelfile_path, 'w', encoding='utf-8') as f:
-                f.write(f"FROM {model_path}\n")
-                f.write("TEMPLATE \"\"\"{{ .Prompt }}\"\"\"\n")
-                f.write("PARAMETER temperature 0.7\n")
-                f.write("PARAMETER top_p 0.9\n")
-            
-            # Импортируем модель (НЕ закрываем процессы - они управляются вызывающим кодом)
-            self.log(f"📦 [LLM] Импорт модели {model_name}...", "LLM")
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            
-            # Используем переданное окружение или текущее
-            import_env = env if env else os.environ.copy()
-            
-            result = subprocess.run(
-                [OLLAMA_EXE, "create", model_name, "-f", modelfile_path],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                cwd=OLLAMA_DIR,
-                env=import_env,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            
-            if result.returncode == 0:
-                self.log(f"✅ [LLM] Модель {model_name} успешно импортирована", "LLM")
-                return True
-            else:
-                self.log(f"⚠️ [LLM] Ошибка импорта: {result.stderr}", "LLM")
-                return False
-        except Exception as e:
-            self.log(f"❌ [LLM] Ошибка при импорте модели: {e}", "LLM")
-            return False
-
-    def _install_package_with_progress(self, package_name, python_exe, extra_args=None, timeout=300):
-        """
-        Устанавливает пакет через pip с красивым выводом в реальном времени.
-        Не создает новую консоль, весь вывод идет в консоль лаунчера.
-        """
-        if extra_args is None:
-            extra_args = []
-        
-        cmd = [python_exe, "-m", "pip", "install", package_name, "--upgrade"] + extra_args
-        
-        try:
-            # Создаем процесс без новой консоли
-            proc = subprocess.Popen(
-                cmd,
+                env=pull_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                encoding='utf-8',
-                errors='replace',
-                creationflags=0x08000000,  # Скрываем консоль
-                bufsize=1,  # Буферизация по строкам
-                universal_newlines=True
+                text=True,
+                bufsize=1,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                startupinfo=startupinfo
             )
             
-            # Читаем вывод в реальном времени
-            spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-            spinner_idx = 0
-            last_line = ""
-            start_time = time.time()
-            error_output = []
-            has_compiler_error = False
-            
-            while True:
-                # Проверяем таймаут
-                if time.time() - start_time > timeout:
-                    proc.terminate()
-                    time.sleep(0.5)
-                    if proc.poll() is None:
-                        proc.kill()
-                    self.log(f"⏱️ [LLM] Превышено время ожидания установки {package_name}", "LLM")
-                    return False
-                
-                # Читаем строку
-                line = proc.stdout.readline()
-                if not line:
-                    if proc.poll() is not None:
-                        break
-                    # Показываем спиннер, если нет вывода
-                    spinner_idx = (spinner_idx + 1) % len(spinner_chars)
-                    spinner = spinner_chars[spinner_idx]
-                    if last_line != spinner:
-                        self.log(f"⏳ [LLM] {spinner} Установка {package_name}...", "LLM")
-                        last_line = spinner
-                    time.sleep(0.1)
-                    continue
-                
-                # Обрабатываем строку
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # Сохраняем ошибки для анализа
-                if "error" in line.lower() or "failed" in line.lower():
-                    error_output.append(line)
-                    # Проверяем на ошибки компилятора (более широкий поиск)
-                    line_lower = line.lower()
-                    compiler_keywords = ["cmake", "nmake", "compiler", "c++", "cxx", "c_compiler", "cxx_compiler", 
-                                        "build tools", "visual studio", "msvc", "cl.exe", "link.exe"]
-                    if any(keyword in line_lower for keyword in compiler_keywords):
-                        has_compiler_error = True
-                
-                # Фильтруем и форматируем вывод pip с переводом на русский
-                if "Requirement already satisfied" in line:
-                    self.log(f"✓ [LLM] Требование уже удовлетворено: {line.split('Requirement already satisfied')[1].strip() if 'Requirement already satisfied' in line else line}", "LLM")
-                elif "Collecting" in line:
-                    pkg_name = line.replace("Collecting", "").strip().split()[0] if "Collecting" in line else line
-                    self.log(f"📦 [LLM] Сборка пакета: {pkg_name}", "LLM")
-                elif "Downloading" in line:
-                    self.log(f"⬇️ [LLM] Загрузка: {line.replace('Downloading', '').strip()}", "LLM")
-                elif "Installing" in line:
-                    self.log(f"⚙️ [LLM] Установка: {line.replace('Installing', '').strip()}", "LLM")
-                elif "Successfully installed" in line:
-                    pkgs = line.replace("Successfully installed", "").strip()
-                    self.log(f"✅ [LLM] Успешно установлено: {pkgs}", "LLM")
-                elif "Successfully uninstalled" in line:
-                    pkgs = line.replace("Successfully uninstalled", "").strip()
-                    self.log(f"🗑️ [LLM] Успешно удалено: {pkgs}", "LLM")
-                elif "error" in line.lower() or "failed" in line.lower() or "exception" in line.lower():
-                    self.log(f"❌ [LLM] Ошибка: {line}", "LLM")
-                elif "warning" in line.lower():
-                    self.log(f"⚠️ [LLM] Предупреждение: {line}", "LLM")
-                elif line.startswith("  "):  # Отступы обычно означают подчиненные сообщения
-                    self.log(f"   [LLM] {line.strip()}", "LLM")
-                else:
-                    self.log(f"ℹ️ [LLM] {line}", "LLM")
-            
-            # Получаем код возврата
-            return_code = proc.poll()
-            if return_code == 0:
-                return True
-            else:
-                # Читаем оставшийся вывод
-                remaining = proc.stdout.read()
-                if remaining:
-                    for line in remaining.strip().split('\n'):
-                        if line.strip():
-                            line_stripped = line.strip()
-                            if "error" in line_stripped.lower() or "failed" in line_stripped.lower():
-                                self.log(f"❌ [LLM] Ошибка: {line_stripped}", "LLM")
-                                error_output.append(line_stripped)
-                                # Проверяем на ошибки компилятора (более широкий поиск)
-                                line_lower = line_stripped.lower()
-                                compiler_keywords = ["cmake", "nmake", "compiler", "c++", "cxx", "c_compiler", "cxx_compiler", 
-                                                    "build tools", "visual studio", "msvc", "cl.exe", "link.exe"]
-                                if any(keyword in line_lower for keyword in compiler_keywords):
-                                    has_compiler_error = True
-                            else:
-                                self.log(f"ℹ️ [LLM] {line_stripped}", "LLM")
-                
-                # Анализируем все собранные ошибки для определения типа проблемы
-                all_errors_text = " ".join(error_output).lower()
-                if not has_compiler_error:
-                    compiler_keywords = ["cmake", "nmake", "compiler", "c_compiler", "cxx_compiler", 
-                                        "build tools", "visual studio", "msvc", "cl.exe", "link.exe"]
-                    if any(keyword in all_errors_text for keyword in compiler_keywords):
-                        has_compiler_error = True
-                
-                # Показываем специальное сообщение для ошибок компилятора
-                if has_compiler_error:
-                    self.log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "LLM")
-                    self.log(f"⚠️ [LLM] Обнаружена ошибка компилятора", "LLM")
-                    self.log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "LLM")
-                    self.log(f"💡 [LLM] Решение 1: Установите Visual Studio Build Tools", "LLM")
-                    self.log(f"💡 [LLM]   Скачайте: https://visualstudio.microsoft.com/downloads/", "LLM")
-                    self.log(f"💡 [LLM]   Выберите 'Build Tools for Visual Studio 2022'", "LLM")
-                    self.log(f"💡 [LLM]   Установите компонент 'C++ build tools'", "LLM")
-                    self.log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "LLM")
-                    self.log(f"💡 [LLM] Решение 2: Используйте Python 3.10 или 3.11", "LLM")
-                    self.log(f"💡 [LLM]   Для Python 3.10 и 3.11 есть предкомпилированные пакеты", "LLM")
-                    self.log(f"💡 [LLM]   Запустите Установка.bat для установки Python 3.11", "LLM")
-                    self.log(f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "LLM")
-                
-                return False
-                
-        except subprocess.TimeoutExpired:
-            if 'proc' in locals():
-                proc.kill()
-            self.log(f"⏱️ [LLM] Превышено время ожидания установки {package_name}", "LLM")
-            return False
-        except Exception as e:
-            self.log(f"❌ [LLM] Ошибка при установке {package_name}: {e}", "LLM")
-            return False
-
-    def run_process(self, name, cmd, cwd, env):
-        def reader(p, n):
-            for line in iter(p.stdout.readline, ''):
+            output_lines = []
+            for line in iter(process.stdout.readline, ''):
                 if line:
-                    self.log_queue.put((line.strip(), n))
-            p.stdout.close()
-
+                    line = line.strip()
+                    if line:
+                        # Пропускаем предупреждения о логах и других неважных сообщениях
+                        if "WARN" in line and "Failed to rotate log" in line:
+                            continue
+                        if "existing instance found" in line.lower():
+                            continue
+                        if "not focusing due to startHidden" in line.lower():
+                            continue
+                        output_lines.append(line)
+                        self.log(f"[LLM] {line}", "LLM")
+            
+            process.wait()
+            
+            # Проверяем успешность скачивания
+            if process.returncode == 0:
+                self.log(t("ui.launcher.log.model_downloaded", default="✅ [LLM] Модель {model} успешно скачана", model=model_name), "LLM")
+                self.after(0, self.scan_llm_models)
+            else:
+                # Если сервер уже был запущен, проверяем, скачалась ли модель
+                if server_running or any("existing instance" in line.lower() for line in output_lines):
+                    time.sleep(2)
+                    try:
+                        models = self.model_manager.get_ollama_models()
+                        if model_name in models or any(model_name in m for m in models):
+                            self.log(t("ui.launcher.log.model_downloaded", default="✅ [LLM] Модель {model} успешно скачана", model=model_name), "LLM")
+                            self.after(0, self.scan_llm_models)
+                            return
+                    except:
+                        pass
+                self.log(t("ui.launcher.log.model_download_failed", default="❌ [LLM] Ошибка скачивания модели", model=model_name), "LLM")
+        except Exception as e:
+            self.log(t("ui.launcher.log.model_download_error", default="❌ [LLM] Ошибка: {error}", error=str(e)), "LLM")
+    
+    def _delete_ollama_model(self, model_name):
+        """Удаляет модель Ollama"""
+        if not messagebox.askyesno(
+            t("ui.launcher.model.delete_confirm", default="Подтверждение удаления"),
+            t("ui.launcher.model.delete_confirm_message", default="Удалить модель {model}?", model=model_name)
+        ):
+            return
+        
+        threading.Thread(
+            target=self._delete_ollama_model_thread,
+            args=(model_name,),
+            daemon=True
+        ).start()
+    
+    def _delete_ollama_model_thread(self, model_name):
+        """Поток для удаления модели Ollama"""
         try:
+            self.log(t("ui.launcher.log.deleting_model", default="🗑️ [LLM] Удаление модели {model}...", model=model_name), "LLM")
+            
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
             
-            p = subprocess.Popen(
-                cmd, cwd=cwd, env=env,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                encoding='utf-8', errors='replace',
+            result = subprocess.run(
+                [OLLAMA_EXE, "rm", model_name],
+                cwd=OLLAMA_DIR,
+                capture_output=True,
+                text=True,
+                timeout=60,
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 startupinfo=startupinfo
             )
-            self.procs[name] = p
-            threading.Thread(target=reader, args=(p, name.upper()), daemon=True).start()
-        except FileNotFoundError as e:
-            service_names = {"bot": "Telegram Бот", "llm": "LLM Сервер", "sd": "Stable Diffusion"}
-            service_name = service_names.get(name, name)
-            error_msg = str(e)
-            self.log(f"❌ [{name.upper()}] Ошибка: Файл не найден: {error_msg}", name.upper())
-            self.log(f"ℹ️ [{name.upper()}] Команда: {' '.join(cmd)}", name.upper())
-            self.log(f"ℹ️ [{name.upper()}] Рабочая директория: {cwd}", name.upper())
             
-            # Специальная обработка для SD
-            if name == "sd" and "python" in error_msg.lower():
-                self.log(f"💡 [{name.upper()}] Возможные решения:", name.upper())
-                self.log(f"   1. Установите Visual C++ Redistributable:", name.upper())
-                self.log(f"      https://aka.ms/vs/17/release/vc_redist.x64.exe", name.upper())
-                self.log(f"   2. Переустановите Python через Установка.bat", name.upper())
-                self.log(f"   3. Проверьте, что Python работает: {cmd[0]} --version", name.upper())
-            
-            self.procs[name] = None
-            self._set_service_indicator(name, COLORS['danger'])
-            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-            self._set_service_status_label(name, text="Ошибка", color=COLORS['danger'])
+            if result.returncode == 0:
+                self.log(t("ui.launcher.log.model_deleted", default="✅ [LLM] Модель {model} удалена", model=model_name), "LLM")
+                self.after(0, self.scan_llm_models)
+            else:
+                self.log(t("ui.launcher.log.model_delete_failed", default="❌ [LLM] Ошибка удаления модели: {error}", error=result.stderr), "LLM")
         except Exception as e:
-            service_names = {"bot": "Telegram Бот", "llm": "LLM Сервер", "sd": "Stable Diffusion"}
-            service_name = service_names.get(name, name)
-            error_msg = str(e)
-            self.log(f"❌ [{name.upper()}] Ошибка запуска сервиса: {error_msg}", name.upper())
-            self.log(f"ℹ️ [{name.upper()}] Команда: {' '.join(cmd)}", name.upper())
-            
-            # Специальная обработка для SD
-            if name == "sd":
-                self.log(f"💡 [{name.upper()}] Если видите ошибку с DLL (VCRUNTIME140.dll, python310.dll):", name.upper())
-                self.log(f"   1. Установите Visual C++ Redistributable:", name.upper())
-                self.log(f"      https://aka.ms/vs/17/release/vc_redist.x64.exe", name.upper())
-                self.log(f"   2. Переустановите Python через Установка.bat", name.upper())
-            
-            self.procs[name] = None
-            self._set_service_indicator(name, COLORS['danger'])
-            self._set_service_button(name, text="▶", fg_color=COLORS['primary'])
-            self._set_service_status_label(name, text="Ошибка", color=COLORS['danger'])
-
-    def kill_tree(self, pid):
+            self.log(t("ui.launcher.log.model_delete_error", default="❌ [LLM] Ошибка: {error}", error=str(e)), "LLM")
+    
+    def _select_model_for_use(self, model_info):
+        """Выбирает модель для использования"""
         try:
-            p = psutil.Process(pid)
-            for c in p.children(recursive=True):
-                c.terminate()
-            p.terminate()
-        except:
-            pass
-
-    def _kill_bot_processes(self):
-        """Убивает все процессы бота перед запуском нового"""
-        try:
-            current_pid = os.getpid()
-            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-                try:
-                    if proc.info['name'] and 'python' in proc.info['name'].lower():
-                        cmdline = proc.info.get('cmdline', [])
-                        if cmdline and any('main.py' in str(arg) for arg in cmdline):
-                            pid = proc.info['pid']
-                            if pid != current_pid:
-                                try:
-                                    p = psutil.Process(pid)
-                                    p.terminate()
-                                    time.sleep(0.5)
-                                    if p.is_running():
-                                        p.kill()
-                                    self.log(f"Остановлен старый процесс бота (PID: {pid})", "BOT")
-                                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                    pass
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+            from dotenv import set_key  # type: ignore
+            
+            # Ensure model_info has required fields
+            if not isinstance(model_info, dict):
+                raise ValueError("model_info must be a dictionary")
+            
+            model_name = model_info.get('name')
+            if not model_name:
+                raise ValueError("model_info must contain 'name' field")
+            
+            # Get type, default to 'ollama' if not specified
+            model_type = model_info.get('type', 'ollama')
+            
+            # Format: "type:name:path" or "type:name"
+            if model_type == 'gguf' and model_info.get('path'):
+                model_str = f"{model_type}:{model_name}:{model_info['path']}"
+            else:
+                model_str = f"{model_type}:{model_name}"
+            
+            set_key(FILE_ENV, "SELECTED_LLM_MODEL", model_str)
+            self.log(t("ui.launcher.log.model_selected", default="✅ [LLM] Выбрана модель: {model}", model=model_name), "LLM")
+            messagebox.showinfo(
+                t("ui.launcher.model.selected", default="Модель выбрана"),
+                t("ui.launcher.model.selected_message", default="Модель {model} выбрана для использования", model=model_name)
+            )
         except Exception as e:
-            self.log(f"⚠️ Ошибка при поиске процессов бота: {e}", "BOT")
+            self.log(t("ui.launcher.log.model_select_error", default="❌ [LLM] Ошибка при выборе модели: {error}", error=str(e)), "LLM")
 
+    def _get_llm_model_from_settings(self):
+        """Получает выбранную модель LLM из настроек"""
+        try:
+            from dotenv import get_key  # type: ignore
+            model_str = get_key(FILE_ENV, "SELECTED_LLM_MODEL")
+            if not model_str:
+                return None
+            
+            # Parse model string: "type:name:path" or "type:name"
+            parts = model_str.split(":", 2)
+            if len(parts) < 2:
+                return None
+            
+            model_type = parts[0]
+            model_name = parts[1]
+            model_path = parts[2] if len(parts) > 2 else None
+            
+            return {
+                'name': model_name,
+                'type': model_type,
+                'path': model_path
+            }
+        except Exception as e:
+            self.log(t("ui.launcher.log.model_load_error", default="❌ [LLM] Ошибка загрузки модели из настроек: {error}", error=str(e)), "LLM")
+            return None
+    
     def service_status_loop(self):
-        for n, p in self.procs.items():
+        # Проверяем, что service_manager инициализирован
+        if not self.service_manager or not hasattr(self.service_manager, 'procs'):
+            self.after(500, self.service_status_loop)
+            return
+        
+        # Используем procs из service_manager
+        procs = self.service_manager.procs
+        for n, p in procs.items():
             if p and p.poll() is not None:
                 self.procs[n] = None
                 self._set_service_indicator(n, COLORS['danger'])
                 self._set_service_button(n, text="▶", fg_color=COLORS['primary'])
-                self._set_service_status_label(n, text="Ошибка", color=COLORS['danger'])
-                service_names = {"bot": "Telegram Бот", "llm": "LLM Сервер", "sd": "Stable Diffusion"}
-                service_name = service_names.get(n, n)
-                self.log(f"❌ Сервис {service_name} завершился с ошибкой", n.upper())
+                self._set_service_status_label(n, text=t("ui.launcher.status.error", default="Ошибка"), color=COLORS['danger'])
+                service_name = self._get_service_name(n)
+                self.log(t("ui.launcher.log.service_crashed", default="❌ Сервис {service} завершился с ошибкой", service=service_name), n.upper())
             elif p:
                 self._set_service_indicator(n, COLORS['success'])
                 self._set_service_button(n, text="⏸", fg_color=COLORS['danger'])
-                self._set_service_status_label(n, text="Работает", color=COLORS['success'])
+                self._set_service_status_label(n, text=t("ui.launcher.status.working", default="Работает"), color=COLORS['success'])
         
-        self.after(2000, self.service_status_loop)
+        self.after(500, self.service_status_loop)
 
-    # ==========================================
+    
     # CHANNELS MANAGEMENT
-    # ==========================================
+    
+    class ModernInputDialog(ctk.CTkToplevel):
+        """Кастомное модальное окно для ввода текста в стиле приложения"""
+        def __init__(self, parent, title="", placeholder=""):
+            super().__init__(parent)
+            self.result = None
+            
+            # Убираем стандартные рамки
+            self.overrideredirect(True)
+            
+            # Размер и позиция
+            self.geometry("400x200")
+            self.center_window(parent)
+            
+            # Стиль окна
+            self.configure(fg_color=COLORS['surface'])
+            
+            # Обводка (тонкая рамка #334155)
+            border_frame = ctk.CTkFrame(self, fg_color="#334155", corner_radius=0)
+            border_frame.place(x=0, y=0, relwidth=1, relheight=1)
+            
+            content_frame = ctk.CTkFrame(border_frame, fg_color=COLORS['surface'], corner_radius=0)
+            content_frame.place(x=1, y=1, relwidth=1, relheight=1)
+            content_frame.grid_columnconfigure(0, weight=1)
+            content_frame.grid_rowconfigure(1, weight=1)
+            
+            # Заголовок
+            header_label = ctk.CTkLabel(
+                content_frame,
+                text=title or t("ui.launcher.channels.new_topic_title", default="Создать новую тему"),
+                font=("Segoe UI", 16, "bold"),
+                text_color=COLORS['text'],
+                anchor="w"
+            )
+            header_label.grid(row=0, column=0, sticky="ew", padx=20, pady=(20, 10))
+            
+            # Поле ввода
+            self.entry = ctk.CTkEntry(
+                content_frame,
+                placeholder_text=placeholder or t("ui.launcher.channels.new_topic_dialog", default="Название..."),
+                font=("Segoe UI", 14),
+                height=40,
+                fg_color=COLORS['bg'],
+                border_color=COLORS['border']
+            )
+            self.entry.grid(row=1, column=0, sticky="ew", padx=20, pady=10)
+            # Очищаем поле при создании
+            self.entry.delete(0, "end")
+            self.entry.bind("<Return>", lambda e: self.confirm())
+            self.entry.bind("<Escape>", lambda e: self.cancel())
+            
+            # Кнопки (правый нижний угол)
+            buttons_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+            buttons_frame.grid(row=2, column=0, sticky="e", padx=20, pady=(0, 20))
+            
+            cancel_btn = ctk.CTkButton(
+                buttons_frame,
+                text=t("ui.launcher.button.cancel", default="Отмена"),
+                fg_color="transparent",
+                hover_color=COLORS['surface_light'],
+                text_color=COLORS['text_secondary'],
+                font=("Segoe UI", 13),
+                width=100,
+                height=35,
+                command=self.cancel
+            )
+            cancel_btn.pack(side="left", padx=(0, 10))
+            
+            confirm_btn = ctk.CTkButton(
+                buttons_frame,
+                text=t("ui.launcher.button.create", default="Создать"),
+                fg_color=COLORS['primary'],
+                hover_color=COLORS['primary_hover'],
+                text_color="white",
+                font=("Segoe UI", 13, "bold"),
+                width=100,
+                height=35,
+                command=self.confirm
+            )
+            confirm_btn.pack(side="left")
+            
+            # Модальность
+            self.grab_set()
+            self.transient(parent)
+            self.lift()
+            self.focus_force()
+            
+            # Фокус на поле ввода (с задержкой и принудительно)
+            def set_focus():
+                try:
+                    self.entry.focus_force()
+                    self.entry.icursor(0)
+                except:
+                    pass
+            
+            self.after(150, set_focus)
+            self.after(300, set_focus)  # Двойная попытка для надежности
+        
+        def center_window(self, parent):
+            """Центрирует окно относительно родителя"""
+            self.update_idletasks()
+            parent_x = parent.winfo_x()
+            parent_y = parent.winfo_y()
+            parent_width = parent.winfo_width()
+            parent_height = parent.winfo_height()
+            
+            dialog_width = 400
+            dialog_height = 200
+            
+            x = parent_x + (parent_width // 2) - (dialog_width // 2)
+            y = parent_y + (parent_height // 2) - (dialog_height // 2)
+            
+            self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        
+        def confirm(self):
+            """Подтверждение ввода"""
+            text = self.entry.get().strip()
+            if text:  # Валидация: нельзя создать пустую тему
+                self.result = text
+                self.destroy()
+        
+        def cancel(self):
+            """Отмена"""
+            self.result = None
+            self.destroy()
+        
+        def get_input(self):
+            """Возвращает введенный текст или None"""
+            self.wait_window()
+            return self.result
+    
+    class ModernConfirmDialog(ctk.CTkToplevel):
+        """Кастомное модальное окно подтверждения в стиле приложения"""
+        def __init__(self, parent, message="", title=""):
+            super().__init__(parent)
+            self.result = False
+            
+            # Убираем стандартные рамки
+            self.overrideredirect(True)
+            
+            # Размер и позиция
+            self.geometry("340x150")
+            self.center_window(parent)
+            
+            # Стиль окна
+            self.configure(fg_color=COLORS['surface'])
+            
+            # Обводка (красная для опасного действия)
+            border_frame = ctk.CTkFrame(self, fg_color="#ef4444", corner_radius=0)
+            border_frame.place(x=0, y=0, relwidth=1, relheight=1)
+            
+            content_frame = ctk.CTkFrame(border_frame, fg_color=COLORS['surface'], corner_radius=0)
+            content_frame.place(x=1, y=1, relwidth=1, relheight=1)
+            content_frame.grid_columnconfigure(0, weight=1)
+            content_frame.grid_rowconfigure(0, weight=1)
+            
+            # Текст сообщения
+            message_label = ctk.CTkLabel(
+                content_frame,
+                text=message,
+                font=("Segoe UI", 13),
+                text_color=COLORS['text'],
+                wraplength=300,
+                justify="center"
+            )
+            message_label.grid(row=0, column=0, padx=20, pady=20)
+            
+            # Кнопки
+            buttons_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+            buttons_frame.grid(row=1, column=0, sticky="e", padx=20, pady=(0, 20))
+            
+            cancel_btn = ctk.CTkButton(
+                buttons_frame,
+                text=t("ui.launcher.button.cancel", default="Отмена"),
+                fg_color="transparent",
+                hover_color=COLORS['surface_light'],
+                text_color=COLORS['text_secondary'],
+                font=("Segoe UI", 13),
+                width=100,
+                height=35,
+                command=self.cancel
+            )
+            cancel_btn.pack(side="left", padx=(0, 10))
+            
+            delete_btn = ctk.CTkButton(
+                buttons_frame,
+                text=t("ui.launcher.button.delete", default="Удалить"),
+                fg_color="#ef4444",
+                hover_color="#dc2626",
+                text_color="white",
+                font=("Segoe UI", 13, "bold"),
+                width=100,
+                height=35,
+                command=self.confirm
+            )
+            delete_btn.pack(side="left")
+            
+            # Модальность
+            self.grab_set()
+            self.transient(parent)
+            
+            # Фокус на кнопке отмены (безопаснее)
+            self.after(100, lambda: cancel_btn.focus())
+        
+        def center_window(self, parent):
+            """Центрирует окно относительно родителя"""
+            self.update_idletasks()
+            parent_x = parent.winfo_x()
+            parent_y = parent.winfo_y()
+            parent_width = parent.winfo_width()
+            parent_height = parent.winfo_height()
+            
+            dialog_width = 340
+            dialog_height = 150
+            
+            x = parent_x + (parent_width // 2) - (dialog_width // 2)
+            y = parent_y + (parent_height // 2) - (dialog_height // 2)
+            
+            self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        
+        def confirm(self):
+            """Подтверждение удаления"""
+            self.result = True
+            self.destroy()
+        
+        def cancel(self):
+            """Отмена"""
+            self.result = False
+            self.destroy()
+        
+        def get_result(self):
+            """Возвращает True если подтверждено, False если отменено"""
+            self.wait_window()
+            return self.result
+    
     def refresh_topics(self):
         """Обновляет только список тем"""
+        if not hasattr(self, 'scroll_topics'):
+            return
+            
         for w in self.scroll_topics.winfo_children():
-            if isinstance(w, ctk.CTkFrame):
-                w.destroy()
+            w.destroy()
         
         try:
             if os.path.exists(FILE_CHANNELS):
@@ -3178,34 +2804,44 @@ except Exception as e:
             self.current_topic = None
         
         # Draw topics
-        for t in topics:
-            frame = ctk.CTkFrame(self.scroll_topics, fg_color="transparent")
-            frame.pack(fill="x", pady=2)
-            
+        for idx, t in enumerate(topics):
             is_active = (t == self.current_topic)
+            
+            # Фрейм для кнопки темы и кнопки удаления
+            topic_frame = ctk.CTkFrame(self.scroll_topics, fg_color="transparent")
+            topic_frame.grid(row=idx, column=0, sticky="ew", padx=4, pady=4)
+            topic_frame.grid_columnconfigure(0, weight=1)
+            
+            # Кнопка темы
             btn = ctk.CTkButton(
-                frame,
+                topic_frame,
                 text=f"📂 {t}",
-                fg_color=COLORS['primary'] if is_active else "transparent",
+                fg_color=COLORS['primary'] if is_active else COLORS['surface_light'],
                 text_color="white" if is_active else COLORS['text_secondary'],
                 anchor="w",
-                hover_color=COLORS['surface_dark'],
+                hover_color=COLORS['primary_hover'] if is_active else COLORS['surface'],
                 command=lambda tp=t: self.select_topic(tp),
-                font=("Segoe UI", 13)
+                font=("Segoe UI", 14),
+                height=45,
+                corner_radius=8
             )
-            btn.pack(side="left", fill="x", expand=True)
+            btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
             
+            # Кнопка удаления (только для активной темы)
             if is_active:
-                ctk.CTkButton(
-                    frame,
+                delete_btn = ctk.CTkButton(
+                    topic_frame,
                     text="×",
-                    width=30,
-                    fg_color="transparent",
-                    text_color=COLORS['danger'],
-                    hover_color=COLORS['surface_dark'],
-                    command=lambda tp=t: self.delete_topic(tp),
-                    font=("Segoe UI", 16)
-                ).pack(side="right")
+                    width=40,
+                    height=45,
+                    fg_color=COLORS['danger'],
+                    hover_color="#dc2626",
+                    text_color="white",
+                    font=("Segoe UI", 20, "bold"),
+                    corner_radius=8,
+                    command=lambda tp=t: self.delete_topic(tp)
+                )
+                delete_btn.grid(row=0, column=1, sticky="e")
     
     def refresh_channels_only(self):
         """Обновляет только список каналов (плавно)"""
@@ -3218,6 +2854,9 @@ except Exception as e:
     
     def _draw_channels(self):
         """Рисует каналы для текущей темы"""
+        if not hasattr(self, 'scroll_chans'):
+            return
+            
         try:
             if os.path.exists(FILE_CHANNELS):
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
@@ -3229,17 +2868,87 @@ except Exception as e:
         
         topics = list(data.keys())
         
-        # Draw channels
+        # Обновляем заголовок темы
+        if hasattr(self, 'topic_title_label'):
+            if self.current_topic:
+                self.topic_title_label.configure(text=self.current_topic)
+            else:
+                self.topic_title_label.configure(text=t("ui.launcher.channels.select_topic", default="Выберите тему"))
+        
+        # Проверяем наличие каналов в выбранной теме
+        has_channels = False
         if self.current_topic and self.current_topic in data:
-            for ch in data[self.current_topic]:
-                self.draw_channel_card(ch)
-        elif not topics:
-            ctk.CTkLabel(
-                self.scroll_chans,
-                text="Создайте тему для начала",
-                font=("Segoe UI", 14),
-                text_color=COLORS['text_muted']
-            ).pack(pady=50)
+            channels = data[self.current_topic]
+            has_channels = len(channels) > 0
+        
+        # Draw channels или Empty State
+        if not topics:
+            # Нет тем вообще
+            self._show_empty_state(
+                icon="📁",
+                title=t("ui.launcher.channels.create_topic_first", default="Создайте тему для начала"),
+                subtitle=""
+            )
+        elif not self.current_topic:
+            # Тема не выбрана
+            self._show_empty_state(
+                icon="📂",
+                title=t("ui.launcher.channels.select_topic", default="Выберите тему"),
+                subtitle=""
+            )
+        elif not has_channels:
+            # Тема выбрана, но каналов нет - показываем Empty State
+            self._show_empty_state(
+                icon="📭",
+                title=t("ui.launcher.channels.no_channels_in_topic", default="В этой теме пока нет каналов"),
+                subtitle=t("ui.launcher.channels.add_channel_hint", default="Добавьте канал через поле сверху")
+            )
+        else:
+            # Есть каналы - показываем список
+            for idx, ch in enumerate(data[self.current_topic]):
+                self.draw_channel_card(ch, idx)
+    
+    def _show_empty_state(self, icon, title, subtitle=""):
+        """Показывает красивое пустое состояние (Empty State)"""
+        # Очищаем все виджеты
+        for widget in self.scroll_chans.winfo_children():
+            widget.destroy()
+        
+        # Контейнер для центрирования
+        empty_container = ctk.CTkFrame(self.scroll_chans, fg_color="transparent")
+        empty_container.grid(row=0, column=0, sticky="", pady=100)
+        empty_container.grid_columnconfigure(0, weight=1)
+        
+        # Большая иконка
+        icon_label = ctk.CTkLabel(
+            empty_container,
+            text=icon,
+            font=("Segoe UI", 80),
+            text_color=COLORS['text_muted'],
+            fg_color="transparent"
+        )
+        icon_label.grid(row=0, column=0, pady=(0, 20))
+        
+        # Основной текст
+        title_label = ctk.CTkLabel(
+            empty_container,
+            text=title,
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text_secondary'],
+            fg_color="transparent"
+        )
+        title_label.grid(row=1, column=0, pady=(0, 8))
+        
+        # Подсказка (если есть)
+        if subtitle:
+            subtitle_label = ctk.CTkLabel(
+                empty_container,
+                text=subtitle,
+                font=("Segoe UI", 13),
+                text_color=COLORS['text_muted'],
+                fg_color="transparent"
+            )
+            subtitle_label.grid(row=2, column=0)
     
     def refresh_channels(self):
         """Полное обновление (темы + каналы)"""
@@ -3249,26 +2958,17 @@ except Exception as e:
     def select_topic(self, t):
         """Выбирает тему и обновляет только каналы"""
         self.current_topic = t
-        # Обновляем только активную тему в списке тем
-        self._update_active_topic()
-        # Обновляем каналы плавно
+        # Обновляем список тем для подсветки активной
+        self.refresh_topics()
+        # Обновляем каналы
         self.refresh_channels_only()
     
-    def _update_active_topic(self):
-        """Обновляет только визуальное выделение активной темы"""
-        for w in self.scroll_topics.winfo_children():
-            if isinstance(w, ctk.CTkFrame):
-                for child in w.winfo_children():
-                    if isinstance(child, ctk.CTkButton):
-                        topic_text = child.cget("text").replace("📂 ", "")
-                        is_active = (topic_text == self.current_topic)
-                        child.configure(
-                            fg_color=COLORS['primary'] if is_active else "transparent",
-                            text_color="white" if is_active else COLORS['text_secondary']
-                        )
-    
     def new_topic(self):
-        dialog = ctk.CTkInputDialog(text="Название темы:", title="Новая тема")
+        dialog = self.ModernInputDialog(
+            self,
+            title=t("ui.launcher.channels.new_topic_title", default="Создать новую тему"),
+            placeholder=t("ui.launcher.channels.new_topic_dialog", default="Название...")
+        )
         topic = dialog.get_input()
         if topic:
             try:
@@ -3283,86 +2983,151 @@ except Exception as e:
             except:
                 pass
     
-    def delete_topic(self, t):
-        if messagebox.askyesno("Подтверждение", f"Удалить тему '{t}'?"):
-            try:
-                if not os.path.exists(FILE_CHANNELS):
-                    return
+    def delete_topic(self, topic):
+        """Удаляет тему с подтверждением и показом количества каналов"""
+        try:
+            # Загружаем данные для подсчета каналов
+            if os.path.exists(FILE_CHANNELS):
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
                     db = json.load(f)
-                if t in db:
-                    del db[t]
+            else:
+                db = {}
+            
+            # Подсчитываем количество каналов в теме
+            channel_count = 0
+            if topic in db:
+                channel_count = len(db[topic])
+            
+            # Формируем сообщение подтверждения
+            if channel_count > 0:
+                # Есть каналы - показываем предупреждение с количеством
+                message = t(
+                    "ui.launcher.channels.delete_topic_with_channels",
+                    default="Вы уверены, что хотите удалить тему '{topic}' и все {count} каналов внутри?\n\nЭто действие нельзя отменить!",
+                    topic=topic,
+                    count=channel_count
+                )
+            else:
+                # Нет каналов - простое подтверждение
+                message = t(
+                    "ui.launcher.channels.delete_topic_confirm",
+                    default="Удалить тему '{topic}'?",
+                    topic=topic
+                )
+            
+            # Показываем кастомное модальное окно подтверждения
+            dialog = self.ModernConfirmDialog(
+                self,
+                message=message,
+                title=t("ui.launcher.confirm.title", default="Подтверждение удаления")
+            )
+            if dialog.get_result():
+                # Пользователь подтвердил - удаляем
+                if topic in db:
+                    del db[topic]
                     # Если файл стал пустым, удаляем его
                     if not db:
                         os.remove(FILE_CHANNELS)
                     else:
                         with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
                             json.dump(db, f, indent=4, ensure_ascii=False)
-                    self.current_topic = None
+                    
+                    # Обновляем текущую тему
+                    if self.current_topic == topic:
+                        self.current_topic = None
+                        # Выбираем первую доступную тему, если есть
+                        remaining_topics = list(db.keys())
+                        if remaining_topics:
+                            self.current_topic = remaining_topics[0]
+                    
                     self.refresh_channels()  # Полное обновление, так как тема удалена
-            except:
-                pass
+        except Exception as e:
+            self.log(f"❌ Ошибка при удалении темы: {e}", "SYSTEM")
     
-    def draw_channel_card(self, link):
-        """Создает карточку канала с правильным замыканием для кнопки удаления"""
+    def draw_channel_card(self, link, row_idx=0):
+        """Создает карточку канала в современном стиле с иконками"""
         from functools import partial
         
-        card = ctk.CTkFrame(self.scroll_chans, fg_color=COLORS['surface_light'], corner_radius=12)
-        card.pack(fill="x", pady=5, padx=5)
-        
-        # Сохраняем оригинальный link для удаления - используем правильное замыкание
+        # Сохраняем оригинальный link
         original_link = link
-        clean = link.replace("https://t.me/", "@").replace("@", "")
-        display_text = f"@{clean}" if clean else link
+        clean = link.replace("https://t.me/", "").replace("@", "").strip()
+        display_name = clean if clean else link
+        username = f"@{clean}" if clean else link
         
-        # Проверяем длину текста - если слишком длинный, скрываем кнопку удаления
-        max_length = 30
-        show_delete = len(display_text) <= max_length
+        # Создаем карточку
+        card = ctk.CTkFrame(self.scroll_chans, fg_color=COLORS['card_bg'], corner_radius=12)
+        card.grid(row=row_idx, column=0, sticky="ew", pady=8, padx=0)
+        card.grid_columnconfigure(1, weight=1)
         
-        # Обрезаем текст для отображения если слишком длинный
-        if len(display_text) > max_length:
-            display_text = display_text[:max_length-3] + "..."
-        
+        # Аватарка/Иконка канала (слева)
+        avatar_frame = ctk.CTkFrame(card, fg_color=COLORS['primary'], width=48, height=48, corner_radius=24)
+        avatar_frame.grid(row=0, column=0, sticky="nsew", padx=16, pady=12)
+        avatar_frame.grid_propagate(False)
         ctk.CTkLabel(
-            card,
+            avatar_frame,
             text="📢",
-            font=("Segoe UI", 24)
-        ).pack(side="left", padx=(20, 15), pady=15)
+            font=("Segoe UI", 24),
+            text_color="white"
+        ).pack(expand=True)
         
-        ctk.CTkLabel(
-            card,
-            text=display_text,
+        # Центральная часть: Название и username
+        info_frame = ctk.CTkFrame(card, fg_color="transparent")
+        info_frame.grid(row=0, column=1, sticky="w", padx=(0, 16), pady=12)
+        
+        name_label = ctk.CTkLabel(
+            info_frame,
+            text=display_name,
             font=("Segoe UI", 15, "bold"),
-            text_color=COLORS['text']
-        ).pack(side="left", fill="x", expand=True)
+            text_color=COLORS['text'],
+            anchor="w"
+        )
+        name_label.pack(anchor="w")
         
-        # Кнопка "Открыть" - используем правильное замыкание
+        username_label = ctk.CTkLabel(
+            info_frame,
+            text=username,
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_muted'],
+            anchor="w"
+        )
+        username_label.pack(anchor="w")
+        
+        # Правая часть: Иконки действий
+        actions_frame = ctk.CTkFrame(card, fg_color="transparent")
+        actions_frame.grid(row=0, column=2, sticky="e", padx=(0, 16), pady=12)
+        
+        # Иконка "Ссылка" (открыть)
         def open_channel(channel_link=original_link):
-            clean_link = channel_link.replace("https://t.me/", "").replace("@", "")
+            clean_link = channel_link.replace("https://t.me/", "").replace("@", "").strip()
             webbrowser.open(f"https://t.me/{clean_link}")
         
-        ctk.CTkButton(
-            card,
-            text="Открыть",
-            width=80,
-            fg_color=COLORS['accent'],
-            hover_color="#2563eb",
-            command=open_channel,
-            font=("Segoe UI", 12)
-        ).pack(side="right", padx=(5, 10))
+        open_btn = ctk.CTkButton(
+            actions_frame,
+            text="🔗",
+            width=40,
+            height=40,
+            fg_color="transparent",
+            hover_color=COLORS['surface_light'],
+            font=("Segoe UI", 18),
+            corner_radius=8,
+            command=open_channel
+        )
+        open_btn.pack(side="left", padx=4)
         
-        # Кнопка "Удалить" - показываем только если текст не слишком длинный
-        if show_delete:
-            delete_handler = partial(self.delete_channel, original_link)
-            ctk.CTkButton(
-                card,
-                text="Удалить",
-                width=80,
-                fg_color=COLORS['danger'],
-                hover_color="#dc2626",
-                command=delete_handler,
-                font=("Segoe UI", 12)
-            ).pack(side="right", padx=(5, 10))
+        # Иконка "Корзина" (удалить, красная при наведении)
+        delete_handler = partial(self.delete_channel, original_link)
+        delete_btn = ctk.CTkButton(
+            actions_frame,
+            text="🗑️",
+            width=40,
+            height=40,
+            fg_color="transparent",
+            hover_color=COLORS['danger'],
+            font=("Segoe UI", 18),
+            corner_radius=8,
+            command=delete_handler
+        )
+        delete_btn.pack(side="left", padx=4)
     
     def add_channel(self):
         if not self.current_topic:
@@ -3421,20 +3186,137 @@ except Exception as e:
                             json.dump(db, f, indent=4, ensure_ascii=False)
                     self.refresh_channels_only()  # Только каналы, тема не изменилась
         except Exception as e:
-            print(f"❌ Ошибка при удалении канала: {e}")
+            self.log(f"❌ [CHANNELS] Ошибка при удалении канала: {e}", "SYSTEM")
     
-    # ==========================================
+    
     # SETTINGS
-    # ==========================================
+    
     def scan_llm_models(self):
-        models = glob.glob(os.path.join(MODELS_LLM_DIR, "*.gguf"))
-        names = [os.path.basename(m) for m in models]
-        if hasattr(self, 'llm_combo'):
-            self.llm_combo.configure(values=names)
-            if names:
-                self.llm_combo.set(names[0])
+        """Сканирует и обновляет списки моделей с glassmorphism дизайном"""
+        if self.model_manager is None:
+            self._init_managers()
+        
+        if hasattr(self, 'ollama_models_frame'):
+            for widget in self.ollama_models_frame.winfo_children():
+                widget.destroy()
+            
+            ollama_models = self.model_manager.get_ollama_models()
+            if ollama_models:
+                for model in ollama_models:
+                    model_row = self.create_model_row(
+                        self.ollama_models_frame,
+                        model,
+                        "🧠",
+                        lambda m=model: self._select_model_for_use({'name': m, 'type': 'ollama'}),
+                        lambda m=model: self._delete_ollama_model(m)
+                    )
+                    model_row.pack(fill="x", pady=6, padx=4)
             else:
-                self.llm_combo.set("Модели не найдены")
+                empty_frame = ctk.CTkFrame(self.ollama_models_frame, fg_color="transparent")
+                empty_frame.pack(fill="x", pady=40)
+                ctk.CTkLabel(
+                    empty_frame,
+                    text=t("ui.launcher.model.ollama_not_found", default="Модели не найдены"),
+                    font=("Segoe UI", 13),
+                    text_color=COLORS['text_muted']
+                ).pack()
+        
+        if hasattr(self, 'gguf_models_frame'):
+            for widget in self.gguf_models_frame.winfo_children():
+                widget.destroy()
+            
+            gguf_models = self.model_manager.get_gguf_models()
+            if gguf_models:
+                for model_info in gguf_models:
+                    model_row = self.create_model_row(
+                        self.gguf_models_frame,
+                        model_info['name'],
+                        "📄",
+                        lambda m=model_info: self._select_model_for_use(m),
+                        lambda m=model_info: self._delete_gguf_model(m)
+                    )
+                    model_row.pack(fill="x", pady=6, padx=4)
+            else:
+                empty_frame = ctk.CTkFrame(self.gguf_models_frame, fg_color="transparent")
+                empty_frame.pack(fill="x", pady=40)
+                ctk.CTkLabel(
+                    empty_frame,
+                    text=t("ui.launcher.model.gguf_not_found", default="GGUF файлы не найдены"),
+                    font=("Segoe UI", 13),
+                    text_color=COLORS['text_muted']
+                ).pack()
+    
+    def create_model_row(self, parent, model_name, icon, select_callback, delete_callback):
+        """Создает красивую строку модели с glassmorphism эффектом"""
+        row = self.create_glass_card(parent, fg_color=COLORS['surface_light'], corner_radius=12)
+        row.grid_columnconfigure(1, weight=1)
+        
+        left_frame = ctk.CTkFrame(row, fg_color="transparent")
+        left_frame.grid(row=0, column=0, sticky="w", padx=16, pady=12)
+        
+        icon_label = ctk.CTkLabel(
+            left_frame,
+            text=icon,
+            font=("Segoe UI", 20),
+            text_color=COLORS['primary']
+        )
+        icon_label.pack(side="left", padx=(0, 12))
+        
+        name_label = ctk.CTkLabel(
+            left_frame,
+            text=model_name,
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text']
+        )
+        name_label.pack(side="left")
+        
+        btn_frame = ctk.CTkFrame(row, fg_color="transparent")
+        btn_frame.grid(row=0, column=1, sticky="e", padx=16, pady=12)
+        
+        # Check if model is currently selected
+        selected_model = self._get_llm_model_from_settings()
+        is_active = selected_model and selected_model.get('name') == model_name
+        
+        if is_active:
+            select_btn = ctk.CTkButton(
+                btn_frame,
+                text="✓ Активно",
+                width=100,
+                height=32,
+                command=select_callback,
+                fg_color=COLORS['success'],
+                hover_color="#059669",
+                font=("Segoe UI", 12, "bold"),
+                corner_radius=8
+            )
+        else:
+            select_btn = ctk.CTkButton(
+                btn_frame,
+                text="✓ Выбрать",
+                width=100,
+                height=32,
+                command=select_callback,
+                fg_color=COLORS['primary'],
+                hover_color=COLORS['primary_hover'],
+                font=("Segoe UI", 12, "bold"),
+                corner_radius=8
+            )
+        select_btn.pack(side="left", padx=(0, 8))
+        
+        delete_btn = ctk.CTkButton(
+            btn_frame,
+            text="🗑️",
+            width=36,
+            height=32,
+            command=delete_callback,
+            fg_color=COLORS['danger'],
+            hover_color="#dc2626",
+            font=("Segoe UI", 12),
+            corner_radius=8
+        )
+        delete_btn.pack(side="left")
+        
+        return row
     
     def save_settings(self):
         # Создаем резервную копию перед сохранением
@@ -3453,21 +3335,28 @@ except Exception as e:
                 MODELS_LLM_DIR = models_path
                 # Обновляем список моделей
                 self.scan_llm_models()
-                self.log(f"✅ [SETTINGS] Папка с моделями обновлена: {models_path}", "SETTINGS")
+                self.log(t("ui.launcher.log.settings_models_folder_updated", default="✅ [SETTINGS] Папка с моделями обновлена: {path}", path=models_path), "SETTINGS")
             else:
-                self.log(f"⚠️ [SETTINGS] Указанная папка не существует: {models_path}", "SETTINGS")
+                self.log(t("ui.launcher.log.settings_models_folder_not_exists", default="⚠️ [SETTINGS] Указанная папка не существует: {path}", path=models_path), "SETTINGS")
         
         # Сохраняем debug режим
         set_key(FILE_ENV, "DEBUG_MODE", "true" if self.debug_mode.get() else "false")
+        
+        # Сохраняем язык
+        if hasattr(self, 'language_var'):
+            lang_value = self.language_var.get()
+            lang_code = lang_value.split(' - ')[0] if ' - ' in lang_value else lang_value
+            set_key(FILE_ENV, "LANGUAGE", lang_code)
+            self.current_language = lang_code
         
         # Сохраняем URL модели SD
         if hasattr(self, 'sd_model_url_entry'):
             model_url = self.sd_model_url_entry.get().strip()
             if model_url:
                 set_key(FILE_ENV, "SD_MODEL_URL", model_url)
-                self.log(f"✅ [SETTINGS] URL модели SD сохранен", "SETTINGS")
+                self.log(t("ui.launcher.log.settings_sd_model_url_saved", default="✅ [SETTINGS] URL модели SD сохранен"), "SETTINGS")
         
-        messagebox.showinfo("Сохранено", "Настройки обновлены.")
+        messagebox.showinfo(t("ui.launcher.success.title"), t("ui.launcher.settings.saved"))
     
     def _create_backup(self):
         """Создает резервную копию конфигурационных файлов"""
@@ -3497,7 +3386,7 @@ except Exception as e:
         except Exception as e:
             # Не критично, просто логируем
             if hasattr(self, 'log'):
-                self.log(f"⚠️ [BACKUP] Не удалось создать резервную копию: {e}", "SYSTEM")
+                self.log(t("ui.launcher.log.backup_failed", default="⚠️ [BACKUP] Не удалось создать резервную копию: {error}", error=str(e)), "SYSTEM")
     
     def _cleanup_old_backups(self, backup_dir, keep_count=10):
         """Удаляет старые резервные копии, оставляя только последние"""
@@ -3520,9 +3409,9 @@ except Exception as e:
         except:
             pass
     
-    # ==========================================
+    
     # MONITORING
-    # ==========================================
+    
     def start_monitor(self):
         threading.Thread(target=self._monitor_loop, daemon=True).start()
     
@@ -3536,6 +3425,7 @@ except Exception as e:
         while True:
             time.sleep(1)
             try:
+                # Добавляем защиту от зависания при вызове psutil
                 curr_net = psutil.net_io_counters().bytes_recv
                 disk = psutil.disk_io_counters()
                 curr_disk = disk.read_bytes + disk.write_bytes
@@ -3545,19 +3435,33 @@ except Exception as e:
                 
                 net_label = getattr(self, 'lbl_net', None)
                 disk_label = getattr(self, 'lbl_disk', None)
-                self.safe_widget_configure(net_label, text=f"🌐 Сеть: {ns:.1f} MB/s")
-                self.safe_widget_configure(disk_label, text=f"💾 Диск: {ds:.1f} MB/s")
+                self.safe_widget_configure(net_label, text=t("ui.launcher.monitoring.network", default="🌐 Сеть: {speed} МБ/с", speed=f"{ns:.1f}"))
+                self.safe_widget_configure(disk_label, text=t("ui.launcher.monitoring.disk", default="💾 Диск: {speed} МБ/с", speed=f"{ds:.1f}"))
                 
                 last_net = curr_net
                 last_disk = curr_disk
-            except:
+            except (psutil.AccessDenied, psutil.NoSuchProcess, AttributeError):
+                # Игнорируем ошибки доступа или отсутствия процессов
                 pass
+            except:
+                # Для других ошибок делаем паузу перед повтором
+                time.sleep(5)
     
-    # ==========================================
+    
     # CONSOLE
-    # ==========================================
-    def log(self, txt, tab="Все"):
-        self.log_queue.put((txt, tab))
+    
+    def log(self, txt, tab="SYSTEM"):
+        """Логирование сообщений в консоль"""
+        try:
+            # Используем "SYSTEM" как дефолтную вкладку вместо "Все"
+            if not tab or tab == "Все":
+                tab = "SYSTEM"
+            self.log_queue.put((txt, tab))
+        except Exception as e:
+            # Если очередь недоступна, выводим в stderr
+            import sys
+            print(f"[LOG ERROR] Failed to log message: {e}", file=sys.stderr, flush=True)
+            print(f"[LOG] {txt}", file=sys.stderr, flush=True)
 
     def clear_console(self):
         for c in self.consoles.values():
@@ -3570,47 +3474,46 @@ except Exception as e:
     
     def setup_console_context_menu(self, textbox):
         """Добавляет контекстное меню для копирования текста как в Windows"""
-        def show_context_menu(event):
+        try:
+            from .console_manager import ConsoleManager
+        except (ImportError, ValueError):
             try:
-                # Получаем выделенный текст
-                try:
-                    if textbox.tag_ranges("sel"):
-                        selected = textbox.get("sel.first", "sel.last")
-                    else:
-                        selected = None
-                except:
-                    selected = None
-                
-                # Создаем меню
-                menu = tk.Menu(self, tearoff=0, bg=COLORS['surface_light'], fg=COLORS['text'],
-                              activebackground=COLORS['primary'], activeforeground='white',
-                              font=("Segoe UI", 10))
-                
-                if selected:
-                    menu.add_command(label="Копировать", command=lambda: self.copy_selected(textbox))
-                else:
-                    menu.add_command(label="Копировать всё", command=lambda: self.copy_all_to_clipboard(textbox))
-                
-                menu.add_separator()
-                menu.add_command(label="Выделить всё", command=lambda: self.select_all(textbox))
-                menu.add_separator()
-                menu.add_command(label="Очистить", command=lambda: self.clear_single_console(textbox))
-                
-                # Показываем меню
-                menu.tk_popup(event.x_root, event.y_root)
-            except Exception as e:
-                pass
+                from console_manager import ConsoleManager
+            except ImportError:
+                def show_context_menu(event):
+                    try:
+                        try:
+                            if textbox.tag_ranges("sel"):
+                                selected = textbox.get("sel.first", "sel.last")
+                            else:
+                                selected = None
+                        except:
+                            selected = None
+                        menu = tk.Menu(self, tearoff=0, bg=COLORS['card_bg'], fg=COLORS['text'],
+                                      activebackground=COLORS['primary'], activeforeground='white',
+                                      font=("Segoe UI", 10))
+                        if selected:
+                            menu.add_command(label=t("ui.launcher.console.copy", default="Копировать"), command=lambda: self.copy_selected(textbox))
+                        else:
+                            menu.add_command(label=t("ui.launcher.console.copy_all", default="Копировать всё"), command=lambda: self.copy_all_to_clipboard(textbox))
+                        menu.add_separator()
+                        menu.add_command(label=t("ui.launcher.console.select_all", default="Выделить всё"), command=lambda: self.select_all(textbox))
+                        menu.add_separator()
+                        menu.add_command(label=t("ui.launcher.console.clear", default="Очистить"), command=lambda: self.clear_single_console(textbox))
+                        menu.tk_popup(event.x_root, event.y_root)
+                    except:
+                        pass
+                textbox.bind("<Button-3>", show_context_menu)
+                textbox.bind("<Control-c>", lambda e: (self.copy_selected(textbox), "break"))
+                textbox.bind("<Control-a>", lambda e: (self.select_all(textbox), "break"))
+                textbox.bind("<Control-x>", lambda e: (self.cut_selected(textbox), "break"))
+                textbox.bind("<Control-v>", lambda e: (self.paste_to_console(textbox), "break"))
+                textbox.bind("<Button-1>", lambda e: textbox.focus_set())
+                return
         
-        # Привязываем ПКМ
-        textbox.bind("<Button-3>", show_context_menu)
-        # Стандартные сочетания клавиш Windows
-        textbox.bind("<Control-c>", lambda e: (self.copy_selected(textbox), "break"))
-        textbox.bind("<Control-a>", lambda e: (self.select_all(textbox), "break"))
-        textbox.bind("<Control-x>", lambda e: (self.cut_selected(textbox), "break"))
-        textbox.bind("<Control-v>", lambda e: (self.paste_to_console(textbox), "break"))
-        
-        # Включаем стандартное выделение мышью
-        textbox.bind("<Button-1>", lambda e: textbox.focus_set())
+        if not hasattr(self, '_console_manager'):
+            self._console_manager = ConsoleManager(self)
+        self._console_manager.setup_console_context_menu(textbox)
     
     def copy_to_clipboard(self, text):
         """Копирует текст в буфер обмена"""
@@ -3622,74 +3525,92 @@ except Exception as e:
     
     def copy_all_to_clipboard(self, textbox):
         """Копирует весь текст из консоли"""
-        try:
-            text = textbox.get("1.0", "end-1c")
-            self.clipboard_clear()
-            self.clipboard_append(text)
-        except:
-            pass
+        if hasattr(self, '_console_manager'):
+            self._console_manager.copy_all_to_clipboard(textbox)
+        else:
+            try:
+                text = textbox.get("1.0", "end-1c")
+                self.clipboard_clear()
+                self.clipboard_append(text)
+            except:
+                pass
     
     def copy_selected(self, textbox):
         """Копирует выделенный текст"""
-        try:
-            if textbox.tag_ranges("sel"):
-                selected = textbox.get("sel.first", "sel.last")
-                if selected:
-                    self.clipboard_clear()
-                    self.clipboard_append(selected)
-                    return True
-        except:
-            pass
-        return False
+        if hasattr(self, '_console_manager'):
+            return self._console_manager.copy_selected(textbox)
+        else:
+            try:
+                if textbox.tag_ranges("sel"):
+                    selected = textbox.get("sel.first", "sel.last")
+                    if selected:
+                        self.clipboard_clear()
+                        self.clipboard_append(selected)
+                        return True
+            except:
+                pass
+            return False
     
     def cut_selected(self, textbox):
         """Вырезает выделенный текст"""
-        try:
-            if textbox.tag_ranges("sel"):
-                selected = textbox.get("sel.first", "sel.last")
-                if selected:
-                    self.clipboard_clear()
-                    self.clipboard_append(selected)
-                    textbox.configure(state="normal")
-                    textbox.delete("sel.first", "sel.last")
-                    textbox.configure(state="normal")
-                    return True
-        except:
-            pass
-        return False
+        if hasattr(self, '_console_manager'):
+            return self._console_manager.cut_selected(textbox)
+        else:
+            try:
+                if textbox.tag_ranges("sel"):
+                    selected = textbox.get("sel.first", "sel.last")
+                    if selected:
+                        self.clipboard_clear()
+                        self.clipboard_append(selected)
+                        textbox.configure(state="normal")
+                        textbox.delete("sel.first", "sel.last")
+                        textbox.configure(state="normal")
+                        return True
+            except:
+                pass
+            return False
     
     def paste_to_console(self, textbox):
         """Вставляет текст из буфера обмена"""
-        try:
-            textbox.configure(state="normal")
-            clipboard_text = self.clipboard_get()
-            if clipboard_text:
-                textbox.insert("insert", clipboard_text)
-            textbox.configure(state="normal")
-            return True
-        except:
-            pass
-        return False
+        if hasattr(self, '_console_manager'):
+            return self._console_manager.paste_to_console(textbox)
+        else:
+            try:
+                textbox.configure(state="normal")
+                clipboard_text = self.clipboard_get()
+                if clipboard_text:
+                    textbox.insert("insert", clipboard_text)
+                textbox.configure(state="normal")
+                return True
+            except:
+                pass
+            return False
     
     def select_all(self, textbox):
         """Выделяет весь текст"""
-        try:
-            textbox.configure(state="normal")
-            textbox.tag_add("sel", "1.0", "end")
-            textbox.mark_set("insert", "1.0")
-            textbox.see("1.0")
-            textbox.configure(state="normal")
-        except:
-            pass
+        if hasattr(self, '_console_manager'):
+            self._console_manager.select_all(textbox)
+        else:
+            try:
+                textbox.configure(state="normal")
+                textbox.tag_add("sel", "1.0", "end")
+                textbox.mark_set("insert", "1.0")
+                textbox.see("1.0")
+                textbox.configure(state="normal")
+            except:
+                pass
     
     def clear_single_console(self, textbox):
         """Очищает одну консоль"""
-        try:
-            textbox.configure(state="normal")
-            textbox.delete("1.0", "end")
-            textbox.configure(state="normal")  # Оставляем normal для возможности выделения
-        except:
-            pass
+        if hasattr(self, '_console_manager'):
+            self._console_manager.clear_single_console(textbox)
+        else:
+            try:
+                textbox.configure(state="normal")
+                textbox.delete("1.0", "end")
+                textbox.configure(state="normal")
+            except:
+                pass
 
     def console_loop(self):
         while not self.log_queue.empty():
@@ -3697,120 +3618,109 @@ except Exception as e:
                 txt, tab = self.log_queue.get_nowait()
                 
                 def write(widget):
-                    # Сохраняем позицию прокрутки
-                    scroll_pos = widget.yview()[0]
-                    widget.configure(state="normal")
-                    widget.insert("end", f"{txt}\n")
-                    # Автопрокрутка только если пользователь внизу
-                    if scroll_pos >= 0.99:
-                        widget.see("end")
-                    widget.configure(state="normal")
+                    try:
+                        # Сохраняем позицию прокрутки
+                        scroll_pos = widget.yview()[0]
+                        widget.configure(state="normal")
+                        widget.insert("end", f"{txt}\n")
+                        # Автопрокрутка только если пользователь внизу
+                        if scroll_pos >= 0.99:
+                            widget.see("end")
+                        widget.configure(state="normal")
+                    except Exception as e:
+                        # Если ошибка записи, выводим в stderr для отладки
+                        import sys
+                        print(f"[CONSOLE ERROR] Failed to write to console: {e}", file=sys.stderr, flush=True)
                 
-                write(self.consoles["Все"])
-                if tab in self.consoles:
+                # Получаем имя вкладки "Все" (используем сохраненное значение)
+                all_tab_name = getattr(self, 'all_tab_name', t("ui.launcher.logs.all", default="Все"))
+                
+                # Записываем во вкладку "Все" (все логи)
+                if all_tab_name in self.consoles:
+                    write(self.consoles[all_tab_name])
+                else:
+                    if self.consoles:
+                        write(list(self.consoles.values())[0])
+                
+                # Записываем в конкретную вкладку, если она существует
+                if tab and tab in self.consoles:
                     write(self.consoles[tab])
-            except:
-                pass
+            except Exception as e:
+                # Логируем ошибки в stderr
+                import sys
+                print(f"[CONSOLE LOOP ERROR] {e}", file=sys.stderr, flush=True)
         
         self.after(50, self.console_loop)
     
-    # ==========================================
+    
     # CLEANUP
-    # ==========================================
+    
     def on_close(self):
-        """Закрытие лаунчера с очисткой всех процессов"""
-        # Останавливаем все сервисы
-        for name, p in self.procs.items():
-            if p:
+        """Обработчик закрытия окна - останавливает сервисы и очищает ресурсы"""
+        # Отключаем обработчик, чтобы избежать повторных вызовов
+        self.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+        def cleanup_and_close():
+            try:
+                # Останавливаем все сервисы в фоне (не блокируем UI)
+                if self.service_manager and hasattr(self.service_manager, 'procs'):
+                    for name in ["bot", "llm", "sd"]:
+                        if self.service_manager.procs.get(name):
+                            try:
+                                # Останавливаем асинхронно, не ждем завершения
+                                threading.Thread(
+                                    target=self.service_manager.stop_service,
+                                    args=(name,),
+                                    daemon=True
+                                ).start()
+                            except:
+                                pass
+                
+                # Убиваем процессы Ollama в фоне
+                if self.installer:
+                    try:
+                        threading.Thread(
+                            target=self.installer.kill_all_ollama_processes,
+                            daemon=True
+                        ).start()
+                    except:
+                        pass
+                
+                # Удаляем PID файл
                 try:
-                    self.log(f"⏹️ Остановка сервиса {name}...", "SYSTEM")
-                    self.kill_tree(p.pid)
+                    if os.path.exists(FILE_PID):
+                        os.remove(FILE_PID)
+                except:
+                    pass
+                
+                # Закрываем окно немедленно
+                self.after(0, self.destroy)
+            except:
+                # Принудительно закрываем даже при ошибке
+                try:
+                    self.after(0, self.destroy)
                 except:
                     pass
         
-        # Убиваем все процессы Ollama (включая дочерние)
-        self._kill_all_ollama_processes()
-        
-        # Удаляем PID файл
-        if os.path.exists(FILE_PID):
-            try:
-                os.remove(FILE_PID)
-            except:
-                pass
-        
-        self.destroy()
+        # Запускаем очистку в отдельном потоке и сразу закрываем окно
+        threading.Thread(target=cleanup_and_close, daemon=True).start()
+        self.after(100, self.destroy)  # Закрываем через 100мс, давая время на инициализацию очистки
     
-    def _kill_all_ollama_processes(self):
-        """Убивает все процессы Ollama, включая дочерние"""
-        try:
-            current_pid = os.getpid()
-            killed_count = 0
-            
-            for proc in psutil.process_iter(['pid', 'name', 'exe', 'cmdline']):
-                try:
-                    # Проверяем имя процесса
-                    proc_name = proc.info.get('name', '').lower()
-                    proc_exe = proc.info.get('exe', '')
-                    cmdline = proc.info.get('cmdline', [])
-                    
-                    # Ищем процессы Ollama
-                    is_ollama = False
-                    if 'ollama' in proc_name:
-                        is_ollama = True
-                    elif proc_exe and 'ollama' in proc_exe.lower():
-                        is_ollama = True
-                    elif cmdline and any('ollama' in str(arg).lower() for arg in cmdline):
-                        is_ollama = True
-                    
-                    if is_ollama:
-                        pid = proc.info['pid']
-                        if pid != current_pid:
-                            try:
-                                p = psutil.Process(pid)
-                                # Убиваем все дочерние процессы
-                                for child in p.children(recursive=True):
-                                    try:
-                                        child.terminate()
-                                    except:
-                                        pass
-                                # Убиваем сам процесс
-                                p.terminate()
-                                time.sleep(0.5)
-                                if p.is_running():
-                                    p.kill()
-                                killed_count += 1
-                            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                pass
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-            
-            if killed_count > 0:
-                self.log(f"✅ [SYSTEM] Остановлено процессов Ollama: {killed_count}", "SYSTEM")
-            return killed_count
-        except Exception as e:
-            # Не критично, просто игнорируем
-            return 0
     
     def _delete_ollama(self):
         """Удаляет Ollama и все связанные файлы"""
         # Спрашиваем, сохранять ли модели
         save_models = messagebox.askyesno(
-            "Сохранение моделей",
-            "Сохранить импортированные модели Ollama перед удалением?\n\n"
-            "• Да - модели будут сохранены и восстановлены при следующей установке\n"
-            "• Нет - все будет удалено полностью",
+            t("ui.launcher.delete.ollama_save_models_title", default="Сохранение моделей"),
+            t("ui.launcher.delete.ollama_save_models_message", default="Сохранить импортированные модели Ollama перед удалением?\n\n• Да - модели будут сохранены и восстановлены при следующей установке\n• Нет - все будет удалено полностью"),
             icon="question"
         )
         
         # Подтверждение удаления
+        models_text = t("ui.launcher.delete.models_saved", default="• Модели будут сохранены\n") if save_models else t("ui.launcher.delete.all_files_deleted", default="• Все импортированные модели\n")
         result = messagebox.askyesno(
-            "Подтверждение удаления",
-            "Вы уверены, что хотите удалить Ollama?\n\n"
-            "Это действие удалит:\n"
-            "• Ollama сервер (ollama.exe)\n"
-            + ("• Модели будут сохранены\n" if save_models else "• Все импортированные модели\n")
-            + "• Все данные Ollama\n\n"
-            "Это действие нельзя отменить!",
+            t("ui.launcher.delete.ollama_confirm_title", default="Подтверждение удаления"),
+            t("ui.launcher.delete.ollama_confirm_message", default="Вы уверены, что хотите удалить Ollama?\n\nЭто действие удалит:\n• Ollama сервер (ollama.exe)\n{models_text}• Все данные Ollama\n\nЭто действие нельзя отменить!", models_text=models_text),
             icon="warning"
         )
         
@@ -3818,16 +3728,16 @@ except Exception as e:
             return
         
         try:
-            self.log(f"🗑️ [LLM] Начало удаления Ollama...", "LLM")
+            self.log(t("ui.launcher.log.llm_deletion_start", default="🗑️ [LLM] Начало удаления Ollama..."), "LLM")
             
             # Останавливаем LLM сервис если он запущен
-            if self.procs.get("llm"):
-                self.log(f"⏹️ [LLM] Остановка LLM сервиса...", "LLM")
-                self._manage_service("llm")
+            if self.service_manager.procs.get("llm"):
+                self.log(t("ui.launcher.log.llm_stopping_service", default="⏹️ [LLM] Остановка LLM сервиса..."), "LLM")
+                self.service_manager.stop_service("llm")
                 time.sleep(2)  # Даем время на остановку
             
             # Убиваем все процессы Ollama
-            killed = self._kill_all_ollama_processes()
+            killed = self.installer.kill_all_ollama_processes()
             if killed > 0:
                 time.sleep(1)  # Даем время на завершение процессов
             
@@ -3842,7 +3752,7 @@ except Exception as e:
                     if os.path.exists(models_backup_path):
                         shutil.rmtree(models_backup_path, ignore_errors=True)
                     
-                    self.log(f"💾 [LLM] Сохранение моделей в: {models_backup_path}", "LLM")
+                    self.log(t("ui.launcher.log.llm_saving_models", default="💾 [LLM] Сохранение моделей в: {path}", path=models_backup_path), "LLM")
                     shutil.copytree(OLLAMA_MODELS_DIR, models_backup_path)
                     
                     # Подсчитываем размер сохраненных моделей
@@ -3858,11 +3768,11 @@ except Exception as e:
                         size_mb = models_size / 1024 / 1024
                         if size_mb > 1024:
                             size_gb = size_mb / 1024
-                            self.log(f"💾 [LLM] Сохранено моделей: {size_gb:.2f} GB", "LLM")
+                            self.log(t("ui.launcher.log.llm_models_saved_gb", default="💾 [LLM] Сохранено моделей: {size} GB", size=f"{size_gb:.2f}"), "LLM")
                         else:
-                            self.log(f"💾 [LLM] Сохранено моделей: {size_mb:.2f} MB", "LLM")
+                            self.log(t("ui.launcher.log.llm_models_saved_mb", default="💾 [LLM] Сохранено моделей: {size} MB", size=f"{size_mb:.2f}"), "LLM")
                 except Exception as e:
-                    self.log(f"⚠️ [LLM] Не удалось сохранить модели: {e}", "LLM")
+                    self.log(t("ui.launcher.log.llm_models_save_failed", default="⚠️ [LLM] Не удалось сохранить модели: {error}", error=str(e)), "LLM")
                     models_backup_path = None
             
             # Удаляем Ollama через официальный деинсталлятор
@@ -3873,7 +3783,7 @@ except Exception as e:
             
             # Проверяем наличие официального деинсталлятора
             if os.path.exists(uninstaller_path):
-                self.log(f"🗑️ [LLM] Удаление Ollama через официальный деинсталлятор...", "LLM")
+                self.log(t("ui.launcher.log.llm_uninstaller_deleting", default="🗑️ [LLM] Удаление Ollama через официальный деинсталлятор..."), "LLM")
                 
                 # Подсчитываем размер перед удалением
                 try:
@@ -3902,32 +3812,31 @@ except Exception as e:
                         shell=False
                     )
                     
-                    self.log(f"⏳ [LLM] Ожидание завершения деинсталляции...", "LLM")
+                    self.log(t("ui.launcher.log.llm_waiting_uninstall", default="⏳ [LLM] Ожидание завершения деинсталляции..."), "LLM")
                     proc.wait(timeout=120)  # Максимум 2 минуты
                     
                     if proc.returncode == 0:
-                        self.log(f"✅ [LLM] Ollama успешно удален через деинсталлятор", "LLM")
+                        self.log(t("ui.launcher.log.llm_uninstalled_success", default="✅ [LLM] Ollama успешно удален через деинсталлятор"), "LLM")
                     else:
-                        self.log(f"⚠️ [LLM] Деинсталлятор завершился с кодом: {proc.returncode}", "LLM")
+                        self.log(t("ui.launcher.log.llm_uninstaller_exit_code", default="⚠️ [LLM] Деинсталлятор завершился с кодом: {code}", code=proc.returncode), "LLM")
                     
                     # Ждем немного, чтобы файлы точно были удалены
                     time.sleep(2)
                     
                 except subprocess.TimeoutExpired:
-                    self.log(f"⚠️ [LLM] Деинсталляция занимает слишком много времени...", "LLM")
+                    self.log(t("ui.launcher.log.llm_uninstall_timeout", default="⚠️ [LLM] Деинсталляция занимает слишком много времени..."), "LLM")
                     proc.kill()
                 except Exception as e:
-                    self.log(f"❌ [LLM] Ошибка при запуске деинсталлятора: {e}", "LLM")
+                    self.log(t("ui.launcher.log.llm_uninstaller_error", default="❌ [LLM] Ошибка при запуске деинсталлятора: {error}", error=str(e)), "LLM")
                     messagebox.showerror(
-                        "Ошибка удаления",
-                        f"Не удалось запустить деинсталлятор Ollama:\n{str(e)}\n\n"
-                        "Попробуйте удалить вручную через Панель управления."
+                        t("ui.launcher.delete.error", default="Ошибка удаления"),
+                        t("ui.launcher.delete.ollama_installer_error", default="Не удалось запустить деинсталлятор Ollama:\n{error}\n\nПопробуйте удалить вручную через Панель управления.", error=str(e))
                     )
                     return
             else:
                 # Если деинсталлятор не найден, удаляем рабочую папку
                 if os.path.exists(OLLAMA_DIR):
-                    self.log(f"🗑️ [LLM] Деинсталлятор не найден, удаление рабочей папки: {OLLAMA_DIR}", "LLM")
+                    self.log(t("ui.launcher.log.llm_uninstaller_not_found", default="🗑️ [LLM] Деинсталлятор не найден, удаление рабочей папки: {path}", path=OLLAMA_DIR), "LLM")
                     
                     # Подсчитываем размер перед удалением
                     try:
@@ -3944,36 +3853,34 @@ except Exception as e:
                     # Удаляем папку
                     try:
                         shutil.rmtree(OLLAMA_DIR, ignore_errors=True)
-                        self.log(f"✅ [LLM] Рабочая папка Ollama успешно удалена", "LLM")
+                        self.log(t("ui.launcher.log.llm_folder_deleted", default="✅ [LLM] Рабочая папка Ollama успешно удалена"), "LLM")
                     except Exception as e:
-                        self.log(f"❌ [LLM] Ошибка при удалении папки: {e}", "LLM")
+                        self.log(t("ui.launcher.log.llm_folder_delete_error", default="❌ [LLM] Ошибка при удалении папки: {error}", error=str(e)), "LLM")
                         messagebox.showerror(
-                            "Ошибка удаления",
-                            f"Не удалось удалить папку Ollama:\n{str(e)}\n\n"
-                            "Попробуйте удалить вручную:\n"
-                            f"{OLLAMA_DIR}"
+                            t("ui.launcher.delete.error", default="Ошибка удаления"),
+                            t("ui.launcher.delete.ollama_folder_error", default="Не удалось удалить папку Ollama:\n{error}\n\nПопробуйте удалить вручную:\n{path}", error=str(e), path=OLLAMA_DIR)
                         )
                         return
                 else:
-                    self.log(f"ℹ️ [LLM] Папка Ollama не найдена", "LLM")
+                    self.log(t("ui.launcher.log.llm_folder_not_found", default="ℹ️ [LLM] Папка Ollama не найдена"), "LLM")
             
             # Показываем размер удаленных файлов
             if deleted_size > 0:
                 size_mb = deleted_size / 1024 / 1024
                 if size_mb > 1024:
                     size_gb = size_mb / 1024
-                    self.log(f"📊 [LLM] Освобождено места: {size_gb:.2f} GB", "LLM")
+                    self.log(t("ui.launcher.log.llm_space_freed_gb", default="📊 [LLM] Освобождено места: {size} GB", size=f"{size_gb:.2f}"), "LLM")
                 else:
-                    self.log(f"📊 [LLM] Освобождено места: {size_mb:.2f} MB", "LLM")
+                    self.log(t("ui.launcher.log.llm_space_freed_mb", default="📊 [LLM] Освобождено места: {size} MB", size=f"{size_mb:.2f}"), "LLM")
             
             # Удаляем рабочую папку OLLAMA_DIR (если она существует отдельно)
             if os.path.exists(OLLAMA_DIR) and OLLAMA_DIR != ollama_install_path:
                 try:
-                    self.log(f"🗑️ [LLM] Удаление рабочей папки: {OLLAMA_DIR}", "LLM")
+                    self.log(t("ui.launcher.log.llm_deleting_folder", default="🗑️ [LLM] Удаление рабочей папки: {path}", path=OLLAMA_DIR), "LLM")
                     shutil.rmtree(OLLAMA_DIR, ignore_errors=True)
-                    self.log(f"✅ [LLM] Рабочая папка удалена", "LLM")
+                    self.log(t("ui.launcher.log.llm_folder_deleted_simple", default="✅ [LLM] Рабочая папка удалена"), "LLM")
                 except Exception as e:
-                    self.log(f"⚠️ [LLM] Не удалось удалить рабочую папку: {e}", "LLM")
+                    self.log(t("ui.launcher.log.llm_folder_delete_failed", default="⚠️ [LLM] Не удалось удалить рабочую папку: {error}", error=str(e)), "LLM")
             
             # Восстанавливаем модели если они были сохранены
             if models_backup_path and os.path.exists(models_backup_path):
@@ -3982,7 +3889,7 @@ except Exception as e:
                     os.makedirs(OLLAMA_MODELS_DIR, exist_ok=True)
                     
                     # Копируем модели обратно
-                    self.log(f"📦 [LLM] Восстановление моделей...", "LLM")
+                    self.log(t("ui.launcher.log.llm_restoring_models", default="📦 [LLM] Восстановление моделей..."), "LLM")
                     for item in os.listdir(models_backup_path):
                         src = os.path.join(models_backup_path, item)
                         dst = os.path.join(OLLAMA_MODELS_DIR, item)
@@ -3991,53 +3898,45 @@ except Exception as e:
                         else:
                             shutil.copy2(src, dst)
                     
-                    self.log(f"✅ [LLM] Модели успешно восстановлены", "LLM")
+                    self.log(t("ui.launcher.log.llm_models_restored", default="✅ [LLM] Модели успешно восстановлены"), "LLM")
                 except Exception as e:
-                    self.log(f"⚠️ [LLM] Не удалось восстановить модели: {e}", "LLM")
+                    self.log(t("ui.launcher.log.llm_models_restore_failed", default="⚠️ [LLM] Не удалось восстановить модели: {error}", error=str(e)), "LLM")
             
             # Обновляем статус сервиса
             self._set_service_indicator("llm", COLORS['text_muted'])
             self._set_service_button("llm", text="▶", fg_color=COLORS['primary'])
-            self._set_service_status_label("llm", text="Остановлен", color=COLORS['text_muted'])
+            self._set_service_status_label("llm", text=t("ui.launcher.status.stopped", default="Остановлен"), color=COLORS['text_muted'])
             
-            success_msg = "Ollama успешно удален!\n\n"
+            success_msg = t("ui.launcher.delete.ollama_success", default="Ollama успешно удален!\n\n")
             if save_models and models_backup_path and os.path.exists(models_backup_path):
-                success_msg += "Модели сохранены и будут восстановлены при следующей установке.\n"
+                success_msg += t("ui.launcher.delete.models_saved", default="Модели сохранены и будут восстановлены при следующей установке.\n")
             else:
-                success_msg += "Все файлы и данные были удалены.\n"
-            success_msg += "При следующем запуске LLM сервиса Ollama будет загружен заново."
+                success_msg += t("ui.launcher.delete.all_files_deleted", default="Все файлы и данные были удалены.\n")
+            success_msg += t("ui.launcher.delete.ollama_will_reinstall", default="При следующем запуске LLM сервиса Ollama будет загружен заново.")
             
-            messagebox.showinfo("Удаление завершено", success_msg)
+            messagebox.showinfo(t("ui.launcher.delete.complete", default="Удаление завершено"), success_msg)
             
         except Exception as e:
-            self.log(f"❌ [LLM] Ошибка при удалении Ollama: {e}", "LLM")
+            self.log(t("ui.launcher.log.llm_deletion_error", default="❌ [LLM] Ошибка при удалении Ollama: {error}", error=str(e)), "LLM")
             messagebox.showerror(
-                "Ошибка",
-                f"Произошла ошибка при удалении Ollama:\n{str(e)}"
+                t("ui.launcher.error.title"),
+                t("ui.launcher.delete.ollama_error", error=str(e))
             )
     
     def _delete_sd(self):
         """Удаляет Stable Diffusion и все связанные файлы"""
         # Спрашиваем, сохранять ли модели
         save_models = messagebox.askyesno(
-            "Сохранение моделей",
-            "Сохранить модели изображений перед удалением?\n\n"
-            "• Да - модели будут сохранены и восстановлены при следующей установке\n"
-            "• Нет - все будет удалено полностью",
+            t("ui.launcher.delete.sd_save_models_title", default="Сохранение моделей"),
+            t("ui.launcher.delete.sd_save_models_message", default="Сохранить модели изображений перед удалением?\n\n• Да - модели будут сохранены и восстановлены при следующей установке\n• Нет - все будет удалено полностью"),
             icon="question"
         )
         
         # Подтверждение удаления
+        models_text = t("ui.launcher.delete.models_saved", default="• Модели будут сохранены\n") if save_models else t("ui.launcher.delete.all_files_deleted", default="• Все модели изображений\n")
         result = messagebox.askyesno(
-            "Подтверждение удаления",
-            "Вы уверены, что хотите удалить Stable Diffusion?\n\n"
-            "Это действие удалит:\n"
-            "• Stable Diffusion WebUI (весь репозиторий)\n"
-            + ("• Модели будут сохранены\n" if save_models else "• Все модели изображений\n")
-            + "• Все расширения (включая ADetailer)\n"
-            "• Виртуальное окружение Python\n"
-            "• Все настройки и конфигурации\n\n"
-            "Это действие нельзя отменить!",
+            t("ui.launcher.delete.sd_confirm_title", default="Подтверждение удаления"),
+            t("ui.launcher.delete.sd_confirm_message", default="Вы уверены, что хотите удалить Stable Diffusion?\n\nЭто действие удалит:\n• Stable Diffusion WebUI (весь репозиторий)\n{models_text}• Все расширения (включая ADetailer)\n• Виртуальное окружение Python\n• Все настройки и конфигурации\n\nЭто действие нельзя отменить!", models_text=models_text),
             icon="warning"
         )
         
@@ -4045,12 +3944,12 @@ except Exception as e:
             return
         
         try:
-            self.log(f"🗑️ [SD] Начало удаления Stable Diffusion...", "SD")
+            self.log(t("ui.launcher.log.sd_deletion_start", default="🗑️ [SD] Начало удаления Stable Diffusion..."), "SD")
             
             # Останавливаем SD сервис если он запущен
-            if self.procs.get("sd"):
-                self.log(f"⏹️ [SD] Остановка SD сервиса...", "SD")
-                self._manage_service("sd")
+            if self.service_manager.procs.get("sd"):
+                self.log(t("ui.launcher.log.sd_stopping_service", default="⏹️ [SD] Остановка SD сервиса..."), "SD")
+                self.service_manager.stop_service("sd")
                 time.sleep(2)  # Даем время на остановку
             
             # Убиваем все процессы SD (python с launch.py)
@@ -4069,7 +3968,7 @@ except Exception as e:
                     if os.path.exists(models_backup_path):
                         shutil.rmtree(models_backup_path, ignore_errors=True)
                     
-                    self.log(f"💾 [SD] Сохранение моделей в: {models_backup_path}", "SD")
+                    self.log(t("ui.launcher.log.sd_saving_models", default="💾 [SD] Сохранение моделей в: {path}", path=models_backup_path), "SD")
                     shutil.copytree(MODELS_SD_DIR, models_backup_path)
                     
                     # Подсчитываем размер сохраненных моделей
@@ -4085,17 +3984,17 @@ except Exception as e:
                         size_mb = models_size / 1024 / 1024
                         if size_mb > 1024:
                             size_gb = size_mb / 1024
-                            self.log(f"💾 [SD] Сохранено моделей: {size_gb:.2f} GB", "SD")
+                            self.log(t("ui.launcher.log.sd_models_saved_gb", default="💾 [SD] Сохранено моделей: {size} GB", size=f"{size_gb:.2f}"), "SD")
                         else:
-                            self.log(f"💾 [SD] Сохранено моделей: {size_mb:.2f} MB", "SD")
+                            self.log(t("ui.launcher.log.sd_models_saved_mb", default="💾 [SD] Сохранено моделей: {size} MB", size=f"{size_mb:.2f}"), "SD")
                 except Exception as e:
-                    self.log(f"⚠️ [SD] Не удалось сохранить модели: {e}", "SD")
+                    self.log(t("ui.launcher.log.sd_models_save_failed", default="⚠️ [SD] Не удалось сохранить модели: {error}", error=str(e)), "SD")
                     models_backup_path = None
             
             # Удаляем папку SD
             deleted_size = 0
             if os.path.exists(SD_DIR):
-                self.log(f"🗑️ [SD] Удаление папки Stable Diffusion: {SD_DIR}", "SD")
+                self.log(t("ui.launcher.log.sd_deleting_folder", default="🗑️ [SD] Удаление папки Stable Diffusion: {path}", path=SD_DIR), "SD")
                 
                 # Подсчитываем размер перед удалением
                 try:
@@ -4112,27 +4011,25 @@ except Exception as e:
                 # Удаляем папку
                 try:
                     shutil.rmtree(SD_DIR, ignore_errors=True)
-                    self.log(f"✅ [SD] Папка Stable Diffusion успешно удалена", "SD")
+                    self.log(t("ui.launcher.log.sd_folder_deleted", default="✅ [SD] Папка Stable Diffusion успешно удалена"), "SD")
                     
                     # Показываем размер удаленных файлов
                     if deleted_size > 0:
                         size_mb = deleted_size / 1024 / 1024
                         if size_mb > 1024:
                             size_gb = size_mb / 1024
-                            self.log(f"📊 [SD] Освобождено места: {size_gb:.2f} GB", "SD")
+                            self.log(t("ui.launcher.log.sd_space_freed_gb", default="📊 [SD] Освобождено места: {size} GB", size=f"{size_gb:.2f}"), "SD")
                         else:
-                            self.log(f"📊 [SD] Освобождено места: {size_mb:.2f} MB", "SD")
+                            self.log(t("ui.launcher.log.sd_space_freed_mb", default="📊 [SD] Освобождено места: {size} MB", size=f"{size_mb:.2f}"), "SD")
                 except Exception as e:
-                    self.log(f"❌ [SD] Ошибка при удалении папки: {e}", "SD")
+                    self.log(t("ui.launcher.log.sd_folder_delete_error", default="❌ [SD] Ошибка при удалении папки: {error}", error=str(e)), "SD")
                     messagebox.showerror(
-                        "Ошибка удаления",
-                        f"Не удалось удалить папку Stable Diffusion:\n{str(e)}\n\n"
-                        "Попробуйте удалить вручную:\n"
-                        f"{SD_DIR}"
+                        t("ui.launcher.delete.error", default="Ошибка удаления"),
+                        t("ui.launcher.delete.sd_folder_error", default="Не удалось удалить папку Stable Diffusion:\n{error}\n\nПопробуйте удалить вручную:\n{path}", error=str(e), path=SD_DIR)
                     )
                     return
             else:
-                self.log(f"ℹ️ [SD] Папка Stable Diffusion не найдена: {SD_DIR}", "SD")
+                self.log(t("ui.launcher.log.sd_folder_not_found", default="ℹ️ [SD] Папка Stable Diffusion не найдена: {path}", path=SD_DIR), "SD")
             
             # Восстанавливаем модели если они были сохранены
             if models_backup_path and os.path.exists(models_backup_path):
@@ -4141,7 +4038,7 @@ except Exception as e:
                     os.makedirs(MODELS_SD_DIR, exist_ok=True)
                     
                     # Копируем модели обратно
-                    self.log(f"📦 [SD] Восстановление моделей...", "SD")
+                    self.log(t("ui.launcher.log.sd_restoring_models", default="📦 [SD] Восстановление моделей..."), "SD")
                     for item in os.listdir(models_backup_path):
                         src = os.path.join(models_backup_path, item)
                         dst = os.path.join(MODELS_SD_DIR, item)
@@ -4150,29 +4047,29 @@ except Exception as e:
                         else:
                             shutil.copy2(src, dst)
                     
-                    self.log(f"✅ [SD] Модели успешно восстановлены", "SD")
+                    self.log(t("ui.launcher.log.sd_models_restored", default="✅ [SD] Модели успешно восстановлены"), "SD")
                 except Exception as e:
-                    self.log(f"⚠️ [SD] Не удалось восстановить модели: {e}", "SD")
+                    self.log(t("ui.launcher.log.sd_models_restore_failed", default="⚠️ [SD] Не удалось восстановить модели: {error}", error=str(e)), "SD")
             
             # Обновляем статус сервиса
             self._set_service_indicator("sd", COLORS['text_muted'])
             self._set_service_button("sd", text="▶", fg_color=COLORS['primary'])
-            self._set_service_status_label("sd", text="Остановлен", color=COLORS['text_muted'])
+            self._set_service_status_label("sd", text=t("ui.launcher.status.stopped", default="Остановлен"), color=COLORS['text_muted'])
             
-            success_msg = "Stable Diffusion успешно удален!\n\n"
+            success_msg = t("ui.launcher.delete.sd_success", default="Stable Diffusion успешно удален!\n\n")
             if save_models and models_backup_path and os.path.exists(models_backup_path):
-                success_msg += "Модели изображений сохранены и будут восстановлены при следующей установке.\n"
+                success_msg += t("ui.launcher.delete.models_saved", default="Модели изображений сохранены и будут восстановлены при следующей установке.\n")
             else:
-                success_msg += "Все файлы и данные были удалены.\n"
-            success_msg += "При следующем запуске SD сервиса он будет установлен заново."
+                success_msg += t("ui.launcher.delete.all_files_deleted", default="Все файлы и данные были удалены.\n")
+            success_msg += t("ui.launcher.delete.sd_will_reinstall", default="При следующем запуске SD сервиса он будет установлен заново.")
             
-            messagebox.showinfo("Удаление завершено", success_msg)
+            messagebox.showinfo(t("ui.launcher.delete.complete", default="Удаление завершено"), success_msg)
             
         except Exception as e:
-            self.log(f"❌ [SD] Ошибка при удалении Stable Diffusion: {e}", "SD")
+            self.log(t("ui.launcher.log.sd_deletion_error", default="❌ [SD] Ошибка при удалении Stable Diffusion: {error}", error=str(e)), "SD")
             messagebox.showerror(
-                "Ошибка",
-                f"Произошла ошибка при удалении Stable Diffusion:\n{str(e)}"
+                t("ui.launcher.delete.error", default="Ошибка удаления"),
+                t("ui.launcher.delete.sd_error", default="Произошла ошибка при удалении Stable Diffusion:\n{error}", error=str(e))
             )
     
     def _kill_all_sd_processes(self):
@@ -4221,618 +4118,18 @@ except Exception as e:
                     pass
             
             if killed_count > 0:
-                self.log(f"✅ [SYSTEM] Остановлено процессов SD: {killed_count}", "SYSTEM")
+                self.log(t("ui.launcher.log.sd_processes_killed", default="✅ [SYSTEM] Остановлено процессов SD: {count}", count=killed_count), "SYSTEM")
             return killed_count
         except Exception as e:
             # Не критично, просто игнорируем
             return 0
     
-    def _install_sd(self):
-        """Устанавливает Stable Diffusion WebUI Forge"""
-        try:
-            self.log(f"📥 [SD] Клонирование репозитория Stable Diffusion Forge...", "SD")
-            
-            # Создаем папку Engine если её нет
-            os.makedirs(DIR_ENGINE, exist_ok=True)
-            
-            # Сохраняем модели если они есть
-            saved_models = None
-            if os.path.exists(MODELS_SD_DIR):
-                try:
-                    import shutil
-                    temp_backup = os.path.join(DIR_TEMP, "sd_models_backup_temp")
-                    if os.path.exists(temp_backup):
-                        shutil.rmtree(temp_backup, ignore_errors=True)
-                    os.makedirs(DIR_TEMP, exist_ok=True)
-                    self.log(f"💾 [SD] Сохранение моделей перед установкой...", "SD")
-                    shutil.copytree(MODELS_SD_DIR, temp_backup)
-                    saved_models = temp_backup
-                    self.log(f"✅ [SD] Модели сохранены", "SD")
-                except Exception as e:
-                    self.log(f"⚠️ [SD] Не удалось сохранить модели: {e}", "SD")
-            
-            # Клонируем основной репозиторий
-            launch_script = os.path.join(SD_DIR, "launch.py")
-            if not os.path.exists(SD_DIR):
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                
-                self.log(f"📥 [SD] Клонирование репозитория (это может занять несколько минут)...", "SD")
-                result = subprocess.run(
-                    [GIT_CMD, "clone", SD_REPO, SD_DIR],
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    startupinfo=startupinfo
-                )
-                
-                if result.returncode != 0:
-                    self.log(f"❌ [SD] Ошибка клонирования: {result.stderr}", "SD")
-                    if result.stdout:
-                        self.log(f"📋 [SD] Вывод: {result.stdout}", "SD")
-                    return False
-                
-                # Проверяем, что файл launch.py появился
-                if not os.path.exists(launch_script):
-                    self.log(f"❌ [SD] Клонирование завершено, но launch.py не найден", "SD")
-                    self.log(f"💡 [SD] Возможно, репозиторий клонирован не полностью", "SD")
-                    return False
-                
-                self.log(f"✅ [SD] Репозиторий успешно клонирован", "SD")
-            else:
-                self.log(f"ℹ️ [SD] Репозиторий уже существует, пропускаю клонирование", "SD")
-            
-            # Восстанавливаем модели если они были сохранены
-            if saved_models and os.path.exists(saved_models):
-                try:
-                    import shutil
-                    os.makedirs(MODELS_SD_DIR, exist_ok=True)
-                    self.log(f"📦 [SD] Восстановление моделей...", "SD")
-                    for item in os.listdir(saved_models):
-                        src = os.path.join(saved_models, item)
-                        dst = os.path.join(MODELS_SD_DIR, item)
-                        if os.path.isdir(src):
-                            if os.path.exists(dst):
-                                shutil.rmtree(dst, ignore_errors=True)
-                            shutil.copytree(src, dst)
-                        else:
-                            if os.path.exists(dst):
-                                os.remove(dst)
-                            shutil.copy2(src, dst)
-                    shutil.rmtree(saved_models, ignore_errors=True)
-                    self.log(f"✅ [SD] Модели восстановлены", "SD")
-                except Exception as e:
-                    self.log(f"⚠️ [SD] Не удалось восстановить модели: {e}", "SD")
-            
-            # Клонируем ADetailer расширение
-            adetailer_dir = os.path.join(SD_DIR, "extensions", "adetailer")
-            if not os.path.exists(adetailer_dir):
-                self.log(f"📥 [SD] Клонирование расширения ADetailer...", "SD")
-                os.makedirs(os.path.dirname(adetailer_dir), exist_ok=True)
-                
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = subprocess.SW_HIDE
-                
-                result = subprocess.run(
-                    [GIT_CMD, "clone", ADETAILER_REPO, adetailer_dir],
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    startupinfo=startupinfo
-                )
-                
-                if result.returncode != 0:
-                    self.log(f"⚠️ [SD] Не удалось клонировать ADetailer: {result.stderr}", "SD")
-                    # Не критично, продолжаем
-                else:
-                    self.log(f"✅ [SD] ADetailer успешно клонирован", "SD")
-            else:
-                self.log(f"ℹ️ [SD] ADetailer уже установлен", "SD")
-            
-            return True
-            
-        except subprocess.TimeoutExpired:
-            self.log(f"❌ [SD] Превышено время ожидания при установке", "SD")
-            return False
-        except Exception as e:
-            self.log(f"❌ [SD] Ошибка при установке: {e}", "SD")
-            return False
-    
-    def _create_sd_venv(self):
-        """Создает виртуальное окружение для SD и устанавливает зависимости"""
-        try:
-            self.log(f"📦 [SD] Создание виртуального окружения...", "SD")
-            
-            venv = os.path.join(SD_DIR, "venv")
-            
-            # Создаем venv
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            
-            result = subprocess.run(
-                [PYTHON_EXE, "-m", "venv", venv],
-                cwd=SD_DIR,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            
-            if result.returncode != 0:
-                self.log(f"❌ [SD] Ошибка создания venv: {result.stderr}", "SD")
-                return False
-            
-            self.log(f"✅ [SD] Виртуальное окружение создано", "SD")
-            
-            # Обновляем pip
-            venv_py = os.path.join(venv, "Scripts", "python.exe")
-            self.log(f"📦 [SD] Обновление pip...", "SD")
-            
-            result = subprocess.run(
-                [venv_py, "-m", "pip", "install", "--upgrade", "pip"],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            
-            if result.returncode != 0:
-                self.log(f"⚠️ [SD] Предупреждение при обновлении pip: {result.stderr}", "SD")
-            else:
-                self.log(f"✅ [SD] pip обновлен", "SD")
-            
-            # Проверяем поддержку CUDA и устанавливаем соответствующую версию PyTorch
-            self.log(f"🔍 [SD] Проверка поддержки CUDA...", "SD")
-            cuda_available = False
-            
-            try:
-                # Пробуем проверить CUDA через nvidia-smi
-                check_result = subprocess.run(
-                    ["nvidia-smi"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    startupinfo=startupinfo
-                )
-                if check_result.returncode == 0:
-                    cuda_available = True
-                    # Пробуем извлечь версию CUDA из вывода
-                    import re
-                    version_match = re.search(r'CUDA Version: (\d+\.\d+)', check_result.stdout)
-                    if version_match:
-                        cuda_version = version_match.group(1)
-                        self.log(f"✅ [SD] Обнаружена CUDA версии {cuda_version}", "SD")
-                    else:
-                        self.log(f"✅ [SD] CUDA обнаружена, версия определяется автоматически", "SD")
-                else:
-                    self.log(f"⚠️ [SD] nvidia-smi не найден, устанавливаю CPU версию PyTorch", "SD")
-            except:
-                self.log(f"⚠️ [SD] CUDA не обнаружена, устанавливаю CPU версию PyTorch", "SD")
-            
-            # Устанавливаем PyTorch в зависимости от наличия CUDA
-            if cuda_available:
-                # Основные версии: cu130 (CUDA 13.0+), cu121 (CUDA 12.x), cu118 (fallback)
-                if 'cuda_version' in locals() and cuda_version:
-                    try:
-                        major = int(cuda_version.split('.')[0])
-                        if major >= 13:
-                            cuda_versions = ["cu130", "cu121", "cu118"]
-                        else:
-                            cuda_versions = ["cu121", "cu118"]
-                    except:
-                        cuda_versions = ["cu130", "cu121", "cu118"]
-                else:
-                    cuda_versions = ["cu130", "cu121", "cu118"]
-                
-                torch_installed = False
-                installed_cuda_ver = None
-                
-                for cuda_ver in cuda_versions:
-                    self.log(f"📦 [SD] Попытка установки PyTorch 2.9.1 с CUDA {cuda_ver}...", "SD")
-                    result = subprocess.run(
-                        [venv_py, "-m", "pip", "install", "torch==2.9.1", "torchvision", "torchaudio", 
-                         "--index-url", f"https://download.pytorch.org/whl/{cuda_ver}", "--no-cache-dir"],
-                        capture_output=True,
-                        text=True,
-                        timeout=1800,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        startupinfo=startupinfo
-                    )
-                    
-                    if result.returncode == 0:
-                        # Проверяем, что PyTorch действительно работает
-                        test_result = subprocess.run(
-                            [venv_py, "-c", "import torch; print('OK')"],
-                            capture_output=True,
-                            text=True,
-                            timeout=10,
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                            startupinfo=startupinfo
-                        )
-                        
-                        if test_result.returncode == 0 and "OK" in test_result.stdout:
-                            self.log(f"✅ [SD] PyTorch 2.9.1 с CUDA {cuda_ver} установлен и работает", "SD")
-                            torch_installed = True
-                            installed_cuda_ver = cuda_ver
-                            break
-                        else:
-                            self.log(f"⚠️ [SD] PyTorch установлен, но не работает: {test_result.stderr}", "SD")
-                    else:
-                        self.log(f"⚠️ [SD] Не удалось установить PyTorch с CUDA {cuda_ver}, пробую следующую версию...", "SD")
-                
-                if not torch_installed:
-                    self.log(f"⚠️ [SD] Не удалось установить PyTorch с CUDA, устанавливаю CPU версию...", "SD")
-                    result = subprocess.run(
-                        [venv_py, "-m", "pip", "install", "torch", "torchvision", "torchaudio", "--no-cache-dir"],
-                        capture_output=True,
-                        text=True,
-                        timeout=1800,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        startupinfo=startupinfo
-                    )
-                    if result.returncode == 0:
-                        self.log(f"✅ [SD] PyTorch (CPU) установлен", "SD")
-                    else:
-                        self.log(f"❌ [SD] Ошибка установки PyTorch: {result.stderr}", "SD")
-                        return False
-                else:
-                    # Устанавливаем xformers только если PyTorch с CUDA установлен
-                    self.log(f"📦 [SD] Установка xformers...", "SD")
-                    result = subprocess.run(
-                        [venv_py, "-m", "pip", "install", "xformers", 
-                         "--index-url", f"https://download.pytorch.org/whl/{installed_cuda_ver}", "--no-cache-dir"],
-                        capture_output=True,
-                        text=True,
-                        timeout=600,
-                        creationflags=subprocess.CREATE_NO_WINDOW,
-                        startupinfo=startupinfo
-                    )
-                    if result.returncode != 0:
-                        # Пробуем без индекса
-                        result = subprocess.run(
-                            [venv_py, "-m", "pip", "install", "xformers", "--no-cache-dir"],
-                            capture_output=True,
-                            text=True,
-                            timeout=600,
-                            creationflags=subprocess.CREATE_NO_WINDOW,
-                            startupinfo=startupinfo
-                        )
-                    
-                    # Устанавливаем дополнительные зависимости для SD
-                    self.log(f"📦 [SD] Установка дополнительных зависимостей (triton, joblib)...", "SD")
-                    additional_deps = ["triton", "joblib"]
-                    for dep in additional_deps:
-                        try:
-                            dep_result = subprocess.run(
-                                [venv_py, "-m", "pip", "install", dep, "--no-cache-dir"],
-                                capture_output=True,
-                                text=True,
-                                timeout=300,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            if dep_result.returncode == 0:
-                                self.log(f"✅ [SD] {dep} установлен", "SD")
-                            else:
-                                self.log(f"⚠️ [SD] Не удалось установить {dep} (не критично)", "SD")
-                        except:
-                            pass  # Не критично
-                    if result.returncode != 0:
-                        self.log(f"⚠️ [SD] Предупреждение при установке xformers: {result.stderr}", "SD")
-                    else:
-                        # Проверяем, что xformers работает
-                        try:
-                            check_xformers = subprocess.run(
-                                [venv_py, "-c", "import xformers; print('XFORMERS_OK')"],
-                                capture_output=True,
-                                text=True,
-                                timeout=10,
-                                creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
-                            )
-                            if check_xformers.returncode == 0 and "XFORMERS_OK" in check_xformers.stdout:
-                                self.log(f"✅ [SD] xformers установлен и работает корректно", "SD")
-                            else:
-                                self.log(f"⚠️ [SD] xformers установлен, но не работает (возможно, несовместимость с PyTorch)", "SD")
-                                self.log(f"🔄 [SD] Удаляю несовместимый xformers...", "SD")
-                                subprocess.run(
-                                    [venv_py, "-m", "pip", "uninstall", "xformers", "-y"],
-                                    capture_output=True,
-                                    text=True,
-                                    timeout=60,
-                                    creationflags=subprocess.CREATE_NO_WINDOW,
-                                    startupinfo=startupinfo
-                                )
-                        except:
-                            pass
-            else:
-                # Устанавливаем CPU версию
-                self.log(f"📦 [SD] Установка PyTorch (CPU версия)...", "SD")
-                result = subprocess.run(
-                    [venv_py, "-m", "pip", "install", "torch", "torchvision", "torchaudio", "--no-cache-dir"],
-                    capture_output=True,
-                    text=True,
-                    timeout=1800,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    startupinfo=startupinfo
-                )
-                
-                if result.returncode != 0:
-                    self.log(f"❌ [SD] Ошибка установки PyTorch: {result.stderr}", "SD")
-                    return False
-                
-                self.log(f"✅ [SD] PyTorch (CPU) установлен", "SD")
-            
-            self.log(f"✅ [SD] Виртуальное окружение готово", "SD")
-            return True
-            
-        except subprocess.TimeoutExpired:
-            self.log(f"❌ [SD] Превышено время ожидания при создании venv", "SD")
-            return False
-        except Exception as e:
-            self.log(f"❌ [SD] Ошибка при создании venv: {e}", "SD")
-            return False
-    
-    def _update_sd(self):
-        """Обновляет Stable Diffusion через git pull"""
-        try:
-            if not os.path.exists(SD_DIR):
-                return
-            
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            
-            # Сохраняем модели перед обновлением
-            saved_models = None
-            if os.path.exists(MODELS_SD_DIR):
-                try:
-                    import shutil
-                    temp_backup = os.path.join(DIR_TEMP, "sd_models_backup_update")
-                    if os.path.exists(temp_backup):
-                        shutil.rmtree(temp_backup, ignore_errors=True)
-                    os.makedirs(DIR_TEMP, exist_ok=True)
-                    self.log(f"💾 [SD] Сохранение моделей перед обновлением...", "SD")
-                    shutil.copytree(MODELS_SD_DIR, temp_backup)
-                    saved_models = temp_backup
-                except Exception as e:
-                    self.log(f"⚠️ [SD] Не удалось сохранить модели: {e}", "SD")
-            
-            # Проверяем, есть ли обновления
-            result = subprocess.run(
-                [GIT_CMD, "fetch", "origin"],
-                cwd=SD_DIR,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            
-            # Проверяем, есть ли изменения
-            result = subprocess.run(
-                [GIT_CMD, "status", "-uno"],
-                cwd=SD_DIR,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            
-            if "behind" in result.stdout or "diverged" in result.stdout:
-                self.log(f"🔄 [SD] Найдены обновления, обновляю...", "SD")
-                
-                # Обновляем репозиторий
-                result = subprocess.run(
-                    [GIT_CMD, "pull", "origin", "main"],
-                    cwd=SD_DIR,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
-                    creationflags=subprocess.CREATE_NO_WINDOW,
-                    startupinfo=startupinfo
-                )
-                
-                if result.returncode == 0:
-                    self.log(f"✅ [SD] Репозиторий обновлен", "SD")
-                    
-                    # Восстанавливаем модели
-                    if saved_models and os.path.exists(saved_models):
-                        try:
-                            import shutil
-                            os.makedirs(MODELS_SD_DIR, exist_ok=True)
-                            self.log(f"📦 [SD] Восстановление моделей...", "SD")
-                            for item in os.listdir(saved_models):
-                                src = os.path.join(saved_models, item)
-                                dst = os.path.join(MODELS_SD_DIR, item)
-                                if os.path.isdir(src):
-                                    if os.path.exists(dst):
-                                        shutil.rmtree(dst, ignore_errors=True)
-                                    shutil.copytree(src, dst)
-                                else:
-                                    if os.path.exists(dst):
-                                        os.remove(dst)
-                                    shutil.copy2(src, dst)
-                            shutil.rmtree(saved_models, ignore_errors=True)
-                            self.log(f"✅ [SD] Модели восстановлены", "SD")
-                        except Exception as e:
-                            self.log(f"⚠️ [SD] Не удалось восстановить модели: {e}", "SD")
-                else:
-                    self.log(f"⚠️ [SD] Не удалось обновить репозиторий: {result.stderr}", "SD")
-            else:
-                self.log(f"✅ [SD] Установлена последняя версия", "SD")
-                
-        except Exception as e:
-            self.log(f"⚠️ [SD] Ошибка при проверке обновлений: {e}", "SD")
-    
-    def _download_sd_model(self, model_url, show_dialog=True):
-        """Скачивает модель Stable Diffusion"""
-        try:
-            if not model_url or not model_url.strip():
-                if show_dialog:
-                    messagebox.showerror("Ошибка", "URL модели не указан!")
-                return False
-            
-            model_url = model_url.strip()
-            
-            # Создаем папку для моделей если её нет
-            os.makedirs(MODELS_SD_DIR, exist_ok=True)
-            
-            # Определяем имя файла из URL
-            # Пробуем извлечь имя из URL или используем имя по умолчанию
-            filename = MODEL_SD_FILENAME
-            try:
-                # Пробуем извлечь имя файла из URL
-                from urllib.parse import urlparse, parse_qs
-                parsed = urlparse(model_url)
-                # Проверяем параметры запроса
-                params = parse_qs(parsed.query)
-                if 'filename' in params:
-                    filename = params['filename'][0]
-                elif parsed.path.endswith(('.safetensors', '.ckpt')):
-                    filename = os.path.basename(parsed.path)
-            except:
-                pass
-            
-            model_path = os.path.join(MODELS_SD_DIR, filename)
-            
-            # Проверяем, не скачана ли уже модель
-            if os.path.exists(model_path):
-                if show_dialog:
-                    result = messagebox.askyesno(
-                        "Модель уже существует",
-                        f"Модель {filename} уже существует.\n\n"
-                        "Хотите скачать заново?",
-                        icon="question"
-                    )
-                    if not result:
-                        return True
-                else:
-                    self.log(f"✅ [SD] Модель уже существует: {filename}", "SD")
-                    return True
-            
-            if show_dialog:
-                self.log(f"📥 [SD] Начинаю скачивание модели...", "SD")
-            
-            # Скачиваем модель с прогресс-баром
-            import urllib.request
-            
-            req = urllib.request.Request(model_url)
-            req.add_header('User-Agent', 'Mozilla/5.0')
-            
-            temp_file = model_path + ".tmp"
-            try:
-                with urllib.request.urlopen(req, timeout=300) as response:
-                    total_size = int(response.headers.get('Content-Length', 0))
-                    
-                    downloaded = 0
-                    start_time = time.time()
-                    last_update_time = start_time
-                    last_downloaded = 0
-                    
-                    with open(temp_file, 'wb') as f:
-                        while True:
-                            chunk = response.read(8192 * 4)  # Увеличиваем размер чанка для лучшей производительности
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            
-                            current_time = time.time()
-                            elapsed = current_time - last_update_time
-                            
-                            # Обновляем прогресс каждые 0.5 секунды
-                            if elapsed >= 0.5 or downloaded == total_size:
-                                if total_size > 0:
-                                    percent = min(100, (downloaded * 100) // total_size)
-                                    downloaded_mb = downloaded / 1024 / 1024
-                                    total_mb = total_size / 1024 / 1024
-                                    
-                                    # Вычисляем скорость
-                                    if elapsed > 0:
-                                        speed_bps = (downloaded - last_downloaded) / elapsed
-                                        speed_mbps = speed_bps / 1024 / 1024
-                                        
-                                        # Вычисляем оставшееся время
-                                        remaining_bytes = total_size - downloaded
-                                        if speed_bps > 0:
-                                            eta_seconds = remaining_bytes / speed_bps
-                                            eta_minutes = int(eta_seconds // 60)
-                                            eta_secs = int(eta_seconds % 60)
-                                            eta_str = f"{eta_minutes:02d}:{eta_secs:02d}"
-                                        else:
-                                            eta_str = "??:??"
-                                        
-                                        # Форматируем скорость
-                                        if speed_mbps >= 1:
-                                            speed_str = f"{speed_mbps:.2f} MB/s"
-                                        else:
-                                            speed_kbps = speed_mbps * 1024
-                                            speed_str = f"{speed_kbps:.2f} KB/s"
-                                        
-                                        self.log(f"📥 [SD] {percent}% | {downloaded_mb:.1f}/{total_mb:.1f} MB | {speed_str} | ETA: {eta_str}", "SD")
-                                    
-                                    last_update_time = current_time
-                                    last_downloaded = downloaded
-                
-                # Переименовываем временный файл
-                if os.path.exists(temp_file):
-                    if os.path.exists(model_path):
-                        os.remove(model_path)
-                    os.rename(temp_file, model_path)
-                    
-                    if show_dialog:
-                        self.log(f"✅ [SD] Модель успешно скачана: {filename}", "SD")
-                        messagebox.showinfo("Успех", f"Модель {filename} успешно скачана!")
-                    else:
-                        self.log(f"✅ [SD] Модель успешно скачана: {filename}", "SD")
-                    
-                    # Обновляем информацию о модели в настройках
-                    if hasattr(self, 'sd_model_info_label'):
-                        self._update_sd_model_info(self.sd_model_info_label)
-                    
-                    return True
-                else:
-                    if show_dialog:
-                        self.log(f"❌ [SD] Ошибка: файл не был скачан", "SD")
-                        messagebox.showerror("Ошибка", "Не удалось скачать модель")
-                    return False
-                    
-            except Exception as e:
-                if os.path.exists(temp_file):
-                    try:
-                        os.remove(temp_file)
-                    except:
-                        pass
-                if show_dialog:
-                    self.log(f"❌ [SD] Ошибка при скачивании модели: {e}", "SD")
-                    messagebox.showerror("Ошибка", f"Не удалось скачать модель:\n{str(e)}")
-                else:
-                    self.log(f"❌ [SD] Ошибка при скачивании модели: {e}", "SD")
-                return False
-                
-        except Exception as e:
-            if show_dialog:
-                self.log(f"❌ [SD] Критическая ошибка при скачивании модели: {e}", "SD")
-                messagebox.showerror("Ошибка", f"Критическая ошибка:\n{str(e)}")
-            else:
-                self.log(f"❌ [SD] Критическая ошибка при скачивании модели: {e}", "SD")
-            return False
     
     def _update_sd_model_info(self, label):
         """Обновляет информацию о текущих моделях SD"""
         try:
             if not os.path.exists(MODELS_SD_DIR):
-                label.configure(text="Папка с моделями не найдена")
+                label.configure(text=t("ui.launcher.model.folder_not_found", default="Папка с моделями не найдена"))
                 return
             
             models = []
@@ -4856,11 +4153,12 @@ except Exception as e:
                     total_str = f"{total_mb / 1024:.2f} GB"
                 else:
                     total_str = f"{total_mb:.2f} MB"
-                label.configure(text=f"Установлено моделей: {len(models)}\nОбщий размер: {total_str}\n\n" + "\n".join(models[:3]) + ("..." if len(models) > 3 else ""))
+                models_list = "\n".join(models[:3]) + ("..." if len(models) > 3 else "")
+                label.configure(text=t("ui.launcher.model.models_info", default="Установлено моделей: {count}\nОбщий размер: {size}\n\n{list}", count=len(models), size=total_str, list=models_list))
             else:
-                label.configure(text="Модели не установлены")
+                label.configure(text=t("ui.launcher.model.models_not_installed", default="Модели не установлены"))
         except Exception as e:
-            label.configure(text=f"Ошибка при получении информации: {str(e)}")
+            label.configure(text=t("ui.launcher.model.info_error", default="Ошибка при получении информации: {error}", error=str(e)))
 
 if __name__ == "__main__":
     def global_exception_handler(exc_type, exc_value, exc_traceback):

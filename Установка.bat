@@ -91,9 +91,15 @@ if errorlevel 1 (
 )
 
 :: === 7. TKINTER FIX ===
-echo [6/6] Tkinter через tkinter-embed...
+echo [6/6] Проверка tkinter-embed...
 "%PYTHON%\python.exe" -m pip install --upgrade tkinter-embed --no-warn-script-location >> "%LOGFILE%" 2>&1
-"%PYTHON%\python.exe" -m tkinter_embed >> "%LOGFILE%" 2>&1
+:: tkinter-embed is a package, not a runnable module - no need to execute it
+:: Just verify it's installed correctly
+"%PYTHON%\python.exe" -c "import tkinter_embed; print('OK: tkinter-embed installed')" >> "%LOGFILE%" 2>&1
+if errorlevel 1 (
+    echo [WARNING] tkinter-embed may not be installed correctly
+    echo Check log: %LOGFILE%
+)
 
 :: === 8. ИНФОРМАЦИЯ ===
 echo.

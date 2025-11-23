@@ -92,7 +92,26 @@ if os.path.exists(GEN_CONFIG_PATH):
 # Ollama использует порт 11434 по умолчанию
 # Для OpenAI-совместимого API используем /v1/chat/completions
 OLLAMA_API_BASE = "http://127.0.0.1:11434/v1"  # Стандартный порт Ollama
-OLLAMA_MODEL = "local-model"  # Имя модели в Ollama (можно изменить в настройках)
+
+# Load model name from .env file (SELECTED_LLM_MODEL format: "type:name" or "type:name:path")
+OLLAMA_MODEL = "local-model"  # Default fallback
+try:
+    from dotenv import get_key
+    selected_model = get_key(ENV_PATH, "SELECTED_LLM_MODEL")
+    if selected_model and selected_model.strip():
+        # Parse format: "ollama:model-name" or "gguf:model-name:path"
+        parts = selected_model.strip().split(":", 2)
+        if len(parts) >= 2 and parts[1]:
+            # Extract model name (second part)
+            OLLAMA_MODEL = parts[1].strip()
+            logging.info(f"✅ Loaded LLM model from .env: {OLLAMA_MODEL}")
+        else:
+            logging.warning(f"⚠️ Invalid SELECTED_LLM_MODEL format: {selected_model}, using default")
+    else:
+        logging.info("ℹ️ SELECTED_LLM_MODEL not set, using default: local-model")
+except Exception as e:
+    logging.warning(f"⚠️ Failed to load SELECTED_LLM_MODEL from .env: {e}, using default")
+
 OLLAMA_API_KEY = "dummy"  # Ollama не требует ключ, но оставляем для совместимости
 
 # Stable Diffusion (Forge API)

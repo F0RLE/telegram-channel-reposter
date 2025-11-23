@@ -28,8 +28,13 @@ def _build_payload(prompt: str, system: Optional[str] = None, temp: float = 0.7)
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
     
+    # Validate model name
+    model_name = OLLAMA_MODEL if OLLAMA_MODEL and OLLAMA_MODEL.strip() else "local-model"
+    if not model_name or model_name == "local-model":
+        logger.warning(f"⚠️ Using default model name 'local-model'. Make sure SELECTED_LLM_MODEL is set in .env")
+    
     return {
-        "model": OLLAMA_MODEL,
+        "model": model_name,
         "messages": messages,
         "temperature": temp,
         "max_tokens": LLM_CTX, # Context window limit
@@ -68,7 +73,8 @@ async def _safe_request(payload: Dict[str, Any], max_retries: int = 3) -> Option
     @retry_with_backoff(config=retry_config)
     async def _make_request():
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
-            async with session.post(url, json=payload, headers=headers, ssl=True) as response:
+            # Use ssl=False for local connections (127.0.0.1)
+            async with session.post(url, json=payload, headers=headers, ssl=False) as response:
                 if response.status != 200:
                     err_text = await response.text()
                     error_msg = f"LLM API Error {response.status}: {err_text}"

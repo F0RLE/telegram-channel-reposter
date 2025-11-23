@@ -10,6 +10,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 # Local Imports
 from core.fsm_states import FormState
+from core.utils import safe_delete_message
 from modules.parser import aggregate_topic_posts
 from keyboards.inline import topics_keyboard, cancel_jump_keyboard
 from core.animation import animate_message

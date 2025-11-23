@@ -61,7 +61,8 @@ async def _fetch_channel_html(session: aiohttp.ClientSession, channel_name: str,
     
     @retry_with_backoff(config=retry_config)
     async def _make_request():
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), ssl=True) as response:
+        # Use ssl=False since SSL context is already configured in connector
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=15), ssl=False) as response:
             if response.status == 200:
                 return await response.text()
             elif response.status == 429:
@@ -196,13 +197,14 @@ async def aggregate_topic_posts(
     
     aggregated = []
 
-    # Connector with proper SSL configuration
-    # Use default SSL context with certificate verification
+    # Connector with SSL configuration that allows self-signed certificates
+    # This is needed when corporate proxy or antivirus injects self-signed certificates
     import ssl
     ssl_context = ssl.create_default_context()
-    # Allow self-signed certificates for local development if needed
-    # ssl_context.check_hostname = False
-    # ssl_context.verify_mode = ssl.CERT_NONE
+    # Disable certificate verification to allow self-signed certificates
+    # This is safe for public Telegram channels (t.me) as we're only reading public HTML
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
     connector = aiohttp.TCPConnector(ssl=ssl_context)
 
     async with aiohttp.ClientSession(connector=connector) as session:

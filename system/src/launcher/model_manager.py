@@ -1,0 +1,165 @@
+"""
+Model management module for launcher
+Handles Ollama models, GGUF files, and SD models
+"""
+import os
+import subprocess
+from typing import List, Dict, Optional
+
+try:
+    from .i18n import t
+except (ImportError, ValueError):
+    try:
+        from i18n import t
+    except ImportError:
+        def t(key, default=None, **kwargs):
+            return default or key
+
+# Import config with fallback
+try:
+    from .config import OLLAMA_EXE, OLLAMA_DIR, OLLAMA_MODELS_DIR, MODELS_LLM_DIR
+except (ImportError, ValueError):
+    from config import OLLAMA_EXE, OLLAMA_DIR, OLLAMA_MODELS_DIR, MODELS_LLM_DIR
+
+
+class ModelManager:
+    """Manages LLM models (Ollama and GGUF)"""
+    
+    def __init__(self, log_callback=None):
+        """
+        Initialize ModelManager
+        
+        Args:
+            log_callback: Optional callback function for logging (log(message, tag))
+        """
+        self.log = log_callback or (lambda msg, tag="MODEL": print(f"[{tag}] {msg}"))
+    
+    def get_ollama_models(self) -> List[str]:
+        """Get list of Ollama models"""
+        models = []
+        try:
+            if not os.path.exists(OLLAMA_EXE):
+                return models  # Ollama not installed
+            
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            result = subprocess.run(
+                [OLLAMA_EXE, "list"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=OLLAMA_DIR,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                startupinfo=startupinfo
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split('\n')
+                for line in lines[1:]:  # Skip header
+                    if line.strip():
+                        parts = line.split()
+                        if parts:
+                            model_name = parts[0]
+                            models.append(model_name)
+        except Exception:
+            # Don't log error, just return empty list
+            pass
+        return models
+    
+    def get_gguf_models(self) -> List[Dict[str, str]]:
+        """Get list of GGUF files from models directory"""
+        models = []
+        try:
+            if os.path.exists(MODELS_LLM_DIR):
+                for file in os.listdir(MODELS_LLM_DIR):
+                    if file.lower().endswith('.gguf'):
+                        file_path = os.path.join(MODELS_LLM_DIR, file)
+                        if os.path.isfile(file_path):
+                            models.append({
+                                'name': os.path.splitext(file)[0],
+                                'file': file,
+                                'path': file_path,
+                                'type': 'gguf'
+                            })
+        except Exception as e:
+            self.log(t("ui.launcher.log.gguf_scan_error", default="⚠️ [LLM] Ошибка при сканировании GGUF файлов: {error}", error=str(e)), "LLM")
+        return models
+    
+    def check_ollama_model(self, model_name: str) -> bool:
+        """Check if model exists in Ollama"""
+        try:
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            # Run ollama list to check models
+            result = subprocess.run(
+                [OLLAMA_EXE, "list"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=OLLAMA_DIR,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                startupinfo=startupinfo
+            )
+            if result.returncode == 0:
+                return model_name in result.stdout
+            return False
+        except Exception:
+            return False
+    
+    def import_gguf_to_ollama(self, model_path: str, model_name: str, env: Optional[Dict] = None) -> bool:
+        """
+        Automatically import GGUF model into Ollama
+        
+        Args:
+            model_path: Path to GGUF file
+            model_name: Model name for Ollama
+            env: Environment variables dictionary (if None, uses current environment)
+        
+        Returns:
+            True if import successful, False otherwise
+        """
+        try:
+            # Create Modelfile for GGUF import
+            modelfile_path = os.path.join(OLLAMA_DIR, f"{model_name}.Modelfile")
+            
+            with open(modelfile_path, 'w', encoding='utf-8') as f:
+                f.write(f"FROM {model_path}\n")
+                f.write("TEMPLATE \"\"\"{{ .Prompt }}\"\"\"\n")
+                f.write("PARAMETER temperature 0.7\n")
+                f.write("PARAMETER top_p 0.9\n")
+            
+            # Import model (DO NOT close processes - they are managed by calling code)
+            self.log(t("ui.launcher.log.importing_model", default="📦 [LLM] Импорт модели {model}...", model=model_name), "LLM")
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            # Use passed environment or current
+            import_env = env if env else os.environ.copy()
+            
+            result = subprocess.run(
+                [OLLAMA_EXE, "create", model_name, "-f", modelfile_path],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=OLLAMA_DIR,
+                env=import_env,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                startupinfo=startupinfo
+            )
+            
+            if result.returncode == 0:
+                self.log(t("ui.launcher.log.model_imported", default="✅ [LLM] Модель {model} успешно импортирована", model=model_name), "LLM")
+                return True
+            else:
+                self.log(t("ui.launcher.log.import_error", default="⚠️ [LLM] Ошибка импорта: {error}", error=result.stderr), "LLM")
+                return False
+        except Exception as e:
+            self.log(t("ui.launcher.log.import_exception", default="❌ [LLM] Ошибка при импорте модели: {error}", error=str(e)), "LLM")
+            return False
+
+
+

@@ -1,7 +1,7 @@
 @echo off
 setlocal
-title AI Bot Launcher
-chcp 65001 >nul
+:: Запуск без консоли - используем минимальный вывод
+chcp 65001 >nul 2>&1
 
 :: === PATHS (APPDATA) ===
 set "ROOT_DIR=%APPDATA%\TelegramBotData"
@@ -9,42 +9,31 @@ set "PYTHON=%ROOT_DIR%\env\python\pythonw.exe"
 set "GIT_PATH=%ROOT_DIR%\env\git\cmd"
 
 :: === NEW PATH TO LAUNCHER ===
-:: Указываем путь внутрь папки system\src\launcher
 set "WORK_DIR=%~dp0system\src"
 set "LAUNCHER=%WORK_DIR%\launcher\launcher.pyw"
 
-:: === CHECKS ===
+:: === QUICK CHECKS (без вывода) ===
 if not exist "%PYTHON%" (
-    color 4F
-    echo.
-    echo [ERROR] Python not found in AppData.
-    echo Please run "Установка.bat" first.
-    echo.
-    pause & exit
+    :: Если Python не найден, показываем ошибку только если запущено напрямую
+    if "%~1"=="" (
+        start "" cmd /c "echo [ERROR] Python not found. Please run Установка.bat first. & pause"
+    )
+    exit /b 1
 )
 
 if not exist "%LAUNCHER%" (
-    color 4F
-    echo.
-    echo [ERROR] launcher.pyw not found in:
-    echo %LAUNCHER%
-    echo.
-    pause & exit
-)
-
-:: === LAUNCH ===
-set "PATH=%GIT_PATH%;%PATH%"
-
-:: Переходим в папку с исходным кодом перед запуском
-cd /d "%WORK_DIR%"
-
-echo [INFO] Starting Manager...
-start "" "%PYTHON%" "%LAUNCHER%"
-if errorlevel 1 (
-    color 4F
-    echo.
-    echo [ERROR] Failed to start launcher
-    pause
+    if "%~1"=="" (
+        start "" cmd /c "echo [ERROR] Launcher not found: %LAUNCHER% & pause"
+    )
     exit /b 1
 )
+
+:: === LAUNCH (без консоли) ===
+set "PATH=%GIT_PATH%;%PATH%"
+cd /d "%WORK_DIR%" >nul 2>&1
+
+:: Запускаем лаунчер через pythonw.exe (без консоли) в фоне
+start "" "%PYTHON%" "%LAUNCHER%"
+
+:: Выходим сразу, не ждем
 exit /b 0
