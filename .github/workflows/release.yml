@@ -29,7 +29,7 @@ jobs:
     
     - name: Create Release Archive
       run: |
-        $archiveName = "telegram-bot-launcher-${{ github.ref_name }}.zip"
+        $archiveName = "telegram-channel-reposter-${{ github.ref_name }}.zip"
         Compress-Archive -Path * -DestinationPath $archiveName -Force
         echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
     

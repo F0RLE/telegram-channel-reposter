@@ -55,5 +55,5 @@
 
 ---
 
-[1.0.0]: https://github.com/F0RLE/telegram-bot-launcher/releases/tag/v1.0.0
+[1.0.0]: https://github.com/F0RLE/telegram-channel-reposter/releases/tag/v1.0.0
 

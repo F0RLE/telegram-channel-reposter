@@ -372,9 +372,8 @@ class ModernLauncher(ctk.CTk):
         if not os.path.exists(FILE_ENV):
             open(FILE_ENV, "w", encoding="utf-8").close()
         
-        if not os.path.exists(FILE_CHANNELS): 
-            with open(FILE_CHANNELS, "w", encoding="utf-8") as f:
-                json.dump({}, f, indent=4, ensure_ascii=False)
+        # Файл channels.json создается только при первом добавлении канала через UI
+        # Не создаем его автоматически
 
         if not os.path.exists(FILE_GEN_CONFIG):
             with open(FILE_GEN_CONFIG, "w", encoding="utf-8") as f:
@@ -1136,14 +1135,8 @@ class ModernLauncher(ctk.CTk):
         frame.grid_columnconfigure(1, weight=1)
         frame.grid_rowconfigure(1, weight=1)
         
-        # Используем новый модульный компонент
-        try:
-            from launcher.channels import ChannelsManager, ChannelsUI
-            self.channels_manager = ChannelsManager(FILE_CHANNELS)
-            self.channels_ui = ChannelsUI(frame, self.channels_manager)
-        except ImportError:
-            # Fallback на старый код, если модуль не найден
-            self._create_channels_page_legacy(frame)
+        # Используем встроенную реализацию
+        self._create_channels_page_legacy(frame)
         
         return frame
     
@@ -3169,8 +3162,11 @@ except Exception as e:
                 w.destroy()
         
         try:
-            with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            if os.path.exists(FILE_CHANNELS):
+                with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                data = {}
         except:
             data = {}
         
@@ -3223,8 +3219,11 @@ except Exception as e:
     def _draw_channels(self):
         """Рисует каналы для текущей темы"""
         try:
-            with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                data = json.load(f)
+            if os.path.exists(FILE_CHANNELS):
+                with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                data = {}
         except:
             data = {}
         
@@ -3287,12 +3286,18 @@ except Exception as e:
     def delete_topic(self, t):
         if messagebox.askyesno("Подтверждение", f"Удалить тему '{t}'?"):
             try:
+                if not os.path.exists(FILE_CHANNELS):
+                    return
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
                     db = json.load(f)
                 if t in db:
                     del db[t]
-                    with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
-                        json.dump(db, f, indent=4, ensure_ascii=False)
+                    # Если файл стал пустым, удаляем его
+                    if not db:
+                        os.remove(FILE_CHANNELS)
+                    else:
+                        with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
+                            json.dump(db, f, indent=4, ensure_ascii=False)
                     self.current_topic = None
                     self.refresh_channels()  # Полное обновление, так как тема удалена
             except:
@@ -3366,8 +3371,15 @@ except Exception as e:
         if not txt:
             return
         try:
-            with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                db = json.load(f)
+            # Создаем файл channels.json при первом добавлении канала, если его нет
+            if not os.path.exists(FILE_CHANNELS):
+                db = {self.current_topic: []}
+            else:
+                with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
+                    db = json.load(f)
+            # Убеждаемся, что тема существует
+            if self.current_topic not in db:
+                db[self.current_topic] = []
             if txt not in db[self.current_topic]:
                 db[self.current_topic].append(txt)
                 with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
@@ -3379,6 +3391,8 @@ except Exception as e:
     
     def delete_channel(self, link):
         try:
+            if not os.path.exists(FILE_CHANNELS):
+                return
             with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
                 db = json.load(f)
             if self.current_topic in db:
@@ -3397,8 +3411,14 @@ except Exception as e:
                         break
                 
                 if found:
-                    with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
-                        json.dump(db, f, indent=4, ensure_ascii=False)
+                    # Если список каналов стал пустым, удаляем тему, а если тем не осталось - удаляем файл
+                    if not db[self.current_topic]:
+                        del db[self.current_topic]
+                    if not db:
+                        os.remove(FILE_CHANNELS)
+                    else:
+                        with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
+                            json.dump(db, f, indent=4, ensure_ascii=False)
                     self.refresh_channels_only()  # Только каналы, тема не изменилась
         except Exception as e:
             print(f"❌ Ошибка при удалении канала: {e}")

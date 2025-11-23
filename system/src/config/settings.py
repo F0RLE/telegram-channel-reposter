@@ -52,6 +52,8 @@ except ValueError:
 # ==========================================
 
 # Channels List
+# Файл channels.json создается только при первом добавлении канала/темы через UI
+# Не создается автоматически при инициализации
 TELEGRAM_CHANNELS = {}
 if os.path.exists(CHANNELS_PATH):
     try:

@@ -55,6 +55,8 @@ data/
 *.cache
 backups/
 *.bak
+channels.json
+**/configs/channels.json
 
 # Environment
 .env
