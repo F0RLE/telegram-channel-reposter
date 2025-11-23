@@ -8,7 +8,7 @@
 [![Windows](https://img.shields.io/badge/Platform-Windows-lightgrey.svg)](https://www.microsoft.com/windows)
 [![GitHub](https://img.shields.io/badge/GitHub-F0RLE-black.svg)](https://github.com/F0RLE)
 
-> Automated system for monitoring Telegram channels, content processing, and publishing to your channel with manual editing capabilities
+> Автоматизированная система для мониторинга Telegram каналов, переработки контента и публикации в ваш канал с возможностью ручного редактирования
 
 **Версия:** 1.1.0 | **Последнее обновление:** 2025-11-23
 
