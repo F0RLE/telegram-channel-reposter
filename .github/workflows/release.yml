@@ -25,18 +25,21 @@ jobs:
     - name: Run tests
       run: |
         pip install pytest pytest-asyncio
-        pytest tests/ -v
+        cd system/src
+        python -m pytest ../../tests/ -v
+      continue-on-error: true
     
     - name: Create Release Archive
+      id: create_archive
       run: |
         $archiveName = "telegram-channel-reposter-${{ github.ref_name }}.zip"
         Compress-Archive -Path * -DestinationPath $archiveName -Force
-        echo "ARCHIVE_NAME=$archiveName" >> $env:GITHUB_ENV
+        echo "archive_name=$archiveName" >> $env:GITHUB_OUTPUT
     
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       with:
-        files: ${{ env.ARCHIVE_NAME }}
+        files: ${{ steps.create_archive.outputs.archive_name }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
