@@ -93,7 +93,7 @@ if missing_modules:
     modules_str = ', '.join(missing_modules)
     error_msg = t(
         "ui.launcher.error.missing_modules_message",
-        default="Отсутствуют необходимые модули Python!\n\nНе найдены: {modules}\n\nРЕШЕНИЕ:\n1. Запустите 'Установка.bat' для установки всех зависимостей\n2. Или установите вручную:\n   pip install {modules}",
+        default="Отсутствуют необходимые модули Python!\n\nНе найдены: {modules}\n\nРЕШЕНИЕ:\n1. Запустите 'Install.bat' для установки всех зависимостей\n2. Или установите вручную:\n   pip install {modules}",
         modules=modules_str
     )
     show_error(t("ui.launcher.error.missing_modules", default="Ошибка: Отсутствуют модули"), error_msg)
@@ -129,7 +129,7 @@ try:
 except ImportError as e:
     error_msg = t(
         "ui.launcher.error.libraries_not_found",
-        default="Libraries not found!\nPlease run 'Установка.bat'.\n\nError: {error}",
+        default="Libraries not found!\nPlease run 'Install.bat'.\n\nError: {error}",
         error=str(e)
     )
     show_error("Error", error_msg)
