@@ -23,14 +23,11 @@ jobs:
         pip install -r system/src/requirements.txt
         pip install pytest pytest-asyncio
     
-    - name: Set PYTHONPATH
-      run: |
-        echo "PYTHONPATH=${{ github.workspace }}/system/src" >> $env:GITHUB_ENV
-    
     - name: Run tests
+      env:
+        PYTHONPATH: ${{ github.workspace }}/system/src
       run: |
         python -m pytest tests/ -v || echo "Tests failed but continuing"
-      working-directory: ${{ github.workspace }}
       continue-on-error: true
     
     - name: Create Release Archive

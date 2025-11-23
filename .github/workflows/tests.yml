@@ -28,19 +28,17 @@ jobs:
         pip install pytest pytest-asyncio pytest-cov
         pip install -r system/src/requirements.txt
     
-    - name: Set PYTHONPATH
-      run: |
-        echo "PYTHONPATH=${{ github.workspace }}/system/src" >> $env:GITHUB_ENV
-    
     - name: Run tests
+      env:
+        PYTHONPATH: ${{ github.workspace }}/system/src
       run: |
-        python -m pytest tests/ -v --tb=short || echo "Tests failed but continuing"
-      working-directory: ${{ github.workspace }}
+        python -m pytest tests/ -v --tb=short
       continue-on-error: true
     
     - name: Check code coverage
+      env:
+        PYTHONPATH: ${{ github.workspace }}/system/src
       run: |
-        python -m pytest tests/ --cov=system/src --cov-report=term-missing || echo "Coverage check failed but continuing"
-      working-directory: ${{ github.workspace }}
+        python -m pytest tests/ --cov=system/src --cov-report=term-missing
       continue-on-error: true
 
