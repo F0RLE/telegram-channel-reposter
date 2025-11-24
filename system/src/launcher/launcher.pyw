@@ -3202,30 +3202,42 @@ class ModernLauncher(ctk.CTk):
             
             # Модальность
             self.transient(parent)
-            self.grab_set()
-            self.lift()
-            self.focus_force()
-            self.bind("<Escape>", lambda e: self.cancel())
             
-            # Показываем окно сразу, затем центрируем
-            self.deiconify()
-            self.after(100, self._center_and_show)
+            # Центрируем и показываем сразу
+            self._center_and_show()
             
-            # Фокус на поле ввода (с задержкой и принудительно)
+            # Устанавливаем grab после того, как окно показано
+            def set_grab():
+                try:
+                    self.grab_set()
+                except:
+                    pass
+            
+            # Фокус на поле ввода сразу
             def set_focus():
                 try:
                     self.entry.focus_force()
                     self.entry.icursor(0)
+                    self.entry.select_range(0, "end")  # Выделяем весь текст для быстрой замены
                 except:
                     pass
             
-            self.after(200, set_focus)
+            # Устанавливаем grab и фокус после небольшой задержки
+            self.after(10, set_grab)
+            self.after(20, set_focus)
+            
+            self.bind("<Escape>", lambda e: self.cancel())
         
         def _center_and_show(self):
             """Центрирует окно и делает его видимым"""
             try:
-                self.update_idletasks()
+                # Показываем окно сразу
+                self.deiconify()
+                self.lift()
+                
+                # Пытаемся получить геометрию родительского окна
                 try:
+                    self.parent_window.update_idletasks()
                     px = self.parent_window.winfo_x()
                     py = self.parent_window.winfo_y()
                     pw = self.parent_window.winfo_width()
@@ -3233,24 +3245,27 @@ class ModernLauncher(ctk.CTk):
                     x = px + (pw - 400) // 2
                     y = py + (ph - 200) // 2
                 except:
+                    # Если не получилось, центрируем по экрану
                     sw = self.winfo_screenwidth()
                     sh = self.winfo_screenheight()
                     x = (sw - 400) // 2
                     y = (sh - 200) // 2
                 
+                # Проверяем границы экрана
                 sw = self.winfo_screenwidth()
                 sh = self.winfo_screenheight()
                 x = max(0, min(x, sw - 400))
                 y = max(0, min(y, sh - 200))
                 
+                # Устанавливаем позицию
                 self.geometry(f"400x200+{x}+{y}")
-                self.deiconify()
-                self.lift()
                 self.focus_force()
             except:
+                # В случае ошибки просто показываем окно
                 try:
                     self.deiconify()
                     self.lift()
+                    self.focus_force()
                 except:
                     pass
         
@@ -4388,8 +4403,16 @@ class ModernLauncher(ctk.CTk):
                 self.current_topic = topic_name
                 self.refresh_channels()  # Полное обновление, так как добавлена новая тема
                 
-                # Фокусируем поле ввода канала после небольшой задержки
-                self.after(200, lambda: self.entry_chan.focus_set() if hasattr(self, 'entry_chan') else None)
+                # Фокусируем поле ввода канала после обновления UI
+                def focus_entry():
+                    if hasattr(self, 'entry_chan'):
+                        try:
+                            self.entry_chan.focus_force()
+                            self.entry_chan.icursor(0)
+                        except:
+                            pass
+                
+                self.after(300, focus_entry)
                 
                 self.log(f"✅ [CHANNELS] Создана новая тема: {topic_name}", "SYSTEM")
             except Exception as e:
