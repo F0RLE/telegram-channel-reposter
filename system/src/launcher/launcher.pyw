@@ -1674,6 +1674,23 @@ class ModernLauncher(ctk.CTk):
             text_color=COLORS['text_muted']
         ).grid(row=2, column=2, sticky="w", padx=(0, 15), pady=6)
         
+        # Кнопка сброса настроек LLM
+        reset_llm_frame = ctk.CTkFrame(llm_gen_card, fg_color="transparent")
+        reset_llm_frame.grid(row=3, column=0, columnspan=3, sticky="e", padx=15, pady=(8, 12))
+        
+        reset_llm_btn = ctk.CTkButton(
+            reset_llm_frame,
+            text=t("ui.launcher.settings.reset_llm", default="🔄 Сбросить на дефолтные"),
+            font=("Segoe UI", 12),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            height=32,
+            corner_radius=8,
+            command=self._reset_llm_settings
+        )
+        reset_llm_btn.pack(side="right")
+        
         # LLM Model Management - Unified
         llm_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
         llm_card.pack(fill="both", expand=True, pady=(0, 12))
@@ -2037,6 +2054,23 @@ class ModernLauncher(ctk.CTk):
         def save_negative_prompt(*args):
             self.after(500, self._save_generation_config())
         negative_prompt_entry.bind("<KeyRelease>", save_negative_prompt)
+        
+        # Кнопка сброса настроек SD
+        reset_sd_frame = ctk.CTkFrame(card_content, fg_color="transparent")
+        reset_sd_frame.grid(row=10, column=0, columnspan=2, sticky="e", padx=(0, 20), pady=(8, 0))
+        
+        reset_sd_btn = ctk.CTkButton(
+            reset_sd_frame,
+            text=t("ui.launcher.settings.reset_sd", default="🔄 Сбросить на дефолтные"),
+            font=("Segoe UI", 12),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            height=32,
+            corner_radius=8,
+            command=self._reset_sd_settings
+        )
+        reset_sd_btn.pack(side="right")
         
         # Card 5: Управление SD
         delete_sd_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
@@ -5009,10 +5043,81 @@ class ModernLauncher(ctk.CTk):
     
     # CLEANUP
     
+    def _reset_llm_settings(self):
+        """Сбрасывает настройки LLM на дефолтные значения"""
+        try:
+            # Дефолтные значения
+            default_temp = 0.7
+            default_ctx = 4096
+            
+            # Обновляем переменные
+            if hasattr(self, 'llm_temp_var'):
+                self.llm_temp_var.set(default_temp)
+            if hasattr(self, 'llm_ctx_var'):
+                self.llm_ctx_var.set(default_ctx)
+            
+            # Сохраняем
+            self._save_generation_config()
+            
+            # Показываем уведомление
+            self._show_save_indicator()
+            self.log("✅ [SETTINGS] Настройки LLM сброшены на дефолтные значения", "SYSTEM")
+        except Exception as e:
+            self.log(f"❌ [SETTINGS] Ошибка сброса настроек LLM: {e}", "SYSTEM")
+    
+    def _reset_sd_settings(self):
+        """Сбрасывает настройки SD на дефолтные значения"""
+        try:
+            # Дефолтные значения
+            default_steps = 30
+            default_cfg = 6.0
+            default_width = 896
+            default_height = 1152
+            default_sampler = "euler"
+            default_scheduler = "normal"
+            default_positive_prefix = ""
+            default_negative_prompt = "score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs, text, username, artist name"
+            
+            # Обновляем переменные
+            if hasattr(self, 'sd_steps_var'):
+                self.sd_steps_var.set(default_steps)
+            if hasattr(self, 'sd_cfg_var'):
+                self.sd_cfg_var.set(default_cfg)
+            if hasattr(self, 'sd_width_var'):
+                self.sd_width_var.set(default_width)
+            if hasattr(self, 'sd_height_var'):
+                self.sd_height_var.set(default_height)
+            if hasattr(self, 'sd_sampler_var'):
+                self.sd_sampler_var.set(default_sampler)
+            if hasattr(self, 'sd_scheduler_var'):
+                self.sd_scheduler_var.set(default_scheduler)
+            if hasattr(self, 'sd_positive_prefix_entry'):
+                self.sd_positive_prefix_entry.delete("1.0", "end")
+                self.sd_positive_prefix_entry.insert("1.0", default_positive_prefix)
+            if hasattr(self, 'sd_negative_prompt_entry'):
+                self.sd_negative_prompt_entry.delete("1.0", "end")
+                self.sd_negative_prompt_entry.insert("1.0", default_negative_prompt)
+            
+            # Сохраняем
+            self._save_generation_config()
+            
+            # Показываем уведомление
+            self._show_save_indicator()
+            self.log("✅ [SETTINGS] Настройки SD сброшены на дефолтные значения", "SYSTEM")
+        except Exception as e:
+            self.log(f"❌ [SETTINGS] Ошибка сброса настроек SD: {e}", "SYSTEM")
+    
     def on_close(self):
         """Обработчик закрытия окна - останавливает сервисы и очищает ресурсы"""
         # Отключаем обработчик, чтобы избежать повторных вызовов
         self.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+        # Сохраняем все настройки перед закрытием
+        try:
+            self._auto_save_settings()
+            self._save_generation_config()
+        except:
+            pass
         
         def cleanup_and_close():
             try:
