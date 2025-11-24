@@ -4927,6 +4927,19 @@ class ModernLauncher(ctk.CTk):
                 except:
                     gen_config['llm_ctx'] = 4096
             
+            # Сохраняем инструкции для переписывания
+            if hasattr(self, 'llm_rewrite_system_prompt_entry'):
+                system_prompt = self.llm_rewrite_system_prompt_entry.get("1.0", "end-1c").strip()
+                gen_config['llm_rewrite_system_prompt'] = system_prompt
+            
+            if hasattr(self, 'llm_rewrite_user_prompt_entry'):
+                user_prompt = self.llm_rewrite_user_prompt_entry.get("1.0", "end-1c").strip()
+                gen_config['llm_rewrite_user_prompt'] = user_prompt
+            
+            if hasattr(self, 'llm_rewrite_cliches_entry'):
+                cliches = self.llm_rewrite_cliches_entry.get().strip()
+                gen_config['llm_rewrite_cliches'] = cliches
+            
             # SD settings
             if hasattr(self, 'sd_steps_var'):
                 gen_config['sd_steps'] = int(self.sd_steps_var.get())

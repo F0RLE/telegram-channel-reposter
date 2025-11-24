@@ -10,7 +10,10 @@ from config.settings import (
     OLLAMA_MODEL, 
     OLLAMA_API_KEY,
     LLM_TEMP,
-    LLM_CTX
+    LLM_CTX,
+    LLM_REWRITE_SYSTEM_PROMPT,
+    LLM_REWRITE_USER_PROMPT,
+    LLM_REWRITE_CLICHES
 )
 
 logger = logging.getLogger(__name__)
@@ -122,17 +125,14 @@ async def rewrite_text(post_text: str) -> Optional[str]:
     Returns:
         Rewritten text in HTML format with bold title, or original text on error
     """
-    # List of stop-phrases to remove from output
-    CLICHES = [r"а вы знали", r"не может быть", r"ого", r"да ну", r"и такие виды"]
+    # Use cliches from settings
+    CLICHES = [re.escape(c) for c in LLM_REWRITE_CLICHES] if LLM_REWRITE_CLICHES else []
 
-    system = (
-        "Ты — талантливый редактор Telegram-канала. Твоя задача — переписать текст, сделав его живым, "
-        "конкретным и цепляющим. Избегай воды и вводных слов.\n"
-        "ФОРМАТ ОТВЕТА СТРОГО:\n"
-        "Кликбейтный Заголовок ||| Основной текст поста"
-    )
+    # Use system prompt from settings
+    system = LLM_REWRITE_SYSTEM_PROMPT
 
-    prompt = f"Перепиши этот текст:\n\n{post_text.strip()}"
+    # Use user prompt from settings, replacing {text} placeholder
+    prompt = LLM_REWRITE_USER_PROMPT.replace("{text}", post_text.strip())
     
     # Use temperature from settings
     payload = _build_payload(prompt, system, temp=LLM_TEMP)

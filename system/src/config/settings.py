@@ -80,6 +80,16 @@ SD_CFG = 6.0
 SD_WIDTH = 896
 SD_HEIGHT = 1152
 
+# LLM Rewrite Instructions (Defaults)
+LLM_REWRITE_SYSTEM_PROMPT = (
+    "Ты — талантливый редактор Telegram-канала. Твоя задача — переписать текст, сделав его живым, "
+    "конкретным и цепляющим. Избегай воды и вводных слов.\n"
+    "ФОРМАТ ОТВЕТА СТРОГО:\n"
+    "Кликбейтный Заголовок ||| Основной текст поста"
+)
+LLM_REWRITE_USER_PROMPT = "Перепиши этот текст:\n\n{text}"
+LLM_REWRITE_CLICHES = ["а вы знали", "не может быть", "ого", "да ну", "и такие виды"]
+
 # Load overrides from JSON if exists
 if os.path.exists(GEN_CONFIG_PATH):
     try:
@@ -91,6 +101,16 @@ if os.path.exists(GEN_CONFIG_PATH):
             SD_CFG = float(gen_cfg.get("sd_cfg", 6.0))
             SD_WIDTH = int(gen_cfg.get("sd_width", 896))
             SD_HEIGHT = int(gen_cfg.get("sd_height", 1152))
+            
+            # Load LLM rewrite instructions
+            LLM_REWRITE_SYSTEM_PROMPT = gen_cfg.get("llm_rewrite_system_prompt", LLM_REWRITE_SYSTEM_PROMPT)
+            LLM_REWRITE_USER_PROMPT = gen_cfg.get("llm_rewrite_user_prompt", LLM_REWRITE_USER_PROMPT)
+            cliches_str = gen_cfg.get("llm_rewrite_cliches", ", ".join(LLM_REWRITE_CLICHES))
+            # Parse cliches from comma-separated string
+            if isinstance(cliches_str, str):
+                LLM_REWRITE_CLICHES = [c.strip() for c in cliches_str.split(",") if c.strip()]
+            elif isinstance(cliches_str, list):
+                LLM_REWRITE_CLICHES = cliches_str
     except Exception:
         pass
 
