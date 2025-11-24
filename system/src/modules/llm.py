@@ -103,9 +103,9 @@ def _build_payload(prompt: str, system: Optional[str] = None, temp: float = 0.7)
     messages.append({"role": "user", "content": prompt})
     
     # Validate model name
-    model_name = OLLAMA_MODEL if OLLAMA_MODEL and OLLAMA_MODEL.strip() else "local-model"
-    if not model_name or model_name == "local-model":
-        logger.warning(f"⚠️ Using default model name 'local-model'. Make sure SELECTED_LLM_MODEL is set in .env")
+    model_name = OLLAMA_MODEL if OLLAMA_MODEL and OLLAMA_MODEL.strip() else "gemma3:4b"
+    if not model_name or model_name == "gemma3:4b":
+        logger.debug(f"ℹ️ Using default model name 'gemma3:4b'")
     
     return {
         "model": model_name,

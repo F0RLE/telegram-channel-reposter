@@ -97,19 +97,20 @@ class ServiceManager:
             if result == 0:  # Порт занят
                 self.log(t("ui.launcher.log.port_in_use", default="⚠️ Порт {port} занят, освобождаю...", port=port), "SYSTEM")
                 
-                # Находим процесс, занимающий порт
-                for proc in psutil.process_iter(['pid', 'name', 'connections']):
+                # Находим процесс, занимающий порт (правильный способ для Windows)
+                for proc in psutil.process_iter(['pid', 'name']):
                     try:
-                        connections = proc.info.get('connections')
+                        # Используем proc.connections() вместо proc.info.get('connections')
+                        connections = proc.connections()
                         if connections:
                             for conn in connections:
-                                if conn.laddr.port == port:
-                                    pid = proc.info['pid']
+                                if conn.status == psutil.CONN_LISTEN and conn.laddr.port == port:
+                                    pid = proc.pid
                                     self.log(t("ui.launcher.log.killing_process_on_port", default="🔄 Убиваю процесс {pid} на порту {port}...", pid=pid, port=port), "SYSTEM")
                                     self.kill_tree(pid)
                                     time.sleep(2)  # Даем время на освобождение порта
                                     return
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError):
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError, psutil.AccessDenied):
                         continue
         except Exception as e:
             self.log(t("ui.launcher.log.port_check_error", default="⚠️ Ошибка проверки порта {port}: {error}", port=port, error=str(e)), "SYSTEM")
