@@ -1730,6 +1730,112 @@ class ModernLauncher(ctk.CTk):
         )
         reset_llm_btn.pack(side="right")
         
+        # Card 2: Инструкции для переписывания текста
+        instructions_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
+        instructions_card.pack(fill="x", pady=(0, 10))
+        instructions_card.grid_columnconfigure(1, weight=1)
+        
+        instructions_header = ctk.CTkFrame(instructions_card, fg_color="transparent")
+        instructions_header.pack(fill="x", padx=14, pady=(12, 10))
+        
+        ctk.CTkLabel(
+            instructions_header,
+            text="📋 " + t("ui.launcher.settings.llm_instructions", default="Инструкции для переписывания"),
+            font=("Segoe UI", 13, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        instructions_content = ctk.CTkFrame(instructions_card, fg_color="transparent")
+        instructions_content.pack(fill="x", padx=14, pady=(0, 12))
+        instructions_content.grid_columnconfigure(1, weight=1)
+        
+        # System prompt для переписывания
+        ctk.CTkLabel(
+            instructions_content,
+            text=t("ui.launcher.settings.llm_system_prompt", default="Системный промпт"),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).grid(row=0, column=0, sticky="nw", padx=(0, 12), pady=(8, 0))
+        
+        default_system_prompt = gen_config.get("llm_rewrite_system_prompt", 
+            "Ты — талантливый редактор Telegram-канала. Твоя задача — переписать текст, сделав его живым, "
+            "конкретным и цепляющим. Избегай воды и вводных слов.\n"
+            "ФОРМАТ ОТВЕТА СТРОГО:\n"
+            "Кликбейтный Заголовок ||| Основной текст поста")
+        
+        system_prompt_entry = ctk.CTkTextbox(
+            instructions_content,
+            font=("Segoe UI", 11),
+            height=100,
+            fg_color=COLORS['bg'],
+            border_color=COLORS['border'],
+            corner_radius=6,
+            wrap="word"
+        )
+        system_prompt_entry.insert("1.0", default_system_prompt)
+        system_prompt_entry.grid(row=0, column=1, sticky="ew", pady=8)
+        self.llm_rewrite_system_prompt_entry = system_prompt_entry
+        
+        def save_system_prompt(*args):
+            self._save_generation_config()
+        system_prompt_entry.bind("<KeyRelease>", save_system_prompt)
+        system_prompt_entry.bind("<FocusOut>", save_system_prompt)
+        
+        # User prompt для переписывания
+        ctk.CTkLabel(
+            instructions_content,
+            text=t("ui.launcher.settings.llm_user_prompt", default="Пользовательский промпт"),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).grid(row=1, column=0, sticky="nw", padx=(0, 12), pady=(8, 0))
+        
+        default_user_prompt = gen_config.get("llm_rewrite_user_prompt", "Перепиши этот текст:\n\n{text}")
+        
+        user_prompt_entry = ctk.CTkTextbox(
+            instructions_content,
+            font=("Segoe UI", 11),
+            height=60,
+            fg_color=COLORS['bg'],
+            border_color=COLORS['border'],
+            corner_radius=6,
+            wrap="word"
+        )
+        user_prompt_entry.insert("1.0", default_user_prompt)
+        user_prompt_entry.grid(row=1, column=1, sticky="ew", pady=8)
+        self.llm_rewrite_user_prompt_entry = user_prompt_entry
+        
+        def save_user_prompt(*args):
+            self._save_generation_config()
+        user_prompt_entry.bind("<KeyRelease>", save_user_prompt)
+        user_prompt_entry.bind("<FocusOut>", save_user_prompt)
+        
+        # Клише для удаления
+        ctk.CTkLabel(
+            instructions_content,
+            text=t("ui.launcher.settings.llm_cliches", default="Клише для удаления (через запятую)"),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).grid(row=2, column=0, sticky="nw", padx=(0, 12), pady=(8, 0))
+        
+        default_cliches = gen_config.get("llm_rewrite_cliches", "а вы знали, не может быть, ого, да ну, и такие виды")
+        
+        cliches_entry = ctk.CTkEntry(
+            instructions_content,
+            font=("Segoe UI", 11),
+            height=28,
+            fg_color=COLORS['bg'],
+            border_color=COLORS['border'],
+            corner_radius=6
+        )
+        cliches_entry.insert(0, default_cliches)
+        cliches_entry.grid(row=2, column=1, sticky="ew", pady=8)
+        self.llm_rewrite_cliches_entry = cliches_entry
+        
+        def save_cliches(*args):
+            self._save_generation_config()
+        cliches_entry.bind("<KeyRelease>", save_cliches)
+        cliches_entry.bind("<FocusOut>", save_cliches)
+        
         # LLM Model Management - Unified
         llm_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
         llm_card.pack(fill="both", expand=True, pady=(0, 10))
@@ -5346,6 +5452,25 @@ class ModernLauncher(ctk.CTk):
                 self.llm_temp_var.set(default_temp)
             if hasattr(self, 'llm_ctx_var'):
                 self.llm_ctx_var.set(default_ctx)
+            
+            # Сбрасываем инструкции для переписывания
+            default_system_prompt = (
+                "Ты — талантливый редактор Telegram-канала. Твоя задача — переписать текст, сделав его живым, "
+                "конкретным и цепляющим. Избегай воды и вводных слов.\n"
+                "ФОРМАТ ОТВЕТА СТРОГО:\n"
+                "Кликбейтный Заголовок ||| Основной текст поста"
+            )
+            if hasattr(self, 'llm_rewrite_system_prompt_entry'):
+                self.llm_rewrite_system_prompt_entry.delete("1.0", "end")
+                self.llm_rewrite_system_prompt_entry.insert("1.0", default_system_prompt)
+            
+            if hasattr(self, 'llm_rewrite_user_prompt_entry'):
+                self.llm_rewrite_user_prompt_entry.delete("1.0", "end")
+                self.llm_rewrite_user_prompt_entry.insert("1.0", "Перепиши этот текст:\n\n{text}")
+            
+            if hasattr(self, 'llm_rewrite_cliches_entry'):
+                self.llm_rewrite_cliches_entry.delete(0, "end")
+                self.llm_rewrite_cliches_entry.insert(0, "а вы знали, не может быть, ого, да ну, и такие виды")
             
             # Сохраняем
             self._save_generation_config()
