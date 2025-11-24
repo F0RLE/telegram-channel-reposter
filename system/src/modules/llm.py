@@ -2,6 +2,8 @@ import logging
 import re
 import asyncio
 import aiohttp
+import os
+import json
 from typing import Optional, Dict, Any
 
 # Import settings
@@ -13,8 +15,60 @@ from config.settings import (
     LLM_CTX,
     LLM_REWRITE_SYSTEM_PROMPT,
     LLM_REWRITE_USER_PROMPT,
-    LLM_REWRITE_CLICHES
+    LLM_REWRITE_CLICHES,
+    GEN_CONFIG_PATH
 )
+
+# Кэш для настроек переписывания
+_cached_rewrite_settings = None
+_cached_settings_mtime = None
+
+def _reload_rewrite_settings():
+    """Перезагружает настройки переписывания из файла"""
+    global _cached_rewrite_settings, _cached_settings_mtime
+    
+    try:
+        # Проверяем время модификации файла
+        if os.path.exists(GEN_CONFIG_PATH):
+            current_mtime = os.path.getmtime(GEN_CONFIG_PATH)
+            if _cached_settings_mtime == current_mtime and _cached_rewrite_settings:
+                # Настройки не изменились, используем кэш
+                return _cached_rewrite_settings
+            
+            # Загружаем новые настройки
+            with open(GEN_CONFIG_PATH, 'r', encoding='utf-8') as f:
+                gen_cfg = json.load(f)
+            
+            system_prompt = gen_cfg.get("llm_rewrite_system_prompt", LLM_REWRITE_SYSTEM_PROMPT)
+            user_prompt = gen_cfg.get("llm_rewrite_user_prompt", LLM_REWRITE_USER_PROMPT)
+            cliches_str = gen_cfg.get("llm_rewrite_cliches", ", ".join(LLM_REWRITE_CLICHES))
+            
+            # Parse cliches
+            if isinstance(cliches_str, str):
+                cliches = [c.strip() for c in cliches_str.split(",") if c.strip()]
+            elif isinstance(cliches_str, list):
+                cliches = cliches_str
+            else:
+                cliches = LLM_REWRITE_CLICHES
+            
+            _cached_rewrite_settings = {
+                "system_prompt": system_prompt,
+                "user_prompt": user_prompt,
+                "cliches": cliches
+            }
+            _cached_settings_mtime = current_mtime
+            
+            logger.info(f"✅ Настройки переписывания перезагружены из файла")
+            return _cached_rewrite_settings
+    except Exception as e:
+        logger.warning(f"⚠️ Ошибка перезагрузки настроек переписывания: {e}, используем значения по умолчанию")
+    
+    # Возвращаем значения по умолчанию
+    return {
+        "system_prompt": LLM_REWRITE_SYSTEM_PROMPT,
+        "user_prompt": LLM_REWRITE_USER_PROMPT,
+        "cliches": LLM_REWRITE_CLICHES
+    }
 
 logger = logging.getLogger(__name__)
 
@@ -125,14 +179,21 @@ async def rewrite_text(post_text: str) -> Optional[str]:
     Returns:
         Rewritten text in HTML format with bold title, or original text on error
     """
+    # Перезагружаем настройки перед каждым запросом (на случай изменения в лаунчере)
+    settings = _reload_rewrite_settings()
+    
     # Use cliches from settings
-    CLICHES = [re.escape(c) for c in LLM_REWRITE_CLICHES] if LLM_REWRITE_CLICHES else []
+    CLICHES = [re.escape(c) for c in settings["cliches"]] if settings["cliches"] else []
 
     # Use system prompt from settings
-    system = LLM_REWRITE_SYSTEM_PROMPT
+    system = settings["system_prompt"]
 
     # Use user prompt from settings, replacing {text} placeholder
-    prompt = LLM_REWRITE_USER_PROMPT.replace("{text}", post_text.strip())
+    prompt = settings["user_prompt"].replace("{text}", post_text.strip())
+    
+    # Логируем используемые промпты для отладки
+    logger.info(f"📝 Используется системный промпт: {system[:100]}...")
+    logger.info(f"📝 Используется пользовательский промпт: {prompt[:100]}...")
     
     # Use temperature from settings
     payload = _build_payload(prompt, system, temp=LLM_TEMP)
