@@ -3013,13 +3013,16 @@ class ModernLauncher(ctk.CTk):
             
             # Убираем стандартные рамки
             self.overrideredirect(True)
-            self.attributes("-topmost", True)
+            try:
+                self.attributes("-topmost", True)
+            except:
+                pass
             
             # Размер
             self.geometry("400x200")
             
             # Стиль окна с закруглениями
-            self.configure(fg_color="transparent")
+            self.configure(fg_color=COLORS['bg'])
             
             # Рамка с закруглением
             outer = ctk.CTkFrame(self, fg_color=COLORS['primary'], corner_radius=16)
@@ -3092,8 +3095,9 @@ class ModernLauncher(ctk.CTk):
             self.focus_force()
             self.bind("<Escape>", lambda e: self.cancel())
             
-            # Центрируем и показываем
-            self.after(50, self._center_and_show)
+            # Показываем окно сразу, затем центрируем
+            self.deiconify()
+            self.after(100, self._center_and_show)
             
             # Фокус на поле ввода (с задержкой и принудительно)
             def set_focus():
@@ -3164,13 +3168,16 @@ class ModernLauncher(ctk.CTk):
             
             # Убираем стандартные рамки
             self.overrideredirect(True)
-            self.attributes("-topmost", True)
+            try:
+                self.attributes("-topmost", True)
+            except:
+                pass
             
             # Размер
             self.geometry("420x180")
             
             # Стиль окна с закруглениями
-            self.configure(fg_color="transparent")
+            self.configure(fg_color=COLORS['bg'])
             
             # Рамка с закруглением (красная для опасного действия)
             outer = ctk.CTkFrame(self, fg_color=COLORS['danger'], corner_radius=16)
@@ -3300,7 +3307,10 @@ class ModernLauncher(ctk.CTk):
             self.geometry(f"{width}x{height}")
             
             # Делаем окно поверх всех
-            self.attributes("-topmost", True)
+            try:
+                self.attributes("-topmost", True)
+            except:
+                pass
             
             # Цвета для типов
             type_config = {
@@ -3360,8 +3370,9 @@ class ModernLauncher(ctk.CTk):
             self.focus_force()
             self.bind("<Escape>", lambda e: self._close())
             
-            # Центрируем и показываем после создания всех виджетов
-            self.after(50, self._center_and_show)
+            # Показываем окно сразу, затем центрируем
+            self.deiconify()
+            self.after(100, self._center_and_show)
         
         def _center_and_show(self):
             """Центрирует окно и делает его видимым"""
@@ -3430,32 +3441,50 @@ class ModernLauncher(ctk.CTk):
     def show_info(self, title, message):
         """Информационный диалог"""
         dialog = self.ModernDialog(self, title, message, "info")
-        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], primary=True)
+        def ok_action():
+            dialog.result = True
+            dialog.destroy()
+        dialog.add_button("OK", ok_action, primary=True)
         return dialog.wait_result()
     
     def show_success(self, title, message):
         """Диалог успеха"""
         dialog = self.ModernDialog(self, title, message, "success")
-        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], primary=True)
+        def ok_action():
+            dialog.result = True
+            dialog.destroy()
+        dialog.add_button("OK", ok_action, primary=True)
         return dialog.wait_result()
     
     def show_warning(self, title, message):
         """Предупреждение"""
         dialog = self.ModernDialog(self, title, message, "warning", height=200)
-        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], primary=True)
+        def ok_action():
+            dialog.result = True
+            dialog.destroy()
+        dialog.add_button("OK", ok_action, primary=True)
         return dialog.wait_result()
     
     def show_error(self, title, message):
         """Ошибка"""
         dialog = self.ModernDialog(self, title, message, "error", height=200)
-        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], danger=True)
+        def ok_action():
+            dialog.result = True
+            dialog.destroy()
+        dialog.add_button("OK", ok_action, danger=True)
         return dialog.wait_result()
     
     def show_confirm(self, title, message, yes_text="Да", no_text="Отмена", danger=False):
         """Диалог подтверждения"""
         dialog = self.ModernDialog(self, title, message, "error" if danger else "question", height=200)
-        dialog.add_button(no_text, lambda: [setattr(dialog, 'result', False), dialog.destroy()])
-        dialog.add_button(yes_text, lambda: [setattr(dialog, 'result', True), dialog.destroy()], danger=danger, primary=not danger)
+        def no_action():
+            dialog.result = False
+            dialog.destroy()
+        def yes_action():
+            dialog.result = True
+            dialog.destroy()
+        dialog.add_button(no_text, no_action)
+        dialog.add_button(yes_text, yes_action, danger=danger, primary=not danger)
         return dialog.wait_result()
     
     def create_analytics_page(self):
