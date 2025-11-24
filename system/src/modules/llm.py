@@ -41,15 +41,23 @@ def _reload_rewrite_settings():
             
             system_prompt = gen_cfg.get("llm_rewrite_system_prompt", LLM_REWRITE_SYSTEM_PROMPT)
             user_prompt = gen_cfg.get("llm_rewrite_user_prompt", LLM_REWRITE_USER_PROMPT)
-            cliches_str = gen_cfg.get("llm_rewrite_cliches", ", ".join(LLM_REWRITE_CLICHES))
+            cliches_raw = gen_cfg.get("llm_rewrite_cliches", None)
             
-            # Parse cliches
-            if isinstance(cliches_str, str):
-                cliches = [c.strip() for c in cliches_str.split(",") if c.strip()]
-            elif isinstance(cliches_str, list):
-                cliches = cliches_str
+            # Parse cliches - может быть строка или список
+            if cliches_raw is None:
+                # Используем значение по умолчанию из settings
+                if isinstance(LLM_REWRITE_CLICHES, list):
+                    cliches = LLM_REWRITE_CLICHES
+                elif isinstance(LLM_REWRITE_CLICHES, str):
+                    cliches = [c.strip() for c in LLM_REWRITE_CLICHES.split(",") if c.strip()]
+                else:
+                    cliches = []
+            elif isinstance(cliches_raw, str):
+                cliches = [c.strip() for c in cliches_raw.split(",") if c.strip()]
+            elif isinstance(cliches_raw, list):
+                cliches = cliches_raw
             else:
-                cliches = LLM_REWRITE_CLICHES
+                cliches = []
             
             _cached_rewrite_settings = {
                 "system_prompt": system_prompt,
@@ -59,15 +67,24 @@ def _reload_rewrite_settings():
             _cached_settings_mtime = current_mtime
             
             logger.info(f"✅ Настройки переписывания перезагружены из файла")
+            logger.debug(f"📋 Системный промпт: {system_prompt[:150]}...")
+            logger.debug(f"📋 Пользовательский промпт: {user_prompt[:150]}...")
+            logger.debug(f"📋 Клише: {cliches}")
             return _cached_rewrite_settings
     except Exception as e:
         logger.warning(f"⚠️ Ошибка перезагрузки настроек переписывания: {e}, используем значения по умолчанию")
     
     # Возвращаем значения по умолчанию
+    default_cliches = LLM_REWRITE_CLICHES
+    if isinstance(default_cliches, str):
+        default_cliches = [c.strip() for c in default_cliches.split(",") if c.strip()]
+    elif not isinstance(default_cliches, list):
+        default_cliches = []
+    
     return {
         "system_prompt": LLM_REWRITE_SYSTEM_PROMPT,
         "user_prompt": LLM_REWRITE_USER_PROMPT,
-        "cliches": LLM_REWRITE_CLICHES
+        "cliches": default_cliches
     }
 
 logger = logging.getLogger(__name__)
@@ -183,20 +200,31 @@ async def rewrite_text(post_text: str) -> Optional[str]:
     settings = _reload_rewrite_settings()
     
     # Use cliches from settings
-    CLICHES = [re.escape(c) for c in settings["cliches"]] if settings["cliches"] else []
+    CLICHES = [re.escape(c.strip()) for c in settings["cliches"] if c.strip()] if settings["cliches"] else []
 
     # Use system prompt from settings
     system = settings["system_prompt"]
+    if not system or not system.strip():
+        logger.warning("⚠️ Системный промпт пуст, используем значение по умолчанию")
+        system = LLM_REWRITE_SYSTEM_PROMPT
 
     # Use user prompt from settings, replacing {text} placeholder
-    prompt = settings["user_prompt"].replace("{text}", post_text.strip())
+    user_prompt_template = settings["user_prompt"]
+    if not user_prompt_template or not user_prompt_template.strip():
+        logger.warning("⚠️ Пользовательский промпт пуст, используем значение по умолчанию")
+        user_prompt_template = LLM_REWRITE_USER_PROMPT
+    
+    prompt = user_prompt_template.replace("{text}", post_text.strip())
     
     # Логируем используемые промпты для отладки
-    logger.info(f"📝 Используется системный промпт: {system[:100]}...")
-    logger.info(f"📝 Используется пользовательский промпт: {prompt[:100]}...")
+    logger.info(f"📝 Переписывание текста (длина: {len(post_text)} символов)")
+    logger.debug(f"📝 Системный промпт: {system[:200]}...")
+    logger.debug(f"📝 Пользовательский промпт: {prompt[:200]}...")
+    logger.debug(f"📝 Клише для удаления: {CLICHES}")
     
     # Use temperature from settings
     payload = _build_payload(prompt, system, temp=LLM_TEMP)
+    logger.debug(f"📤 Отправка запроса к LLM: model={payload['model']}, temp={payload['temperature']}")
     
     from core.monitoring import record_api_call, record_error
     import time
@@ -206,16 +234,24 @@ async def rewrite_text(post_text: str) -> Optional[str]:
     duration = time.time() - start_time
     
     if not res:
+        logger.error("❌ LLM вернул пустой ответ")
         record_api_call("llm", False, duration)
         record_error("llm_rewrite", "empty_response")
         return post_text # Fallback to original
+    
+    logger.info(f"✅ LLM ответ получен за {duration:.2f}с, длина ответа: {len(res)} символов")
+    logger.debug(f"📥 Ответ LLM: {res[:300]}...")
     
     record_api_call("llm", True, duration)
 
     # Post-processing
     text = res
-    for c in CLICHES:
-        text = re.sub(c, '', text, flags=re.IGNORECASE)
+    if CLICHES:
+        original_text = text
+        for c in CLICHES:
+            text = re.sub(c, '', text, flags=re.IGNORECASE)
+        if text != original_text:
+            logger.debug(f"🧹 Удалены клише из текста")
 
     # Remove system artifacts, but KEEP markdown (*, `) for HTML parser
     text = re.sub(r"[#@][a-zA-Z0-9_]+", '', text) # Remove hashtags/mentions
