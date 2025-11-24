@@ -293,6 +293,9 @@ class ServiceManager:
                 if not os.path.exists(venv_py):
                     raise FileNotFoundError("SD venv Python not found")
                 
+                # Проверяем и освобождаем порт 7860
+                self._kill_process_on_port(7860)
+                
                 # Check for CUDA support
                 cuda_supported = False
                 try:
