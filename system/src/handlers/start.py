@@ -29,11 +29,14 @@ async def command_start_handler(message: types.Message, state: FSMContext):
     
     logger.info(f"Пользователь {user_id} запустил бота.") 
 
-    await message.answer(
+    sent_message = await message.answer(
         "Привет! Что будем делать?",
         reply_markup=main_menu_keyboard(),
         parse_mode="HTML"
     )
+    
+    # Сохраняем ID сообщения для последующего удаления при выключении
+    await state.update_data(last_markup_id=sent_message.message_id)
 
 # ==========================================
 # 2. BACK TO MAIN MENU (Unified)
@@ -63,11 +66,14 @@ async def callback_back_main(cb: types.CallbackQuery, state: FSMContext):
         try: await cb.message.delete()
         except: pass
         
-        await cb.message.answer(
+        sent_message = await cb.message.answer(
             "Привет! Что будем делать?",
             reply_markup=main_menu_keyboard(),
             parse_mode="HTML"
         )
+        
+        # Сохраняем ID сообщения для последующего удаления при выключении
+        await state.update_data(last_markup_id=sent_message.message_id)
         
     await cb.answer()
 
@@ -94,11 +100,27 @@ async def callback_choose_topic(cb: types.CallbackQuery, state: FSMContext):
     
     await state.set_state(FormState.awaiting_topic)
 
-    await cb.message.edit_text(
-        "<b>Выберите тему</b> для поиска постов:",
-        reply_markup=topics_keyboard(),
-        parse_mode="HTML"
-    )
+    try:
+        await cb.message.edit_text(
+            "<b>Выберите тему</b> для поиска постов:",
+            reply_markup=topics_keyboard(),
+            parse_mode="HTML"
+        )
+        # Сохраняем ID сообщения для последующего удаления при выключении
+        await state.update_data(last_markup_id=cb.message.message_id)
+    except TelegramBadRequest:
+        # Если не удалось отредактировать, отправляем новое сообщение
+        try: await cb.message.delete()
+        except: pass
+        
+        sent_message = await cb.message.answer(
+            "<b>Выберите тему</b> для поиска постов:",
+            reply_markup=topics_keyboard(),
+            parse_mode="HTML"
+        )
+        # Сохраняем ID сообщения для последующего удаления при выключении
+        await state.update_data(last_markup_id=sent_message.message_id)
+    
     await cb.answer()
 
 # ==========================================
