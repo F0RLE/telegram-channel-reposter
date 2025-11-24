@@ -2381,8 +2381,31 @@ class ModernLauncher(ctk.CTk):
         )
         self.entry_chan.pack(side="left", padx=(12, 8), pady=8)
         self.entry_chan.bind("<Return>", lambda e: self.add_channel())
-        # Разрешаем вставку текста (Ctrl+V)
-        self.entry_chan.bind("<Control-v>", lambda e: None)  # Разрешаем стандартную вставку
+        
+        # Обработчик вставки из буфера обмена (Ctrl+V)
+        def paste_from_clipboard(event):
+            try:
+                # Получаем текст из буфера обмена
+                clipboard_text = self.clipboard_get()
+                if clipboard_text:
+                    # Вставляем текст в текущую позицию курсора
+                    current_pos = self.entry_chan.index("insert")
+                    current_text = self.entry_chan.get()
+                    # Вставляем текст
+                    new_text = current_text[:current_pos] + clipboard_text + current_text[current_pos:]
+                    self.entry_chan.delete(0, "end")
+                    self.entry_chan.insert(0, new_text)
+                    # Устанавливаем курсор после вставленного текста
+                    self.entry_chan.icursor(current_pos + len(clipboard_text))
+            except tk.TclError:
+                # Буфер обмена пуст или содержит не текст
+                pass
+            except Exception as e:
+                # Другие ошибки
+                pass
+            return "break"  # Предотвращаем стандартную обработку
+        
+        self.entry_chan.bind("<Control-v>", paste_from_clipboard)
         self.entry_chan.bind("<Button-1>", lambda e: self.entry_chan.focus_set())  # Фокус при клике
         
         add_btn = ctk.CTkButton(
