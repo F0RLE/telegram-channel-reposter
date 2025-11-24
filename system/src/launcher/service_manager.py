@@ -83,6 +83,36 @@ class ServiceManager:
                     pass
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
+    
+    def _kill_process_on_port(self, port: int):
+        """Убивает процесс, занимающий указанный порт"""
+        try:
+            import socket
+            # Проверяем, занят ли порт
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex(('127.0.0.1', port))
+            sock.close()
+            
+            if result == 0:  # Порт занят
+                self.log(t("ui.launcher.log.port_in_use", default="⚠️ Порт {port} занят, освобождаю...", port=port), "SYSTEM")
+                
+                # Находим процесс, занимающий порт
+                for proc in psutil.process_iter(['pid', 'name', 'connections']):
+                    try:
+                        connections = proc.info.get('connections')
+                        if connections:
+                            for conn in connections:
+                                if conn.laddr.port == port:
+                                    pid = proc.info['pid']
+                                    self.log(t("ui.launcher.log.killing_process_on_port", default="🔄 Убиваю процесс {pid} на порту {port}...", pid=pid, port=port), "SYSTEM")
+                                    self.kill_tree(pid)
+                                    time.sleep(2)  # Даем время на освобождение порта
+                                    return
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError):
+                        continue
+        except Exception as e:
+            self.log(t("ui.launcher.log.port_check_error", default="⚠️ Ошибка проверки порта {port}: {error}", port=port, error=str(e)), "SYSTEM")
 
     def stop_service(self, name: str):
         proc = self.procs.get(name)
