@@ -5272,6 +5272,112 @@ class ModernLauncher(ctk.CTk):
         except Exception as e:
             self.log(f"❌ [SETTINGS] Ошибка сброса настроек SD: {e}", "SYSTEM")
     
+    def _reset_all_settings(self):
+        """Сбрасывает все настройки к исходным значениям с подтверждением"""
+        # Показываем диалог подтверждения
+        if not self.show_confirm(
+            t("ui.launcher.settings.reset_all_confirm_title", default="Сброс всех настроек"),
+            t("ui.launcher.settings.reset_all_confirm_message", default="Вы уверены, что хотите сбросить все настройки к исходным значениям?\n\nЭто действие нельзя отменить."),
+            yes_text=t("ui.launcher.button.reset", default="Сбросить"),
+            no_text=t("ui.launcher.button.cancel", default="Отмена"),
+            danger=True
+        ):
+            return
+        
+        try:
+            from dotenv import set_key
+            
+            # Дефолтные значения для .env
+            default_bot_token = ""
+            default_channel_id = ""
+            default_debug_mode = "false"
+            default_sd_model_url = MODEL_SD_URL
+            default_models_dir = os.path.join(DIR_ENGINE, "LLM_Models")
+            
+            # Сбрасываем .env настройки
+            if hasattr(self, 'entries'):
+                for key in self.entries:
+                    if key == "BOT_TOKEN":
+                        set_key(FILE_ENV, key, default_bot_token)
+                        if key in self.entries:
+                            self.entries[key].delete(0, "end")
+                    elif key == "TARGET_CHANNEL_ID":
+                        set_key(FILE_ENV, key, default_channel_id)
+                        if key in self.entries:
+                            self.entries[key].delete(0, "end")
+            
+            # Сбрасываем debug mode
+            if hasattr(self, 'debug_mode'):
+                self.debug_mode.set(False)
+                set_key(FILE_ENV, "DEBUG_MODE", default_debug_mode)
+            
+            # Сбрасываем SD Model URL
+            if hasattr(self, 'sd_model_url_entry'):
+                self.sd_model_url_entry.delete(0, "end")
+                self.sd_model_url_entry.insert(0, default_sd_model_url)
+                set_key(FILE_ENV, "SD_MODEL_URL", default_sd_model_url)
+            
+            # Сбрасываем Models directory
+            if hasattr(self, 'models_dir_entry'):
+                self.models_dir_entry.delete(0, "end")
+                self.models_dir_entry.insert(0, default_models_dir)
+                set_key(FILE_ENV, "MODELS_LLM_DIR", default_models_dir)
+            
+            # Сбрасываем LLM настройки
+            default_llm_temp = 0.7
+            default_llm_ctx = 4096
+            if hasattr(self, 'llm_temp_var'):
+                self.llm_temp_var.set(default_llm_temp)
+            if hasattr(self, 'llm_ctx_var'):
+                self.llm_ctx_var.set(default_llm_ctx)
+            
+            # Сбрасываем SD настройки
+            default_sd_steps = 30
+            default_sd_cfg = 6.0
+            default_sd_width = 896
+            default_sd_height = 1152
+            default_sd_sampler = "DPM++ 2M"
+            default_sd_scheduler = "Karras"
+            default_positive_prefix = "score_9, score_8_up, score_7_up, source_anime, "
+            default_negative_prompt = "score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs, text, username, artist name"
+            
+            if hasattr(self, 'sd_steps_var'):
+                self.sd_steps_var.set(default_sd_steps)
+            if hasattr(self, 'sd_cfg_var'):
+                self.sd_cfg_var.set(default_sd_cfg)
+            if hasattr(self, 'sd_width_var'):
+                self.sd_width_var.set(default_sd_width)
+            if hasattr(self, 'sd_height_var'):
+                self.sd_height_var.set(default_sd_height)
+            if hasattr(self, 'sd_sampler_var'):
+                self.sd_sampler_var.set(default_sd_sampler)
+            if hasattr(self, 'sd_scheduler_var'):
+                self.sd_scheduler_var.set(default_sd_scheduler)
+            if hasattr(self, 'sd_positive_prefix_entry'):
+                self.sd_positive_prefix_entry.delete("1.0", "end")
+                self.sd_positive_prefix_entry.insert("1.0", default_positive_prefix)
+            if hasattr(self, 'sd_negative_prompt_entry'):
+                self.sd_negative_prompt_entry.delete("1.0", "end")
+                self.sd_negative_prompt_entry.insert("1.0", default_negative_prompt)
+            
+            # Сохраняем все настройки
+            self._auto_save_settings()
+            self._save_generation_config()
+            
+            # Показываем уведомление
+            self._show_save_indicator("✅ Все настройки сброшены")
+            self.log("✅ [SETTINGS] Все настройки сброшены к исходным значениям", "SYSTEM")
+            self.show_success(
+                t("ui.launcher.success.title", default="Успешно"),
+                t("ui.launcher.settings.reset_all_success", default="Все настройки сброшены к исходным значениям")
+            )
+        except Exception as e:
+            self.log(f"❌ [SETTINGS] Ошибка сброса всех настроек: {e}", "SYSTEM")
+            self.show_error(
+                t("ui.launcher.error.title", default="Ошибка"),
+                t("ui.launcher.settings.reset_all_error", default="Ошибка при сбросе настроек: {error}", error=str(e))
+            )
+    
     def on_close(self):
         """Обработчик закрытия окна - останавливает сервисы и очищает ресурсы"""
         # Отключаем обработчик, чтобы избежать повторных вызовов
