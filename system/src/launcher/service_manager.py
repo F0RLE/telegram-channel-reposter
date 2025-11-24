@@ -90,10 +90,30 @@ class ServiceManager:
             service_name = self._get_service_name(name)
             self.log(t("ui.launcher.log.service_stopping", default="⏹️ Stopping service: {service}...", service=service_name), name.upper())
             self.stop_events[name].set()
-            try:
-                self.kill_tree(proc.pid)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                pass
+            
+            # Для бота используем более мягкое завершение
+            if name == "bot":
+                try:
+                    # Сначала отправляем SIGTERM для graceful shutdown
+                    parent = psutil.Process(proc.pid)
+                    parent.terminate()
+                    # Ждем до 5 секунд для graceful shutdown
+                    try:
+                        parent.wait(timeout=5)
+                        self.log(t("ui.launcher.log.service_stopped_gracefully", default="✅ Service {service} stopped gracefully", service=service_name), name.upper())
+                    except psutil.TimeoutExpired:
+                        # Если не завершился, убиваем принудительно
+                        self.log(t("ui.launcher.log.service_force_stop", default="⚠️ Force stopping service {service}...", service=service_name), name.upper())
+                        self.kill_tree(proc.pid)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
+            else:
+                # Для других сервисов используем обычное завершение
+                try:
+                    self.kill_tree(proc.pid)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
+            
             self.procs[name] = None
             self.update_status(name, "stopped", "gray")
             self.log(t("ui.launcher.log.service_stopped", default="⏹️ Service {service} stopped", service=service_name), name.upper())

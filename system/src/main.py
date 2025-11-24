@@ -3,6 +3,7 @@ import os
 import time
 import asyncio
 import logging
+import signal
 
 # ==========================================
 # 1. CORRECT ENCODING IN WINDOWS CONSOLE
@@ -171,7 +172,36 @@ async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
 # ==========================================
 # 6. BOT STARTUP
 # ==========================================
+# Глобальные переменные для graceful shutdown
+_bot_instance = None
+_dispatcher_instance = None
+_shutdown_event = asyncio.Event()
+
+async def graceful_shutdown():
+    """Выполняет graceful shutdown: удаляет сообщения, затем завершает бота"""
+    global _bot_instance, _dispatcher_instance
+    
+    if _bot_instance and _dispatcher_instance:
+        logger.info("🔄 Начало graceful shutdown: удаление сообщений...")
+        try:
+            # Удаляем все последние сообщения
+            await delete_all_last_messages(_bot_instance, _dispatcher_instance)
+            logger.info("✅ Сообщения удалены")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при удалении сообщений: {e}")
+        
+        # Закрываем бота
+        try:
+            await _bot_instance.session.close()
+            logger.info("✅ Бот закрыт")
+        except Exception as e:
+            logger.error(f"❌ Ошибка при закрытии бота: {e}")
+    
+    _shutdown_event.set()
+
 async def main():
+    global _bot_instance, _dispatcher_instance
+    
     if not BOT_TOKEN:
         error_msg = "❌ Bot token is missing. Please set it in launcher settings."
         logger.error(error_msg)
@@ -179,11 +209,16 @@ async def main():
         await asyncio.sleep(10)
         return
 
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-    dp = Dispatcher(storage=MemoryStorage())
+    _bot_instance = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+    _dispatcher_instance = Dispatcher(storage=MemoryStorage())
 
-    dp.shutdown.register(delete_all_last_messages)
-    dp.include_routers(start_router, topics_router, post_actions_router, forward_router)
+    _dispatcher_instance.shutdown.register(delete_all_last_messages)
+    _dispatcher_instance.include_routers(start_router, topics_router, post_actions_router, forward_router)
+
+    # Регистрируем обработчики сигналов для graceful shutdown
+    if sys.platform != 'win32':
+        signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(graceful_shutdown()))
+        signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(graceful_shutdown()))
 
     # Output startup message immediately after initialization
     startup_msg = "✅ Bot started"
@@ -191,20 +226,45 @@ async def main():
     logger.info("✅ Bot started and ready to work")
 
     # Delete webhook and wait a bit before starting polling
-    await bot.delete_webhook(drop_pending_updates=True)
+    await _bot_instance.delete_webhook(drop_pending_updates=True)
     await asyncio.sleep(1)  # Small delay to avoid conflicts
     
     # Start polling with conflict handling
     try:
-        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+        # Запускаем polling в фоне и ждем shutdown event
+        polling_task = asyncio.create_task(
+            _dispatcher_instance.start_polling(_bot_instance, allowed_updates=["message", "callback_query"])
+        )
+        
+        # Ждем либо завершения polling, либо shutdown event
+        done, pending = await asyncio.wait(
+            [polling_task, asyncio.create_task(_shutdown_event.wait())],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # Если получили shutdown event, останавливаем polling
+        if _shutdown_event.is_set():
+            logger.info("🛑 Остановка polling...")
+            await _dispatcher_instance.stop_polling()
+            # Отменяем задачу polling
+            if not polling_task.done():
+                polling_task.cancel()
+                try:
+                    await polling_task
+                except asyncio.CancelledError:
+                    pass
+        
     except Exception as e:
         if "Conflict" in str(e) or "getUpdates" in str(e):
             logger.warning(f"Update conflict, waiting... {e}")
             await asyncio.sleep(5)
-            await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+            await _dispatcher_instance.start_polling(_bot_instance, allowed_updates=["message", "callback_query"])
         else:
             logger.error(f"Error starting polling: {e}")
             raise
+    finally:
+        # В любом случае выполняем graceful shutdown
+        await graceful_shutdown()
 
 
 if __name__ == "__main__":
