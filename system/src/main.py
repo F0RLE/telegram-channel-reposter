@@ -264,6 +264,7 @@ async def main():
             raise
     finally:
         # В любом случае выполняем graceful shutdown
+        logger.info("🔄 Выполнение cleanup в finally блоке...")
         await graceful_shutdown()
 
 
