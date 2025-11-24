@@ -98,10 +98,37 @@ class ServiceManager:
                 self.log(t("ui.launcher.log.port_in_use", default="⚠️ Порт {port} занят, освобождаю...", port=port), "SYSTEM")
                 
                 # Находим процесс, занимающий порт (правильный способ для Windows)
+                # Используем netstat для более надежного поиска на Windows
+                try:
+                    # Пробуем через netstat (работает без прав администратора)
+                    netstat_result = subprocess.run(
+                        ["netstat", "-ano"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                    if netstat_result.returncode == 0:
+                        for line in netstat_result.stdout.split('\n'):
+                            if f':{port}' in line and 'LISTENING' in line:
+                                parts = line.split()
+                                if len(parts) >= 5:
+                                    try:
+                                        pid = int(parts[-1])
+                                        self.log(t("ui.launcher.log.killing_process_on_port", default="🔄 Убиваю процесс {pid} на порту {port}...", pid=pid, port=port), "SYSTEM")
+                                        self.kill_tree(pid)
+                                        time.sleep(2)  # Даем время на освобождение порта
+                                        return
+                                    except (ValueError, psutil.NoSuchProcess):
+                                        continue
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                    pass
+                
+                # Fallback: пробуем через psutil (может не работать для всех процессов без прав админа)
                 for proc in psutil.process_iter(['pid', 'name']):
                     try:
-                        # Используем proc.connections() вместо proc.info.get('connections')
-                        connections = proc.connections()
+                        # Используем proc.connections() с обработкой ошибок доступа
+                        connections = proc.connections(kind='inet')
                         if connections:
                             for conn in connections:
                                 if conn.status == psutil.CONN_LISTEN and conn.laddr.port == port:
@@ -110,7 +137,7 @@ class ServiceManager:
                                     self.kill_tree(pid)
                                     time.sleep(2)  # Даем время на освобождение порта
                                     return
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError):
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError, OSError):
                         continue
         except Exception as e:
             self.log(t("ui.launcher.log.port_check_error", default="⚠️ Ошибка проверки порта {port}: {error}", port=port, error=str(e)), "SYSTEM")
