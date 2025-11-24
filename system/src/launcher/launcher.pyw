@@ -833,13 +833,12 @@ class ModernLauncher(ctk.CTk):
         # Status cards row
         status_container = ctk.CTkFrame(frame, fg_color="transparent")
         status_container.grid(row=1, column=0, sticky="ew", padx=24, pady=(0, 16))
-        status_container.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="status")
+        status_container.grid_columnconfigure((0, 1, 2), weight=1, uniform="status")
         
         status_cards_data = [
             ("bot", "🤖", t("ui.launcher.service.bot"), COLORS['primary']),
             ("llm", "🧠", t("ui.launcher.service.llm"), COLORS['secondary']),
-            ("sd", "🎨", t("ui.launcher.service.sd"), COLORS['success']),
-            ("system", "⚙️", "System", COLORS['text_muted'])
+            ("sd", "🎨", t("ui.launcher.service.sd"), COLORS['success'])
         ]
         
         self.status_cards = {}
