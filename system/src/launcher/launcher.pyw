@@ -5652,7 +5652,7 @@ class ModernLauncher(ctk.CTk):
                             # Даем боту время на удаление сообщений перед остановкой
                             # Функция delete_all_last_messages вызывается автоматически при shutdown
                             self.service_manager.stop_service("bot")
-                            time.sleep(1)  # Небольшая задержка для завершения удаления сообщений
+                            time.sleep(2)  # Задержка для завершения удаления сообщений (stop_service уже ждет до 10 сек)
                         except:
                             pass
                     

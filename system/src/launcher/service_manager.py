@@ -97,9 +97,9 @@ class ServiceManager:
                     # Сначала отправляем SIGTERM для graceful shutdown
                     parent = psutil.Process(proc.pid)
                     parent.terminate()
-                    # Ждем до 5 секунд для graceful shutdown
+                    # Ждем до 10 секунд для graceful shutdown (удаление сообщений может занять время)
                     try:
-                        parent.wait(timeout=5)
+                        parent.wait(timeout=10)
                         self.log(t("ui.launcher.log.service_stopped_gracefully", default="✅ Service {service} stopped gracefully", service=service_name), name.upper())
                     except psutil.TimeoutExpired:
                         # Если не завершился, убиваем принудительно
