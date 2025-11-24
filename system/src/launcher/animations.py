@@ -279,9 +279,10 @@ def pulse(widget, min_alpha=0.7, max_alpha=1.0, duration=1000, steps=30):
     animate()
 
 
-def button_hover_effect(button, hover_color=None, normal_color=None, duration=150):
+def button_hover_effect(button, hover_color=None, normal_color=None, duration=100):
     """
-    Enhanced hover effect for button with smooth transition.
+    Windows-style hover effect for button with smooth transition.
+    Fast and subtle like Windows UI.
     """
     if hover_color is None:
         hover_color = '#818cf8'
@@ -292,10 +293,12 @@ def button_hover_effect(button, hover_color=None, normal_color=None, duration=15
             normal_color = '#6366f1'
     
     def on_enter(e):
-        smooth_color_transition(button, 'fg_color', normal_color, hover_color, duration)
+        # Fast Windows-style transition
+        smooth_color_transition(button, 'fg_color', normal_color, hover_color, duration=duration, steps=6)
     
     def on_leave(e):
-        smooth_color_transition(button, 'fg_color', hover_color, normal_color, duration)
+        # Fast Windows-style transition
+        smooth_color_transition(button, 'fg_color', hover_color, normal_color, duration=duration, steps=6)
     
     button.bind("<Enter>", on_enter)
     button.bind("<Leave>", on_leave)

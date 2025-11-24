@@ -538,15 +538,6 @@ class ModernLauncher(ctk.CTk):
         }
         default_kwargs.update(kwargs)
         card = ctk.CTkFrame(parent, **default_kwargs)
-        
-        # Add animation on creation
-        if self.animations_enabled and not kwargs.get('no_animation', False):
-            try:
-                scale_in(card, start_scale=0.95, duration=200, steps=10)
-                fade_in(card, duration=200, steps=10)
-            except:
-                pass
-        
         return card
     
     def create_sidebar(self):
@@ -617,18 +608,12 @@ class ModernLauncher(ctk.CTk):
             btn.pack(fill="x", pady=4)
             self.nav_buttons.append(btn)
             
-            # Add hover animations
+            # Add Windows-style hover animations for buttons only
             if self.animations_enabled:
                 try:
-                    button_hover_effect(btn, hover_color=COLORS['hover'], normal_color="transparent", duration=150)
+                    button_hover_effect(btn, hover_color=COLORS['hover'], normal_color="transparent", duration=100)
                 except:
                     pass
-            
-            # Stagger animation for buttons
-            if self.animations_enabled:
-                def animate_btn(b=btn, delay=i*30):
-                    self.after(delay, lambda: fade_in(b, duration=200, steps=10))
-                animate_btn()
         
         # Highlight first button
         if len(self.nav_buttons) > 0:
@@ -770,37 +755,24 @@ class ModernLauncher(ctk.CTk):
                 self.pages[idx] = error_frame
                 self.pages_created[idx] = True
         
-        # Animate page transitions
+        # Simple page switching without animations
         for i, page in enumerate(self.pages):
             if page is not None:
                 if i == idx:
-                    # Show new page with animation
-                    if self.animations_enabled:
-                        page.grid(row=0, column=0, sticky="nsew")
-                        page.lift()
-                        fade_in(page, duration=250, steps=15)
-                        slide_in(page, direction='right', distance=30, duration=250, steps=15)
-                    else:
-                        page.grid(row=0, column=0, sticky="nsew")
-                        page.lift()
+                    page.grid(row=0, column=0, sticky="nsew")
+                    page.lift()
                     page.update()
                 else:
-                    # Hide old page with animation
-                    if self.animations_enabled and page.winfo_viewable():
-                        def hide_page():
-                            page.grid_forget()
-                        fade_out(page, duration=200, steps=10, callback=hide_page)
-                    else:
-                        page.grid_forget()
+                    page.grid_forget()
         
         for i, btn in enumerate(self.nav_buttons):
             if i == idx:
-                # Animate active button
+                # Windows-style smooth transition for active button
                 if self.animations_enabled:
                     try:
                         old_color = btn.cget('fg_color')
-                        smooth_color_transition(btn, 'fg_color', old_color, COLORS['primary'], duration=200, steps=10)
-                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), "white", duration=200, steps=10)
+                        smooth_color_transition(btn, 'fg_color', old_color, COLORS['primary'], duration=150, steps=8)
+                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), "white", duration=150, steps=8)
                     except:
                         btn.configure(
                             fg_color=COLORS['primary'],
@@ -812,12 +784,12 @@ class ModernLauncher(ctk.CTk):
                         text_color="white"
                     )
             else:
-                # Animate inactive button
+                # Windows-style smooth transition for inactive button
                 if self.animations_enabled:
                     try:
                         old_color = btn.cget('fg_color')
-                        smooth_color_transition(btn, 'fg_color', old_color, "transparent", duration=200, steps=10)
-                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), COLORS['text_secondary'], duration=200, steps=10)
+                        smooth_color_transition(btn, 'fg_color', old_color, "transparent", duration=150, steps=8)
+                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), COLORS['text_secondary'], duration=150, steps=8)
                     except:
                         btn.configure(
                             fg_color="transparent",
@@ -2015,6 +1987,13 @@ class ModernLauncher(ctk.CTk):
         )
         new_topic_btn.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
         
+        # Add Windows-style hover animation
+        if self.animations_enabled:
+            try:
+                button_hover_effect(new_topic_btn, hover_color=COLORS['primary_hover'], normal_color=COLORS['primary'], duration=100)
+            except:
+                pass
+        
         # Правая панель (75%): Каналы
         channels_panel = ctk.CTkFrame(frame, fg_color=COLORS['bg'], corner_radius=0)
         channels_panel.grid(row=0, column=1, sticky="nsew")
@@ -2065,6 +2044,13 @@ class ModernLauncher(ctk.CTk):
             command=self.add_channel
         )
         add_btn.pack(side="left", padx=(0, 12), pady=8)
+        
+        # Add Windows-style hover animation
+        if self.animations_enabled:
+            try:
+                button_hover_effect(add_btn, hover_color=COLORS['primary_hover'], normal_color=COLORS['primary'], duration=100)
+            except:
+                pass
         
         # Список каналов (ScrollableFrame)
         self.scroll_chans = ctk.CTkScrollableFrame(
@@ -2969,6 +2955,13 @@ class ModernLauncher(ctk.CTk):
                     command=lambda tp=t: self.delete_topic(tp)
                 )
                 delete_btn.grid(row=0, column=1, sticky="e")
+                
+                # Add Windows-style hover animation for delete topic button
+                if self.animations_enabled:
+                    try:
+                        button_hover_effect(delete_btn, hover_color="#dc2626", normal_color=COLORS['danger'], duration=100)
+                    except:
+                        pass
     
     def refresh_channels_only(self):
         """Обновляет только список каналов (плавно)"""
@@ -3241,6 +3234,13 @@ class ModernLauncher(ctk.CTk):
         )
         open_btn.pack(side="left", padx=4)
         
+        # Add Windows-style hover animation for open button
+        if self.animations_enabled:
+            try:
+                button_hover_effect(open_btn, hover_color=COLORS['surface_light'], normal_color="transparent", duration=100)
+            except:
+                pass
+        
         # Иконка "Корзина" (удалить, красная при наведении)
         delete_handler = partial(self.delete_channel, original_link)
         delete_btn = ctk.CTkButton(
@@ -3255,6 +3255,13 @@ class ModernLauncher(ctk.CTk):
             command=delete_handler
         )
         delete_btn.pack(side="left", padx=4)
+        
+        # Add Windows-style hover animation for delete button
+        if self.animations_enabled:
+            try:
+                button_hover_effect(delete_btn, hover_color=COLORS['danger'], normal_color="transparent", duration=100)
+            except:
+                pass
     
     def add_channel(self):
         if not self.current_topic:
