@@ -110,6 +110,10 @@ for lib in ['aiogram', 'httpcore', 'httpx']:
 # 5. CLEANUP "LAST MESSAGES"
 # ==========================================
 async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
+    """
+    Удаляет все последние сообщения бота при выключении.
+    Обрабатывает как last_message_id, так и last_message_ids (список).
+    """
     storage = dispatcher.storage
     if not isinstance(storage, MemoryStorage):
         return
@@ -119,23 +123,47 @@ async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
     except (AttributeError, TypeError, KeyError):
         return
 
-    target_state = FormState.viewing_post.state
-
+    # Удаляем сообщения для всех состояний, не только viewing_post
     for key in keys:
         try:
-            state = await storage.get_state(key=key)
-            if state == target_state:
-                data = await storage.get_data(key=key)
-                msg_id = data.get("last_message_id")
-
-                if msg_id:
+            data = await storage.get_data(key=key)
+            if not data:
+                continue
+            
+            # Получаем chat_id
+            try:
+                chat_id = key.chat_id if hasattr(key, "chat_id") else key[1]
+            except (AttributeError, IndexError, TypeError):
+                continue
+            
+            # Удаляем last_message_id (одно сообщение)
+            msg_id = data.get("last_message_id")
+            if msg_id:
+                try:
+                    await bot.delete_message(chat_id, msg_id)
+                except Exception:
+                    pass
+            
+            # Удаляем last_message_ids (список сообщений)
+            msg_ids = data.get("last_message_ids", [])
+            if isinstance(msg_ids, list) and msg_ids:
+                for mid in msg_ids:
                     try:
-                        chat_id = key.chat_id if hasattr(key, "chat_id") else key[1]
-                        await bot.delete_message(chat_id, msg_id)
+                        await bot.delete_message(chat_id, mid)
                     except Exception:
                         pass
-
-                await storage.set_state(key=key, state=None)
+            
+            # Удаляем last_markup_id (сообщение с клавиатурой)
+            markup_id = data.get("last_markup_id")
+            if markup_id:
+                try:
+                    await bot.delete_message(chat_id, markup_id)
+                except Exception:
+                    pass
+            
+            # Очищаем состояние
+            await storage.set_state(key=key, state=None)
+            await storage.set_data(key=key, data={})
 
         except Exception:
             pass
