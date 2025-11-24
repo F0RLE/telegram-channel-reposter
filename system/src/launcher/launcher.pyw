@@ -1523,6 +1523,24 @@ class ModernLauncher(ctk.CTk):
         # Set first tab as active
         self.current_settings_tab = "general"
         
+        # Кнопка сброса всех настроек внизу
+        reset_all_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        reset_all_frame.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 16))
+        reset_all_frame.grid_columnconfigure(0, weight=1)
+        
+        reset_all_btn = ctk.CTkButton(
+            reset_all_frame,
+            text="🔄 " + t("ui.launcher.settings.reset_all", default="Сбросить все настройки к исходным"),
+            font=("Segoe UI", 12, "bold"),
+            fg_color=COLORS['danger'],
+            hover_color="#dc2626",
+            text_color="white",
+            height=40,
+            corner_radius=8,
+            command=self._reset_all_settings
+        )
+        reset_all_btn.grid(row=0, column=0, sticky="ew")
+        
         return frame
     
     def _switch_settings_tab(self, tab_key):
