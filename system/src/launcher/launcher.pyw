@@ -1404,6 +1404,7 @@ class ModernLauncher(ctk.CTk):
         frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_rowconfigure(1, weight=1)
+        frame.grid_rowconfigure(2, weight=0)
         
         header = ctk.CTkFrame(frame, fg_color="transparent", height=50)
         header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 12))
