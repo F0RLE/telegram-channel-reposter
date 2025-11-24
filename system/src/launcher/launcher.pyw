@@ -811,11 +811,11 @@ class ModernLauncher(ctk.CTk):
             try:
                 if os.path.exists(FILE_CHANNELS):
                     with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
+                        data = json.load(f, object_pairs_hook=OrderedDict)
                 else:
-                    data = {}
+                    data = OrderedDict()
             except:
-                data = {}
+                data = OrderedDict()
             
             topics = list(data.keys())
             if self.dragged_topic not in topics:
@@ -855,8 +855,8 @@ class ModernLauncher(ctk.CTk):
                         new_index = len(topics)
                     topics.insert(new_index, self.dragged_topic)
                     
-                    # Сохраняем новый порядок
-                    new_data = {}
+                    # Сохраняем новый порядок с использованием OrderedDict
+                    new_data = OrderedDict()
                     for topic in topics:
                         if topic in data:
                             new_data[topic] = data[topic]
@@ -4080,11 +4080,11 @@ class ModernLauncher(ctk.CTk):
         try:
             if os.path.exists(FILE_CHANNELS):
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                    data = json.load(f, object_pairs_hook=OrderedDict)
             else:
-                data = {}
+                data = OrderedDict()
         except:
-            data = {}
+            data = OrderedDict()
         
         topics = list(data.keys())
         
@@ -4169,11 +4169,11 @@ class ModernLauncher(ctk.CTk):
         try:
             if os.path.exists(FILE_CHANNELS):
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
+                    data = json.load(f, object_pairs_hook=OrderedDict)
             else:
-                data = {}
+                data = OrderedDict()
         except:
-            data = {}
+            data = OrderedDict()
         
         topics = list(data.keys())
         
@@ -4325,7 +4325,9 @@ class ModernLauncher(ctk.CTk):
         if topic:
             try:
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                    db = json.load(f)
+                    db = json.load(f, object_pairs_hook=OrderedDict)
+                if not isinstance(db, OrderedDict):
+                    db = OrderedDict(db)
                 if topic.strip() not in db:
                     db[topic.strip()] = []
                     with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
@@ -4341,9 +4343,11 @@ class ModernLauncher(ctk.CTk):
             # Загружаем данные для подсчета каналов
             if os.path.exists(FILE_CHANNELS):
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                    db = json.load(f)
+                    db = json.load(f, object_pairs_hook=OrderedDict)
             else:
-                db = {}
+                db = OrderedDict()
+            if not isinstance(db, OrderedDict):
+                db = OrderedDict(db)
             
             # Подсчитываем количество каналов в теме
             channel_count = 0
@@ -4504,10 +4508,12 @@ class ModernLauncher(ctk.CTk):
         try:
             # Создаем файл channels.json при первом добавлении канала, если его нет
             if not os.path.exists(FILE_CHANNELS):
-                db = {self.current_topic: []}
+                db = OrderedDict({self.current_topic: []})
             else:
                 with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                    db = json.load(f)
+                    db = json.load(f, object_pairs_hook=OrderedDict)
+            if not isinstance(db, OrderedDict):
+                db = OrderedDict(db)
             # Убеждаемся, что тема существует
             if self.current_topic not in db:
                 db[self.current_topic] = []
@@ -4525,7 +4531,9 @@ class ModernLauncher(ctk.CTk):
             if not os.path.exists(FILE_CHANNELS):
                 return
             with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                db = json.load(f)
+                db = json.load(f, object_pairs_hook=OrderedDict)
+            if not isinstance(db, OrderedDict):
+                db = OrderedDict(db)
             if self.current_topic in db:
                 # Нормализуем входной link
                 clean_input = link.replace("https://t.me/", "").replace("@", "").strip()
