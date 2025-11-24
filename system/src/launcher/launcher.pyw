@@ -2917,6 +2917,68 @@ class ModernLauncher(ctk.CTk):
         except Exception as e:
             self.log(t("ui.launcher.log.model_delete_error", default="❌ [LLM] Ошибка: {error}", error=str(e)), "LLM")
     
+    def _delete_gguf_model(self, model_info):
+        """Удаляет GGUF модель"""
+        if not isinstance(model_info, dict):
+            self.log("❌ [LLM] Неверный формат данных модели", "LLM")
+            return
+        
+        model_name = model_info.get('name', '')
+        model_path = model_info.get('path', '')
+        
+        if not model_name:
+            self.log("❌ [LLM] Имя модели не указано", "LLM")
+            return
+        
+        if not self.show_confirm(
+            t("ui.launcher.model.delete_confirm", default="Подтверждение удаления"),
+            t("ui.launcher.model.delete_confirm_message", default="Удалить модель {model}?", model=model_name),
+            yes_text="Удалить", danger=True
+        ):
+            return
+        
+        threading.Thread(
+            target=self._delete_gguf_model_thread,
+            args=(model_info,),
+            daemon=True
+        ).start()
+    
+    def _delete_gguf_model_thread(self, model_info):
+        """Поток для удаления GGUF модели"""
+        try:
+            model_name = model_info.get('name', '')
+            model_path = model_info.get('path', '')
+            
+            self.log(t("ui.launcher.log.deleting_model", default="🗑️ [LLM] Удаление модели {model}...", model=model_name), "LLM")
+            
+            # Удаляем файл модели
+            if model_path and os.path.exists(model_path):
+                try:
+                    os.remove(model_path)
+                    self.log(t("ui.launcher.log.model_deleted", default="✅ [LLM] Модель {model} удалена", model=model_name), "LLM")
+                    # Обновляем список моделей
+                    self.after(0, self.scan_llm_models)
+                except Exception as e:
+                    self.log(f"❌ [LLM] Ошибка удаления файла модели: {e}", "LLM")
+            else:
+                # Если путь не указан, ищем файл по имени
+                if os.path.exists(MODELS_LLM_DIR):
+                    for file in os.listdir(MODELS_LLM_DIR):
+                        if file.lower().endswith('.gguf') and model_name.lower() in file.lower():
+                            file_path = os.path.join(MODELS_LLM_DIR, file)
+                            try:
+                                os.remove(file_path)
+                                self.log(t("ui.launcher.log.model_deleted", default="✅ [LLM] Модель {model} удалена", model=model_name), "LLM")
+                                self.after(0, self.scan_llm_models)
+                                return
+                            except Exception as e:
+                                self.log(f"❌ [LLM] Ошибка удаления файла: {e}", "LLM")
+                                return
+                
+                self.log(f"❌ [LLM] Файл модели не найден: {model_path or model_name}", "LLM")
+        except Exception as e:
+            self.log(t("ui.launcher.log.model_delete_error", default="❌ [LLM] Ошибка: {error}", error=str(e)), "LLM")
+    
     def _select_model_for_use(self, model_info):
         """Выбирает модель для использования"""
         try:
