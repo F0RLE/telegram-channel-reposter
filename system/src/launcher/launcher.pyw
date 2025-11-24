@@ -35,6 +35,9 @@ try:
         button_hover_effect, smooth_color_transition, shake, bounce_in,
         stagger_children, interpolate_color
     )
+    from .analytics import get_analytics, Analytics
+    from .updater import get_updater, Updater
+    from .security import get_security, Security
 except (ImportError, ValueError):
     try:
         from installer import Installer
@@ -45,6 +48,9 @@ except (ImportError, ValueError):
             button_hover_effect, smooth_color_transition, shake, bounce_in,
             stagger_children, interpolate_color
         )
+        from analytics import get_analytics, Analytics
+        from updater import get_updater, Updater
+        from security import get_security, Security
     except ImportError as e:
         import traceback
         print(f"ERROR: Failed to import required modules: {e}\n{traceback.format_exc()}")
@@ -299,6 +305,24 @@ class ModernLauncher(ctk.CTk):
         self.installer = Installer(log_callback=self.log)
         self.model_manager = ModelManager(log_callback=self.log)
         
+        # Initialize analytics and updater
+        try:
+            self.analytics = get_analytics()
+            self.updater = get_updater(log_callback=self.log)
+            self.security = get_security()
+        except:
+            self.analytics = None
+            self.updater = None
+            self.security = None
+        
+        # Track session
+        self.session_start = time.time()
+        if self.analytics:
+            self.analytics.track_session()
+        
+        # Bind hotkeys
+        self.bind_hotkeys()
+        
         def status_callback(name, status, color_key):
             color_map = {
                 "gray": COLORS['text_muted'],
@@ -455,6 +479,28 @@ class ModernLauncher(ctk.CTk):
         self.register_pid()
         self.build_ui()
     
+    def bind_hotkeys(self):
+        """Привязка горячих клавиш"""
+        # Ctrl+S - сохранить настройки
+        self.bind("<Control-s>", lambda e: self._auto_save_settings())
+        self.bind("<Control-S>", lambda e: self._auto_save_settings())
+        
+        # Ctrl+1/2/3/4 - переключение вкладок
+        self.bind("<Control-Key-1>", lambda e: self.show_page(0))
+        self.bind("<Control-Key-2>", lambda e: self.show_page(1))
+        self.bind("<Control-Key-3>", lambda e: self.show_page(2))
+        self.bind("<Control-Key-4>", lambda e: self.show_page(3))
+        
+        # F5 - обновить список моделей
+        self.bind("<F5>", lambda e: self.scan_llm_models() if hasattr(self, 'scan_llm_models') else None)
+        
+        # Ctrl+R - перезагрузить интерфейс
+        self.bind("<Control-r>", lambda e: self.build_ui())
+        self.bind("<Control-R>", lambda e: self.build_ui())
+        
+        # Escape - закрыть диалоги (обработка на уровне окна)
+        self.bind("<Escape>", lambda e: self.focus_set())
+    
     def show_lock_screen(self):
         for w in self.winfo_children():
             w.destroy()
@@ -495,8 +541,8 @@ class ModernLauncher(ctk.CTk):
         self.content_frame.grid_rowconfigure(0, weight=1)
         
         # Lazy loading: создаем страницы только при первом показе
-        self.pages = [None, None, None]
-        self.pages_created = [False, False, False]
+        self.pages = [None, None, None, None]
+        self.pages_created = [False, False, False, False]
         
         # Создаем только первую страницу (консоль) сразу
         self.pages[0] = self.create_console_page()
@@ -584,9 +630,10 @@ class ModernLauncher(ctk.CTk):
         
         self.nav_buttons = []
         nav_items = [
-            (t("ui.launcher.logs", default="Console"), "📊", 0),
-            (t("ui.launcher.settings", default="Settings"), "⚙️", 1),
-            (t("ui.launcher.channels", default="Channels"), "📡", 2)
+            (t("ui.launcher.logs", default="Логи"), "📊", 0),
+            (t("ui.launcher.settings", default="Настройки"), "⚙️", 1),
+            (t("ui.launcher.channels", default="Каналы"), "📡", 2),
+            (t("ui.launcher.analytics", default="Аналитика"), "📈", 3)
         ]
 
         for i, (text, icon, idx) in enumerate(nav_items):
@@ -737,6 +784,9 @@ class ModernLauncher(ctk.CTk):
                     threading.Thread(target=create_settings_async, daemon=True).start()
                 elif idx == 2:
                     self.pages[2] = self.create_channels_page()
+                    self.pages_created[idx] = True
+                elif idx == 3:
+                    self.pages[3] = self.create_analytics_page()
                     self.pages_created[idx] = True
             except Exception as e:
                 self.log(f"❌ [SYSTEM] Ошибка создания страницы {idx}: {e}", "SYSTEM")
@@ -1108,6 +1158,7 @@ class ModernLauncher(ctk.CTk):
         header = ctk.CTkFrame(frame, fg_color="transparent", height=70)
         header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 25))
         header.grid_columnconfigure(0, weight=1)
+        header.grid_columnconfigure(1, weight=0)
         
         ctk.CTkLabel(
             header,
@@ -1115,13 +1166,41 @@ class ModernLauncher(ctk.CTk):
             font=("Segoe UI", 32, "bold"),
             text_color=COLORS['text']
         ).grid(row=0, column=0, sticky="w")
-        info_label = ctk.CTkLabel(
-            header,
-            text=t("ui.launcher.settings.auto_save_info", default="⚡ Настройки сохраняются автоматически"),
+        
+        # Right side: Save indicator + Language selector
+        right_frame = ctk.CTkFrame(header, fg_color="transparent")
+        right_frame.grid(row=0, column=1, sticky="e")
+        
+        # Save indicator (animated)
+        self.save_indicator = ctk.CTkLabel(
+            right_frame,
+            text="",
             font=("Segoe UI", 12),
-            text_color=COLORS['text_muted']
+            text_color=COLORS['success'],
+            width=120
         )
-        info_label.grid(row=0, column=1, sticky="e", padx=(0, 20))
+        self.save_indicator.pack(side="left", padx=(0, 16))
+        
+        # Language selector with flags
+        lang_flags = {"ru": "🇷🇺", "en": "🇬🇧"}
+        lang_values = [f"{lang_flags.get(code, '🌐')} {LANGUAGE_NAMES[code]}" for code in SUPPORTED_LANGUAGES]
+        current_lang_display = f"{lang_flags.get(self.current_language, '🌐')} {LANGUAGE_NAMES.get(self.current_language, self.current_language)}"
+        
+        self.language_var = tk.StringVar(value=current_lang_display)
+        lang_menu = ctk.CTkOptionMenu(
+            right_frame,
+            values=lang_values,
+            variable=self.language_var,
+            command=self.on_language_change,
+            font=("Segoe UI", 13),
+            width=150,
+            height=36,
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover'],
+            corner_radius=8
+        )
+        lang_menu.pack(side="left")
 
         # Settings tabs container
         tabs_container = ctk.CTkFrame(frame, fg_color=COLORS['surface'], corner_radius=8)
@@ -1241,38 +1320,6 @@ class ModernLauncher(ctk.CTk):
             ("TARGET_CHANNEL_ID", t("ui.launcher.settings.target_channel"), t("ui.launcher.settings.target_channel.placeholder", default="Target channel ID"))
         ])
         bot_card.pack(fill="x", pady=(0, 15))
-        
-        # Language selection
-        lang_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
-        lang_card.pack(fill="x", pady=(0, 15))
-        
-        ctk.CTkLabel(
-            lang_card,
-            text=t("ui.launcher.settings.language"),
-            font=("Segoe UI", 16, "bold"),
-            text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 15))
-        
-        lang_frame = ctk.CTkFrame(lang_card, fg_color="transparent")
-        lang_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
-        
-        ctk.CTkLabel(
-            lang_frame,
-            text=t("ui.launcher.settings.select_language"),
-            font=("Segoe UI", 13),
-            text_color=COLORS['text_secondary']
-        ).pack(side="left", padx=(0, 10))
-        
-        self.language_var = tk.StringVar(value=self.current_language)
-        lang_menu = ctk.CTkOptionMenu(
-            lang_frame,
-            values=[f"{code} - {LANGUAGE_NAMES[code]}" for code in SUPPORTED_LANGUAGES],
-            variable=self.language_var,
-            command=self.on_language_change,
-            font=("Segoe UI", 13),
-            width=200
-        )
-        lang_menu.pack(side="left")
         
         # Debug режим
         debug_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
@@ -1920,6 +1967,9 @@ class ModernLauncher(ctk.CTk):
                 entry.insert(0, get_key(FILE_ENV, key) or "")
                 entry.grid(row=row, column=1, sticky="ew", padx=(0, 20), pady=10)
                 self.entries[key] = entry
+                # Привязка автосохранения
+                entry.bind("<KeyRelease>", lambda e: self._auto_save_settings())
+                entry.bind("<FocusOut>", lambda e: self._auto_save_settings())
             
             row += 1
         
@@ -2876,6 +2926,388 @@ class ModernLauncher(ctk.CTk):
             self.wait_window()
             return self.result
     
+    def create_analytics_page(self):
+        """Создает страницу аналитики с графиками и статистикой"""
+        frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_rowconfigure(1, weight=1)
+        
+        # Header with title and update check
+        header = ctk.CTkFrame(frame, fg_color="transparent", height=70)
+        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 25))
+        header.grid_columnconfigure(0, weight=1)
+        
+        title_frame = ctk.CTkFrame(header, fg_color="transparent")
+        title_frame.grid(row=0, column=0, sticky="w")
+        
+        ctk.CTkLabel(
+            title_frame,
+            text="📈 " + t("ui.launcher.analytics", default="Аналитика"),
+            font=("Segoe UI", 32, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        # Version and update check
+        update_frame = ctk.CTkFrame(header, fg_color="transparent")
+        update_frame.grid(row=0, column=1, sticky="e")
+        
+        version_text = self.updater.get_current_version() if self.updater else "v1.0.0"
+        self.version_label = ctk.CTkLabel(
+            update_frame,
+            text=version_text,
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_muted']
+        )
+        self.version_label.pack(side="left", padx=(0, 10))
+        
+        self.update_btn = ctk.CTkButton(
+            update_frame,
+            text="🔄 Проверить обновления",
+            font=("Segoe UI", 12),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text'],
+            width=180,
+            height=36,
+            corner_radius=8,
+            command=self._check_for_updates
+        )
+        self.update_btn.pack(side="left")
+        
+        # Main content
+        content = ctk.CTkScrollableFrame(frame, fg_color=COLORS['bg'])
+        content.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        content.grid_columnconfigure((0, 1), weight=1)
+        
+        # Stats cards row
+        stats_frame = ctk.CTkFrame(content, fg_color="transparent")
+        stats_frame.pack(fill="x", pady=(0, 20))
+        stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        
+        # Get stats
+        stats = self.analytics.get_stats() if self.analytics else {}
+        
+        stat_cards = [
+            ("📝", t("ui.launcher.analytics.posts", default="Постов"), stats.get('posts_total', 0), stats.get('posts_today', 0)),
+            ("🤖", t("ui.launcher.analytics.text_gen", default="Генераций текста"), stats.get('text_generations_total', 0), stats.get('text_generations_today', 0)),
+            ("🎨", t("ui.launcher.analytics.image_gen", default="Генераций изображений"), stats.get('image_generations_total', 0), stats.get('image_generations_today', 0)),
+            ("✏️", t("ui.launcher.analytics.edits", default="Ручных правок"), stats.get('manual_edits_total', 0), 0),
+        ]
+        
+        for idx, (icon, title, total, today) in enumerate(stat_cards):
+            card = self.create_glass_card(stats_frame, fg_color=COLORS['surface'])
+            card.grid(row=0, column=idx, sticky="nsew", padx=8, pady=8)
+            
+            ctk.CTkLabel(
+                card,
+                text=icon,
+                font=("Segoe UI", 32),
+                text_color=COLORS['primary']
+            ).pack(pady=(20, 8))
+            
+            ctk.CTkLabel(
+                card,
+                text=str(total),
+                font=("Segoe UI", 28, "bold"),
+                text_color=COLORS['text']
+            ).pack()
+            
+            ctk.CTkLabel(
+                card,
+                text=title,
+                font=("Segoe UI", 12),
+                text_color=COLORS['text_secondary']
+            ).pack()
+            
+            if today > 0:
+                ctk.CTkLabel(
+                    card,
+                    text=f"+{today} сегодня",
+                    font=("Segoe UI", 11),
+                    text_color=COLORS['success']
+                ).pack(pady=(4, 20))
+            else:
+                ctk.CTkFrame(card, fg_color="transparent", height=20).pack()
+        
+        # Chart section
+        chart_card = self.create_glass_card(content, fg_color=COLORS['surface'])
+        chart_card.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(
+            chart_card,
+            text="📊 " + t("ui.launcher.analytics.activity", default="Активность за 7 дней"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(anchor="w", padx=20, pady=(20, 16))
+        
+        # Simple text-based chart
+        chart_data = self.analytics.get_chart_data(7) if self.analytics else {"dates": [], "posts": [], "text_generations": [], "image_generations": []}
+        
+        chart_frame = ctk.CTkFrame(chart_card, fg_color=COLORS['bg'], corner_radius=12)
+        chart_frame.pack(fill="x", padx=20, pady=(0, 20))
+        chart_frame.grid_columnconfigure(0, weight=1)
+        
+        # Bar chart representation
+        max_val = max(max(chart_data.get('posts', [0]) or [0]), max(chart_data.get('text_generations', [0]) or [0]), max(chart_data.get('image_generations', [0]) or [0]), 1)
+        
+        for i, date in enumerate(chart_data.get('dates', [])):
+            row_frame = ctk.CTkFrame(chart_frame, fg_color="transparent")
+            row_frame.pack(fill="x", padx=16, pady=4)
+            row_frame.grid_columnconfigure(1, weight=1)
+            
+            ctk.CTkLabel(
+                row_frame,
+                text=date,
+                font=("Consolas", 11),
+                text_color=COLORS['text_muted'],
+                width=50
+            ).grid(row=0, column=0, sticky="w")
+            
+            bars_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
+            bars_frame.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+            
+            posts_val = chart_data.get('posts', [])[i] if i < len(chart_data.get('posts', [])) else 0
+            text_val = chart_data.get('text_generations', [])[i] if i < len(chart_data.get('text_generations', [])) else 0
+            img_val = chart_data.get('image_generations', [])[i] if i < len(chart_data.get('image_generations', [])) else 0
+            
+            # Posts bar
+            if posts_val > 0:
+                posts_width = int((posts_val / max_val) * 200)
+                ctk.CTkFrame(
+                    bars_frame,
+                    fg_color=COLORS['primary'],
+                    height=8,
+                    width=max(posts_width, 4),
+                    corner_radius=4
+                ).pack(side="left", padx=(0, 4))
+            
+            # Text gen bar
+            if text_val > 0:
+                text_width = int((text_val / max_val) * 200)
+                ctk.CTkFrame(
+                    bars_frame,
+                    fg_color=COLORS['success'],
+                    height=8,
+                    width=max(text_width, 4),
+                    corner_radius=4
+                ).pack(side="left", padx=(0, 4))
+            
+            # Image gen bar
+            if img_val > 0:
+                img_width = int((img_val / max_val) * 200)
+                ctk.CTkFrame(
+                    bars_frame,
+                    fg_color=COLORS['warning'],
+                    height=8,
+                    width=max(img_width, 4),
+                    corner_radius=4
+                ).pack(side="left")
+            
+            # Values
+            ctk.CTkLabel(
+                row_frame,
+                text=f"{posts_val}/{text_val}/{img_val}",
+                font=("Consolas", 10),
+                text_color=COLORS['text_muted'],
+                width=60
+            ).grid(row=0, column=2, sticky="e")
+        
+        # Legend
+        legend_frame = ctk.CTkFrame(chart_card, fg_color="transparent")
+        legend_frame.pack(fill="x", padx=20, pady=(0, 20))
+        
+        legends = [
+            (COLORS['primary'], t("ui.launcher.analytics.posts", default="Посты")),
+            (COLORS['success'], t("ui.launcher.analytics.text_gen", default="Текст")),
+            (COLORS['warning'], t("ui.launcher.analytics.image_gen", default="Изображения"))
+        ]
+        
+        for color, text in legends:
+            item = ctk.CTkFrame(legend_frame, fg_color="transparent")
+            item.pack(side="left", padx=(0, 20))
+            
+            ctk.CTkFrame(item, fg_color=color, width=12, height=12, corner_radius=2).pack(side="left", padx=(0, 6))
+            ctk.CTkLabel(item, text=text, font=("Segoe UI", 11), text_color=COLORS['text_secondary']).pack(side="left")
+        
+        # Topics stats
+        topics_card = self.create_glass_card(content, fg_color=COLORS['surface'])
+        topics_card.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(
+            topics_card,
+            text="📁 " + t("ui.launcher.analytics.by_topic", default="По темам"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(anchor="w", padx=20, pady=(20, 16))
+        
+        topics_data = stats.get('posts_by_topic', {})
+        if topics_data:
+            for topic, count in sorted(topics_data.items(), key=lambda x: x[1], reverse=True)[:10]:
+                topic_row = ctk.CTkFrame(topics_card, fg_color="transparent")
+                topic_row.pack(fill="x", padx=20, pady=4)
+                
+                ctk.CTkLabel(
+                    topic_row,
+                    text=topic,
+                    font=("Segoe UI", 13),
+                    text_color=COLORS['text']
+                ).pack(side="left")
+                
+                ctk.CTkLabel(
+                    topic_row,
+                    text=str(count),
+                    font=("Segoe UI", 13, "bold"),
+                    text_color=COLORS['primary']
+                ).pack(side="right")
+        else:
+            ctk.CTkLabel(
+                topics_card,
+                text=t("ui.launcher.analytics.no_data", default="Нет данных"),
+                font=("Segoe UI", 13),
+                text_color=COLORS['text_muted']
+            ).pack(padx=20, pady=(0, 20))
+        
+        ctk.CTkFrame(topics_card, fg_color="transparent", height=20).pack()
+        
+        # Hotkeys info
+        hotkeys_card = self.create_glass_card(content, fg_color=COLORS['surface'])
+        hotkeys_card.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(
+            hotkeys_card,
+            text="⌨️ " + t("ui.launcher.analytics.hotkeys", default="Горячие клавиши"),
+            font=("Segoe UI", 18, "bold"),
+            text_color=COLORS['text']
+        ).pack(anchor="w", padx=20, pady=(20, 16))
+        
+        hotkeys = [
+            ("Ctrl+S", t("ui.launcher.hotkey.save", default="Сохранить настройки")),
+            ("Ctrl+1/2/3/4", t("ui.launcher.hotkey.switch_tab", default="Переключить вкладку")),
+            ("F5", t("ui.launcher.hotkey.refresh", default="Обновить список моделей")),
+            ("Ctrl+R", t("ui.launcher.hotkey.reload", default="Перезагрузить интерфейс")),
+        ]
+        
+        for key, desc in hotkeys:
+            hk_row = ctk.CTkFrame(hotkeys_card, fg_color="transparent")
+            hk_row.pack(fill="x", padx=20, pady=4)
+            
+            ctk.CTkLabel(
+                hk_row,
+                text=key,
+                font=("Consolas", 12, "bold"),
+                text_color=COLORS['primary'],
+                width=100,
+                anchor="w"
+            ).pack(side="left")
+            
+            ctk.CTkLabel(
+                hk_row,
+                text=desc,
+                font=("Segoe UI", 12),
+                text_color=COLORS['text_secondary']
+            ).pack(side="left")
+        
+        ctk.CTkFrame(hotkeys_card, fg_color="transparent", height=20).pack()
+        
+        return frame
+    
+    def _check_for_updates(self):
+        """Проверяет наличие обновлений"""
+        if not self.updater:
+            return
+        
+        self.update_btn.configure(text="🔄 Проверка...", state="disabled")
+        
+        def on_check_complete(available, info):
+            def update_ui():
+                if available:
+                    self.update_btn.configure(
+                        text="📥 Скачать обновление",
+                        state="normal",
+                        fg_color=COLORS['success'],
+                        hover_color="#059669",
+                        command=self._download_update
+                    )
+                    if info:
+                        self.version_label.configure(
+                            text=f"Доступно: {info.get('commit', '?')[:7]}",
+                            text_color=COLORS['success']
+                        )
+                else:
+                    self.update_btn.configure(
+                        text="✅ Актуальная версия",
+                        state="normal",
+                        fg_color=COLORS['surface_light']
+                    )
+            self.after(0, update_ui)
+        
+        self.updater.check_for_updates(callback=on_check_complete)
+    
+    def _download_update(self):
+        """Скачивает и устанавливает обновление"""
+        if not self.updater:
+            return
+        
+        # Create progress dialog
+        progress_dialog = ctk.CTkToplevel(self)
+        progress_dialog.title(t("ui.launcher.update.downloading", default="Загрузка обновления"))
+        progress_dialog.geometry("400x200")
+        progress_dialog.transient(self)
+        progress_dialog.grab_set()
+        progress_dialog.configure(fg_color=COLORS['surface'])
+        
+        # Center dialog
+        progress_dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 200
+        y = self.winfo_y() + (self.winfo_height() // 2) - 100
+        progress_dialog.geometry(f"400x200+{x}+{y}")
+        
+        ctk.CTkLabel(
+            progress_dialog,
+            text="📥 " + t("ui.launcher.update.in_progress", default="Загрузка обновления..."),
+            font=("Segoe UI", 16, "bold"),
+            text_color=COLORS['text']
+        ).pack(pady=(30, 20))
+        
+        progress_bar = ctk.CTkProgressBar(progress_dialog, width=300)
+        progress_bar.pack(pady=10)
+        progress_bar.set(0)
+        
+        status_label = ctk.CTkLabel(
+            progress_dialog,
+            text="Подготовка...",
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_secondary']
+        )
+        status_label.pack(pady=10)
+        
+        def on_progress(percent, status):
+            def update():
+                progress_bar.set(percent / 100)
+                status_label.configure(text=status)
+            self.after(0, update)
+        
+        def on_complete(success, message):
+            def update():
+                progress_dialog.destroy()
+                if success:
+                    dialog = ModernLauncher.ModernInfoDialog(
+                        self,
+                        message + "\n\nПерезапустите приложение для применения изменений.",
+                        t("ui.launcher.update.complete", default="Обновление завершено")
+                    )
+                    self.wait_window(dialog)
+                else:
+                    dialog = ModernLauncher.ModernWarningDialog(
+                        self,
+                        f"Ошибка: {message}",
+                        t("ui.launcher.update.error", default="Ошибка обновления")
+                    )
+                    self.wait_window(dialog)
+            self.after(0, update)
+        
+        self.updater.download_update(progress_callback=on_progress, complete_callback=on_complete)
+    
     def refresh_topics(self):
         """Обновляет только список тем"""
         if not hasattr(self, 'scroll_topics'):
@@ -3435,6 +3867,103 @@ class ModernLauncher(ctk.CTk):
         delete_btn.pack(side="left")
         
         return row
+    
+    def _show_save_indicator(self, text="✅ Сохранено"):
+        """Показывает анимированный индикатор сохранения"""
+        if not hasattr(self, 'save_indicator'):
+            return
+        
+        try:
+            self.save_indicator.configure(text=text, text_color=COLORS['success'])
+            
+            # Fade out after 2 seconds
+            def fade_out():
+                try:
+                    self.save_indicator.configure(text="")
+                except:
+                    pass
+            
+            self.after(2000, fade_out)
+        except:
+            pass
+    
+    def _auto_save_settings(self):
+        """Автоматически сохраняет настройки с индикатором"""
+        try:
+            from dotenv import set_key  # type: ignore
+            
+            # Сохраняем entries
+            for k, e in self.entries.items():
+                try:
+                    set_key(FILE_ENV, k, e.get().strip())
+                except:
+                    pass
+            
+            # Сохраняем debug режим
+            if hasattr(self, 'debug_mode'):
+                set_key(FILE_ENV, "DEBUG_MODE", "true" if self.debug_mode.get() else "false")
+            
+            # Сохраняем путь к папке с моделями
+            if hasattr(self, 'models_dir_entry'):
+                models_path = self.models_dir_entry.get().strip()
+                if models_path and os.path.exists(models_path):
+                    set_key(FILE_ENV, "MODELS_LLM_DIR", models_path)
+                    global MODELS_LLM_DIR
+                    MODELS_LLM_DIR = models_path
+            
+            # Сохраняем URL модели SD
+            if hasattr(self, 'sd_model_url_entry'):
+                model_url = self.sd_model_url_entry.get().strip()
+                if model_url:
+                    set_key(FILE_ENV, "SD_MODEL_URL", model_url)
+            
+            # Показываем индикатор
+            self._show_save_indicator()
+        except Exception as e:
+            self.log(f"❌ [SETTINGS] Ошибка автосохранения: {e}", "SYSTEM")
+    
+    def _save_generation_config(self):
+        """Сохраняет конфигурацию генерации"""
+        try:
+            gen_config = {}
+            
+            # LLM settings
+            if hasattr(self, 'llm_temp_var'):
+                gen_config['llm_temp'] = float(self.llm_temp_var.get())
+            if hasattr(self, 'llm_ctx_var'):
+                try:
+                    gen_config['llm_ctx'] = int(self.llm_ctx_var.get())
+                except:
+                    gen_config['llm_ctx'] = 4096
+            
+            # SD settings
+            if hasattr(self, 'sd_steps_var'):
+                gen_config['sd_steps'] = int(self.sd_steps_var.get())
+            if hasattr(self, 'sd_cfg_var'):
+                gen_config['sd_cfg'] = float(self.sd_cfg_var.get())
+            if hasattr(self, 'sd_width_var'):
+                try:
+                    gen_config['sd_width'] = int(self.sd_width_var.get())
+                except:
+                    gen_config['sd_width'] = 1024
+            if hasattr(self, 'sd_height_var'):
+                try:
+                    gen_config['sd_height'] = int(self.sd_height_var.get())
+                except:
+                    gen_config['sd_height'] = 1152
+            if hasattr(self, 'sd_sampler_var'):
+                gen_config['sd_sampler'] = self.sd_sampler_var.get()
+            if hasattr(self, 'sd_scheduler_var'):
+                gen_config['sd_scheduler'] = self.sd_scheduler_var.get()
+            
+            # Сохраняем в файл
+            with open(FILE_GEN_CONFIG, 'w', encoding='utf-8') as f:
+                json.dump(gen_config, f, indent=4, ensure_ascii=False)
+            
+            # Показываем индикатор
+            self._show_save_indicator()
+        except Exception as e:
+            self.log(f"❌ [SETTINGS] Ошибка сохранения конфигурации: {e}", "SYSTEM")
     
     def save_settings(self):
         # Создаем резервную копию перед сохранением
