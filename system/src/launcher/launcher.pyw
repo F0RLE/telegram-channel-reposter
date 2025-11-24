@@ -9,6 +9,7 @@ import time
 import shutil
 import ctypes
 import urllib.request
+from collections import OrderedDict
 
 if not hasattr(sys, '_launcher_redirected'):
     sys._launcher_redirected = True
@@ -232,6 +233,60 @@ COLORS = {
     'glass': '#232428cc',  # Glassmorphism overlay
 }
 
+# Константы для логирования
+LOG_SKIP_PATTERNS = (
+    "warning:xformers", "warning:bitsandbytes", "no module named 'triton'",
+    "modulenotfounderror: no module named 'triton'", "fatal: not a git repository",
+    "note: redirects are currently not", "could not find the bitsandbytes cuda binary",
+    "8-bit optimizers, 8-bit multiplication", "compiled without gpu support",
+    "unable to install insightface automatically", "traceback (most recent call last):",
+    "import triton", "^^^^^^^^^^^^^",
+    # Прогресс-бары SD
+    "%|", "it/s]", "it]",
+    # Технические логи SD
+    "[unload]", "[memory management]", "moving model(s) has taken",
+    "target:", "free gpu:", "model require:", "previously loaded:",
+    "inference require:", "remaining:", "all loaded to gpu",
+    "cpu swap loaded", "gpu loaded", "current free memory is",
+    "unload model", "done.",
+    # Логи Ollama
+    "time=", "level=info", "level=error", "source=", "msg=",
+    "server config", "total blobs:", "total unused blobs removed:",
+    "listening on", "discovering available gpus", "starting runner",
+    "inference compute", "entering low vram mode",
+    # HTTP логи
+    "[gin]", "| post", "| get", "| put", "| delete",
+    # Детальные логи SD
+    "speed:", "preprocess,", "inference,", "postprocess per image",
+    "stateDict keys:", "working with z of shape", "k-model created:",
+    "storage_dtype", "computation_dtype", "model loaded in",
+    "unload existing model:", "forge model load:",
+    # Другие технические детали
+    "hint:", "device:", "pytorch version:", "xformers version:",
+    "set vram state to:", "cuda using stream:", "using xformers",
+    "vae dtype preferences:", "controlnet preprocessor location:",
+    "adetailer initialized", "controlnet ui callback registered",
+    "model selected:", "using online loras", "startup time:",
+    "prepare environment:", "launcher:", "import torch:", "initialize shared:",
+    "other imports:", "load scripts:", "started server process",
+    "waiting for application startup", "application startup complete",
+    "uvicorn running on", "loading model:"
+)
+
+LOG_TAB_MAP = {
+    "BOT": "Бот", "Bot": "Бот", "LLM": "LLM", "SD": "SD",
+    "SYSTEM": "Бот", "SETTINGS": "Бот"
+}
+
+LOG_PREFIX_MAP = {"Бот": "🤖", "LLM": "🧠", "SD": "🎨"}
+
+STATUS_COLOR_MAP = {
+    "gray": COLORS['text_muted'],
+    "orange": COLORS['warning'],
+    "green": COLORS['success'],
+    "red": COLORS['danger']
+}
+
 ctk.set_appearance_mode("Dark")
 ctk.set_default_color_theme("dark-blue")
 
@@ -258,6 +313,7 @@ class ModernLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
         
+        # Оптимизированная загрузка языка
         saved_lang = None
         try:
             if os.path.exists(FILE_ENV):
@@ -265,22 +321,20 @@ class ModernLauncher(ctk.CTk):
                     for line in f:
                         if line.startswith('LANGUAGE='):
                             saved_lang = line.split('=', 1)[1].strip()
-                            if saved_lang and saved_lang not in SUPPORTED_LANGUAGES:
+                            if saved_lang not in SUPPORTED_LANGUAGES:
                                 saved_lang = None
                             break
-        except:
+        except (OSError, IOError):
             pass
         
-        if saved_lang:
-            current_lang = init_i18n(saved_lang)
-        else:
-            current_lang = init_i18n(None)
+        current_lang = init_i18n(saved_lang if saved_lang else None)
         
+        # Сохраняем язык в фоне
         def save_language():
             try:
                 from dotenv import set_key  # type: ignore
                 set_key(FILE_ENV, "LANGUAGE", current_lang)
-            except:
+            except (ImportError, OSError):
                 pass
         threading.Thread(target=save_language, daemon=True).start()
         self._detected_lang = current_lang
@@ -296,6 +350,10 @@ class ModernLauncher(ctk.CTk):
         self.current_topic = None
         self.current_frame = 0
         self.debug_mode = tk.BooleanVar(value=False)
+        # Drag and drop для тем
+        self.topic_dragging = False
+        self.dragged_topic = None
+        self.drag_start_y = 0
         self.current_language = current_lang
         self.animations_enabled = True
         
@@ -324,13 +382,7 @@ class ModernLauncher(ctk.CTk):
         self.bind_hotkeys()
         
         def status_callback(name, status, color_key):
-            color_map = {
-                "gray": COLORS['text_muted'],
-                "orange": COLORS['warning'],
-                "green": COLORS['success'], 
-                "red": COLORS['danger']
-            }
-            color = color_map.get(color_key, COLORS['text_muted'])
+            color = STATUS_COLOR_MAP.get(color_key, COLORS['text_muted'])
             self.after(0, lambda: self._set_service_indicator(name, color))
             
             btn_text = "▶" if status in ["stopped", "error"] else "⏹"
@@ -630,7 +682,7 @@ class ModernLauncher(ctk.CTk):
         
         self.nav_buttons = []
         nav_items = [
-            (t("ui.launcher.logs", default="Логи"), "📊", 0),
+            (t("ui.launcher.console", default="Консоль"), "💻", 0),
             (t("ui.launcher.settings", default="Настройки"), "⚙️", 1),
             (t("ui.launcher.channels", default="Каналы"), "📡", 2),
             (t("ui.launcher.analytics", default="Аналитика"), "📈", 3)
@@ -658,6 +710,9 @@ class ModernLauncher(ctk.CTk):
                     button_hover_effect(btn, hover_color=COLORS['hover'], normal_color="transparent", duration=100)
                 except:
                     pass
+        
+        # Сохраняем текущую активную страницу для правильного выделения
+        self.current_page_index = 0
         
         # Highlight first button
         if len(self.nav_buttons) > 0:
@@ -706,6 +761,120 @@ class ModernLauncher(ctk.CTk):
         )
         self.lbl_disk.pack(anchor="w")
     
+    # Drag and drop для тем
+    def _on_topic_drag_start(self, event, topic_name):
+        """Начало перетаскивания темы"""
+        self.dragged_topic = topic_name
+        self.drag_start_y = event.y_root
+        self.drag_start_x = event.x_root
+        self.topic_dragging = False
+        if not hasattr(event.widget, 'drag_started'):
+            event.widget.drag_started = False
+    
+    def _on_topic_drag(self, event, topic_name):
+        """Перетаскивание темы"""
+        if self.dragged_topic != topic_name:
+            return
+        
+        # Проверяем, началось ли перетаскивание (движение больше 5 пикселей)
+        if not hasattr(event.widget, 'drag_started'):
+            event.widget.drag_started = False
+        
+        delta_y = abs(event.y_root - self.drag_start_y)
+        
+        if not event.widget.drag_started and delta_y > 5:
+            # Начинаем перетаскивание
+            event.widget.drag_started = True
+            self.topic_dragging = True
+            # Визуальная обратная связь
+            event.widget.configure(fg_color=COLORS['primary_light'])
+            # Отменяем команду выбора темы
+            event.widget.configure(command=lambda: None)
+        
+        if not self.topic_dragging:
+            return
+    
+    def _on_topic_drag_stop(self, event, topic_name):
+        """Окончание перетаскивания темы"""
+        # Восстанавливаем команду кнопки
+        if hasattr(event.widget, 'drag_started') and event.widget.drag_started:
+            event.widget.configure(command=lambda tp=topic_name: self.select_topic(tp))
+        
+        if not self.topic_dragging or self.dragged_topic != topic_name:
+            # Просто клик - выбираем тему
+            if not (hasattr(event.widget, 'drag_started') and event.widget.drag_started):
+                self.select_topic(topic_name)
+            self.dragged_topic = None
+            return
+        
+        self.topic_dragging = False
+        
+        # Находим новую позицию
+        widget = event.widget.master
+        if isinstance(widget, ctk.CTkFrame):
+            try:
+                if os.path.exists(FILE_CHANNELS):
+                    with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                else:
+                    data = {}
+            except:
+                data = {}
+            
+            topics = list(data.keys())
+            if self.dragged_topic not in topics:
+                self.dragged_topic = None
+                return
+            
+            # Определяем новую позицию на основе Y координаты
+            parent = widget.master
+            if hasattr(parent, 'winfo_children'):
+                children = [w for w in parent.winfo_children() if isinstance(w, ctk.CTkFrame)]
+                
+                try:
+                    current_index = children.index(widget)
+                    y = event.y_root
+                    new_index = current_index
+                    
+                    # Находим новую позицию на основе Y координаты
+                    for i, child in enumerate(children):
+                        if child == widget:
+                            continue
+                        try:
+                            child_y = child.winfo_rooty()
+                            child_height = child.winfo_height()
+                            child_center = child_y + child_height // 2
+                            
+                            if y < child_center and i < current_index:
+                                new_index = i
+                                break
+                            elif y > child_center and i > current_index:
+                                new_index = i + 1
+                        except:
+                            pass
+                    
+                    # Переставляем тему
+                    topics.remove(self.dragged_topic)
+                    if new_index > len(topics):
+                        new_index = len(topics)
+                    topics.insert(new_index, self.dragged_topic)
+                    
+                    # Сохраняем новый порядок
+                    new_data = {}
+                    for topic in topics:
+                        if topic in data:
+                            new_data[topic] = data[topic]
+                    
+                    with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
+                        json.dump(new_data, f, indent=4, ensure_ascii=False)
+                    
+                    # Обновляем список тем
+                    self.refresh_topics()
+                except (ValueError, IndexError):
+                    pass
+        
+        self.dragged_topic = None
+    
     def create_service_indicator(self, parent, key, label):
         """Создает индикатор сервиса с glassmorphism стилем"""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
@@ -751,7 +920,12 @@ class ModernLauncher(ctk.CTk):
                 pass
 
     def show_page(self, idx):
+        # Проверяем, что индекс валидный
+        if idx < 0 or idx >= len(self.pages) or not hasattr(self, 'nav_buttons'):
+            return
+        
         self.current_frame = idx
+        self.current_page_index = idx
         
         # Lazy loading: создаем страницу только при первом показе
         if not self.pages_created[idx]:
@@ -812,41 +986,49 @@ class ModernLauncher(ctk.CTk):
                 else:
                     page.grid_forget()
         
-        for i, btn in enumerate(self.nav_buttons):
-            if i == idx:
-                # Windows-style smooth transition for active button
-                if self.animations_enabled:
-                    try:
-                        old_color = btn.cget('fg_color')
-                        smooth_color_transition(btn, 'fg_color', old_color, COLORS['primary'], duration=150, steps=8)
-                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), "white", duration=150, steps=8)
-                    except:
+        # Обновляем выделение кнопок навигации
+        if hasattr(self, 'nav_buttons') and len(self.nav_buttons) > idx:
+            for i, btn in enumerate(self.nav_buttons):
+                if i == idx:
+                    # Активная кнопка
+                    if self.animations_enabled:
+                        try:
+                            old_color = btn.cget('fg_color')
+                            old_text_color = btn.cget('text_color')
+                            smooth_color_transition(btn, 'fg_color', old_color, COLORS['primary'], duration=150, steps=8)
+                            smooth_color_transition(btn, 'text_color', old_text_color, "white", duration=150, steps=8)
+                        except:
+                            btn.configure(
+                                fg_color=COLORS['primary'],
+                                text_color="white",
+                                font=("Segoe UI", 14, "bold")
+                            )
+                    else:
                         btn.configure(
                             fg_color=COLORS['primary'],
-                            text_color="white"
+                            text_color="white",
+                            font=("Segoe UI", 14, "bold")
                         )
                 else:
-                    btn.configure(
-                        fg_color=COLORS['primary'],
-                        text_color="white"
-                    )
-            else:
-                # Windows-style smooth transition for inactive button
-                if self.animations_enabled:
-                    try:
-                        old_color = btn.cget('fg_color')
-                        smooth_color_transition(btn, 'fg_color', old_color, "transparent", duration=150, steps=8)
-                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), COLORS['text_secondary'], duration=150, steps=8)
-                    except:
+                    # Неактивная кнопка
+                    if self.animations_enabled:
+                        try:
+                            old_color = btn.cget('fg_color')
+                            old_text_color = btn.cget('text_color')
+                            smooth_color_transition(btn, 'fg_color', old_color, "transparent", duration=150, steps=8)
+                            smooth_color_transition(btn, 'text_color', old_text_color, COLORS['text_secondary'], duration=150, steps=8)
+                        except:
+                            btn.configure(
+                                fg_color="transparent",
+                                text_color=COLORS['text_secondary'],
+                                font=("Segoe UI", 14)
+                            )
+                    else:
                         btn.configure(
                             fg_color="transparent",
-                            text_color=COLORS['text_secondary']
+                            text_color=COLORS['text_secondary'],
+                            font=("Segoe UI", 14)
                         )
-                else:
-                    btn.configure(
-                        fg_color="transparent",
-                        text_color=COLORS['text_secondary']
-                    )
 
     def create_console_page(self):
         """Создает страницу консоли с glassmorphism дизайном и статус-карточками"""
@@ -861,23 +1043,24 @@ class ModernLauncher(ctk.CTk):
         
         ctk.CTkLabel(
             header,
-            text=t("ui.launcher.console.title", default="Dashboard"),
-            font=("Segoe UI", 36, "bold"),
+            text=t("ui.launcher.console.title", default="Консоль"),
+            font=("Segoe UI", 32, "bold"),
             text_color=COLORS['text']
         ).grid(row=0, column=0, sticky="w")
         
         ctk.CTkButton(
             header,
-            text=f"🗑️ {t('ui.launcher.logs.clear', default='Clear')}",
-            width=140,
-            height=40,
+            text=f"🗑️ {t('ui.launcher.logs.clear', default='Очистить')}",
+            width=130,
+            height=36,
             fg_color=COLORS['surface'],
-            hover_color=COLORS['surface_light'],
+            hover_color=COLORS['danger'],
+            text_color=COLORS['text'],
             border_width=1,
             border_color=COLORS['border'],
             command=self.clear_console,
-            font=("Segoe UI", 13),
-            corner_radius=12
+            font=("Segoe UI", 12),
+            corner_radius=10
         ).grid(row=0, column=1, sticky="e")
         
         # Status cards row
@@ -898,46 +1081,95 @@ class ModernLauncher(ctk.CTk):
             self.status_cards[key] = card
         
         # Console area with tabs
-        console_card = self.create_glass_card(frame, fg_color=COLORS['surface'])
+        console_card = ctk.CTkFrame(frame, fg_color=COLORS['surface'], corner_radius=16)
         console_card.grid(row=2, column=0, sticky="nsew", padx=24, pady=(0, 24))
         console_card.grid_columnconfigure(0, weight=1)
-        console_card.grid_rowconfigure(0, weight=1)
+        console_card.grid_rowconfigure(1, weight=1)
         
-        tabs = ctk.CTkTabview(console_card, fg_color=COLORS['surface'], corner_radius=16)
-        tabs.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+        # Tab buttons
+        tab_frame = ctk.CTkFrame(console_card, fg_color="transparent", height=50)
+        tab_frame.grid(row=0, column=0, sticky="ew", padx=16, pady=(12, 0))
         
-        self.console_tabs = tabs
+        # Вкладки: Все, Бот, LLM, SD
+        self.console_tabs = ["Все", "Бот", "LLM", "SD"]
+        self.current_console_tab = "Все"
+        self.console_tab_buttons = {}
         
-        bot_tab = t("ui.launcher.logs.bot", default="Bot")
-        llm_tab = t("ui.launcher.logs.llm", default="LLM")
-        sd_tab = t("ui.launcher.logs.sd", default="SD")
+        tab_configs = [
+            ("Все", "📋", COLORS['text_secondary']),
+            ("Бот", "🤖", COLORS['primary']),
+            ("LLM", "🧠", COLORS['secondary']),
+            ("SD", "🎨", COLORS['success'])
+        ]
         
-        self.bot_tab_name = bot_tab
-        self.llm_tab_name = llm_tab
-        self.sd_tab_name = sd_tab
+        for idx, (name, icon, color) in enumerate(tab_configs):
+            is_active = name == self.current_console_tab
+            btn = ctk.CTkButton(
+                tab_frame,
+                text=f"{icon} {name}",
+                width=80,
+                height=32,
+                fg_color=COLORS['surface_light'] if is_active else "transparent",
+                hover_color=COLORS['surface_light'],
+                text_color=COLORS['text'] if is_active else COLORS['text_muted'],
+                font=("Segoe UI", 11, "bold") if is_active else ("Segoe UI", 11),
+                corner_radius=8,
+                command=lambda n=name: self._switch_console_tab(n)
+            )
+            btn.pack(side="left", padx=(0, 4))
+            self.console_tab_buttons[name] = btn
         
-        self.bind("<Control-1>", lambda e: tabs.set(bot_tab))
-        self.bind("<Control-2>", lambda e: tabs.set(llm_tab))
-        self.bind("<Control-3>", lambda e: tabs.set(sd_tab))
+        # Console container
+        console_container = ctk.CTkFrame(console_card, fg_color="transparent")
+        console_container.grid(row=1, column=0, sticky="nsew", padx=12, pady=12)
+        console_container.grid_columnconfigure(0, weight=1)
+        console_container.grid_rowconfigure(0, weight=1)
         
-        for tab_name in [bot_tab, llm_tab, sd_tab]:
-            tab = tabs.add(tab_name)
+        # Create console frames
+        self.console_frames = {}
+        for tab_name in self.console_tabs:
+            frame_inner = ctk.CTkFrame(console_container, fg_color="transparent")
+            frame_inner.grid(row=0, column=0, sticky="nsew")
+            frame_inner.grid_columnconfigure(0, weight=1)
+            frame_inner.grid_rowconfigure(0, weight=1)
+            
             console = ctk.CTkTextbox(
-                tab,
-                font=("Consolas", 13),
+                frame_inner,
+                font=("Consolas", 12),
                 fg_color=COLORS['bg'],
                 text_color=COLORS['text'],
-                corner_radius=12,
+                corner_radius=10,
                 wrap="word",
                 border_width=1,
                 border_color=COLORS['border']
             )
-            console.pack(fill="both", expand=True, padx=8, pady=8)
+            console.grid(row=0, column=0, sticky="nsew")
             console.configure(state="normal")
             self.setup_console_context_menu(console)
             self.consoles[tab_name] = console
+            self.console_frames[tab_name] = frame_inner
+            
+            if tab_name != self.current_console_tab:
+                frame_inner.grid_remove()
         
         return frame
+    
+    def _switch_console_tab(self, tab_name):
+        """Переключает вкладку консоли"""
+        if tab_name == self.current_console_tab:
+            return
+        
+        # Update buttons
+        for name, btn in self.console_tab_buttons.items():
+            if name == tab_name:
+                btn.configure(fg_color=COLORS['surface_light'], text_color=COLORS['text'], font=("Segoe UI", 11, "bold"))
+            else:
+                btn.configure(fg_color="transparent", text_color=COLORS['text_muted'], font=("Segoe UI", 11))
+        
+        # Switch frames
+        self.console_frames[self.current_console_tab].grid_remove()
+        self.console_frames[tab_name].grid()
+        self.current_console_tab = tab_name
     
     def create_status_card(self, parent, key, icon, title, color):
         """Создает карточку статуса для dashboard"""
@@ -2086,14 +2318,55 @@ class ModernLauncher(ctk.CTk):
             except:
                 pass
         
-        # Список каналов (ScrollableFrame)
-        self.scroll_chans = ctk.CTkScrollableFrame(
-            channels_panel,
+        # Список каналов (Frame с условной прокруткой)
+        # Создаем контейнер для прокрутки
+        scroll_container = ctk.CTkFrame(channels_panel, fg_color=COLORS['bg'], corner_radius=0)
+        scroll_container.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        scroll_container.grid_columnconfigure(0, weight=1)
+        scroll_container.grid_rowconfigure(0, weight=1)
+        
+        # Canvas для прокрутки
+        self.channels_canvas = tk.Canvas(
+            scroll_container,
+            bg=COLORS['bg'],
+            highlightthickness=0,
+            borderwidth=0
+        )
+        self.channels_canvas.grid(row=0, column=0, sticky="nsew")
+        
+        # Scrollbar (скрыта по умолчанию)
+        self.channels_scrollbar = ctk.CTkScrollbar(
+            scroll_container,
+            orientation="vertical",
+            command=self.channels_canvas.yview
+        )
+        self.channels_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.channels_scrollbar.grid_remove()  # Скрываем по умолчанию
+        
+        # Frame для контента внутри Canvas
+        self.scroll_chans = ctk.CTkFrame(
+            self.channels_canvas,
             fg_color=COLORS['bg'],
             corner_radius=0
         )
-        self.scroll_chans.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
-        self.scroll_chans.grid_columnconfigure(0, weight=1)
+        self.channels_canvas_window = self.channels_canvas.create_window(
+            0, 0,
+            anchor="nw",
+            window=self.scroll_chans
+        )
+        
+        # Настройка прокрутки
+        self.scroll_chans.bind("<Configure>", self._on_channels_frame_configure)
+        self.channels_canvas.bind("<Configure>", self._on_channels_canvas_configure)
+        
+        # Привязка прокрутки колесиком мыши (только когда курсор над canvas)
+        def on_mousewheel(event):
+            if hasattr(self, 'channels_canvas') and self.channels_canvas.winfo_ismapped():
+                if self.channels_scrollbar.winfo_viewable():
+                    self.channels_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        
+        self.channels_canvas.bind("<MouseWheel>", on_mousewheel)
+        self.scroll_chans.bind("<MouseWheel>", on_mousewheel)
         
         # Инициализация
         if not hasattr(self, 'current_topic'):
@@ -2264,7 +2537,7 @@ class ModernLauncher(ctk.CTk):
                         # Возвращаем кнопку в исходное состояние
                         self.after(0, lambda: self._set_service_button(name, text="▶", fg_color=COLORS['primary']))
                         self.after(0, lambda: self._set_service_status_label(name, text=t("ui.launcher.status.stopped", default="Остановлен"), color=COLORS['text_muted']))
-                        messagebox.showwarning(
+                        self.show_warning(
                             t("ui.launcher.model.no_model", default="Модель не выбрана"),
                             t("ui.launcher.model.select_in_settings", default="Выберите модель в настройках перед запуском")
                         )
@@ -2470,7 +2743,7 @@ class ModernLauncher(ctk.CTk):
     def _download_ollama_model(self, model_name):
         """Скачивает модель Ollama"""
         if not model_name or not model_name.strip():
-            messagebox.showwarning(
+            self.show_warning(
                 t("ui.launcher.model.no_name", default="Имя модели не указано"),
                 t("ui.launcher.model.enter_name", default="Введите имя модели (например: llama3.2:3b)")
             )
@@ -2570,9 +2843,10 @@ class ModernLauncher(ctk.CTk):
     
     def _delete_ollama_model(self, model_name):
         """Удаляет модель Ollama"""
-        if not messagebox.askyesno(
+        if not self.show_confirm(
             t("ui.launcher.model.delete_confirm", default="Подтверждение удаления"),
-            t("ui.launcher.model.delete_confirm_message", default="Удалить модель {model}?", model=model_name)
+            t("ui.launcher.model.delete_confirm_message", default="Удалить модель {model}?", model=model_name),
+            yes_text="Удалить", danger=True
         ):
                             return
                     
@@ -2633,7 +2907,11 @@ class ModernLauncher(ctk.CTk):
             
             set_key(FILE_ENV, "SELECTED_LLM_MODEL", model_str)
             self.log(t("ui.launcher.log.model_selected", default="✅ [LLM] Выбрана модель: {model}", model=model_name), "LLM")
-            messagebox.showinfo(
+            
+            # Обновляем UI сразу
+            self.after(50, self.scan_llm_models)
+            
+            self.show_success(
                 t("ui.launcher.model.selected", default="Модель выбрана"),
                 t("ui.launcher.model.selected_message", default="Модель {model} выбрана для использования", model=model_name)
             )
@@ -2697,23 +2975,24 @@ class ModernLauncher(ctk.CTk):
         def __init__(self, parent, title="", placeholder=""):
             super().__init__(parent)
             self.result = None
+            self.parent_window = parent
             
             # Убираем стандартные рамки
             self.overrideredirect(True)
+            self.attributes("-topmost", True)
             
-            # Размер и позиция
+            # Размер
             self.geometry("400x200")
-            self.center_window(parent)
             
-            # Стиль окна
-            self.configure(fg_color=COLORS['surface'])
+            # Стиль окна с закруглениями
+            self.configure(fg_color="transparent")
             
-            # Обводка (тонкая рамка #334155)
-            border_frame = ctk.CTkFrame(self, fg_color="#334155", corner_radius=0)
-            border_frame.place(x=0, y=0, relwidth=1, relheight=1)
+            # Рамка с закруглением
+            outer = ctk.CTkFrame(self, fg_color=COLORS['primary'], corner_radius=16)
+            outer.pack(fill="both", expand=True, padx=2, pady=2)
             
-            content_frame = ctk.CTkFrame(border_frame, fg_color=COLORS['surface'], corner_radius=0)
-            content_frame.place(x=1, y=1, relwidth=1, relheight=1)
+            content_frame = ctk.CTkFrame(outer, fg_color=COLORS['surface'], corner_radius=14)
+            content_frame.pack(fill="both", expand=True, padx=2, pady=2)
             content_frame.grid_columnconfigure(0, weight=1)
             content_frame.grid_rowconfigure(1, weight=1)
             
@@ -2773,10 +3052,14 @@ class ModernLauncher(ctk.CTk):
             confirm_btn.pack(side="left")
             
             # Модальность
-            self.grab_set()
             self.transient(parent)
+            self.grab_set()
             self.lift()
             self.focus_force()
+            self.bind("<Escape>", lambda e: self.cancel())
+            
+            # Центрируем и показываем
+            self.after(50, self._center_and_show)
             
             # Фокус на поле ввода (с задержкой и принудительно)
             def set_focus():
@@ -2786,24 +3069,40 @@ class ModernLauncher(ctk.CTk):
                 except:
                     pass
             
-            self.after(150, set_focus)
-            self.after(300, set_focus)  # Двойная попытка для надежности
+            self.after(200, set_focus)
         
-        def center_window(self, parent):
-            """Центрирует окно относительно родителя"""
-            self.update_idletasks()
-            parent_x = parent.winfo_x()
-            parent_y = parent.winfo_y()
-            parent_width = parent.winfo_width()
-            parent_height = parent.winfo_height()
-            
-            dialog_width = 400
-            dialog_height = 200
-            
-            x = parent_x + (parent_width // 2) - (dialog_width // 2)
-            y = parent_y + (parent_height // 2) - (dialog_height // 2)
-            
-            self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        def _center_and_show(self):
+            """Центрирует окно и делает его видимым"""
+            try:
+                self.update_idletasks()
+                try:
+                    px = self.parent_window.winfo_x()
+                    py = self.parent_window.winfo_y()
+                    pw = self.parent_window.winfo_width()
+                    ph = self.parent_window.winfo_height()
+                    x = px + (pw - 400) // 2
+                    y = py + (ph - 200) // 2
+                except:
+                    sw = self.winfo_screenwidth()
+                    sh = self.winfo_screenheight()
+                    x = (sw - 400) // 2
+                    y = (sh - 200) // 2
+                
+                sw = self.winfo_screenwidth()
+                sh = self.winfo_screenheight()
+                x = max(0, min(x, sw - 400))
+                y = max(0, min(y, sh - 200))
+                
+                self.geometry(f"400x200+{x}+{y}")
+                self.deiconify()
+                self.lift()
+                self.focus_force()
+            except:
+                try:
+                    self.deiconify()
+                    self.lift()
+                except:
+                    pass
         
         def confirm(self):
             """Подтверждение ввода"""
@@ -2827,23 +3126,24 @@ class ModernLauncher(ctk.CTk):
         def __init__(self, parent, message="", title=""):
             super().__init__(parent)
             self.result = False
+            self.parent_window = parent
             
             # Убираем стандартные рамки
             self.overrideredirect(True)
+            self.attributes("-topmost", True)
             
-            # Размер и позиция
-            self.geometry("340x150")
-            self.center_window(parent)
+            # Размер
+            self.geometry("420x180")
             
-            # Стиль окна
-            self.configure(fg_color=COLORS['surface'])
+            # Стиль окна с закруглениями
+            self.configure(fg_color="transparent")
             
-            # Обводка (красная для опасного действия)
-            border_frame = ctk.CTkFrame(self, fg_color="#ef4444", corner_radius=0)
-            border_frame.place(x=0, y=0, relwidth=1, relheight=1)
+            # Рамка с закруглением (красная для опасного действия)
+            outer = ctk.CTkFrame(self, fg_color=COLORS['danger'], corner_radius=16)
+            outer.pack(fill="both", expand=True, padx=2, pady=2)
             
-            content_frame = ctk.CTkFrame(border_frame, fg_color=COLORS['surface'], corner_radius=0)
-            content_frame.place(x=1, y=1, relwidth=1, relheight=1)
+            content_frame = ctk.CTkFrame(outer, fg_color=COLORS['surface'], corner_radius=14)
+            content_frame.pack(fill="both", expand=True, padx=2, pady=2)
             content_frame.grid_columnconfigure(0, weight=1)
             content_frame.grid_rowconfigure(0, weight=1)
             
@@ -2889,27 +3189,50 @@ class ModernLauncher(ctk.CTk):
             delete_btn.pack(side="left")
             
             # Модальность
-            self.grab_set()
             self.transient(parent)
+            self.grab_set()
+            self.lift()
+            self.focus_force()
+            self.bind("<Escape>", lambda e: self.cancel())
+            
+            # Центрируем и показываем
+            self.after(50, self._center_and_show)
             
             # Фокус на кнопке отмены (безопаснее)
-            self.after(100, lambda: cancel_btn.focus())
+            self.after(200, lambda: cancel_btn.focus())
         
-        def center_window(self, parent):
-            """Центрирует окно относительно родителя"""
-            self.update_idletasks()
-            parent_x = parent.winfo_x()
-            parent_y = parent.winfo_y()
-            parent_width = parent.winfo_width()
-            parent_height = parent.winfo_height()
-            
-            dialog_width = 340
-            dialog_height = 150
-            
-            x = parent_x + (parent_width // 2) - (dialog_width // 2)
-            y = parent_y + (parent_height // 2) - (dialog_height // 2)
-            
-            self.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
+        def _center_and_show(self):
+            """Центрирует окно и делает его видимым"""
+            try:
+                self.update_idletasks()
+                try:
+                    px = self.parent_window.winfo_x()
+                    py = self.parent_window.winfo_y()
+                    pw = self.parent_window.winfo_width()
+                    ph = self.parent_window.winfo_height()
+                    x = px + (pw - 420) // 2
+                    y = py + (ph - 180) // 2
+                except:
+                    sw = self.winfo_screenwidth()
+                    sh = self.winfo_screenheight()
+                    x = (sw - 420) // 2
+                    y = (sh - 180) // 2
+                
+                sw = self.winfo_screenwidth()
+                sh = self.winfo_screenheight()
+                x = max(0, min(x, sw - 420))
+                y = max(0, min(y, sh - 180))
+                
+                self.geometry(f"420x180+{x}+{y}")
+                self.deiconify()
+                self.lift()
+                self.focus_force()
+            except:
+                try:
+                    self.deiconify()
+                    self.lift()
+                except:
+                    pass
         
         def confirm(self):
             """Подтверждение удаления"""
@@ -2926,6 +3249,180 @@ class ModernLauncher(ctk.CTk):
             self.wait_window()
             return self.result
     
+    class ModernDialog(ctk.CTkToplevel):
+        """Универсальный диалог в стиле лаунчера"""
+        
+        def __init__(self, parent, title="", message="", dialog_type="info", width=420, height=180):
+            super().__init__(parent)
+            self.result = None
+            self.parent_window = parent
+            self.dialog_width = width
+            self.dialog_height = height
+            
+            # Убираем Windows рамки
+            self.overrideredirect(True)
+            
+            # Устанавливаем размер сразу
+            self.geometry(f"{width}x{height}")
+            
+            # Делаем окно поверх всех
+            self.attributes("-topmost", True)
+            
+            # Цвета для типов
+            type_config = {
+                "info": (COLORS['primary'], "ℹ️"),
+                "success": (COLORS['success'], "✅"),
+                "warning": ("#f59e0b", "⚠️"),
+                "error": (COLORS['danger'], "❌"),
+                "question": (COLORS['secondary'], "❓"),
+            }
+            self.accent_color, icon = type_config.get(dialog_type, type_config["info"])
+            
+            self.configure(fg_color="transparent")
+            
+            # Рамка с закруглением
+            outer = ctk.CTkFrame(self, fg_color=self.accent_color, corner_radius=16)
+            outer.pack(fill="both", expand=True, padx=2, pady=2)
+            
+            inner = ctk.CTkFrame(outer, fg_color=COLORS['surface'], corner_radius=14)
+            inner.pack(fill="both", expand=True, padx=2, pady=2)
+            inner.grid_columnconfigure(0, weight=1)
+            
+            # Header
+            header = ctk.CTkFrame(inner, fg_color="transparent")
+            header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 0))
+            header.grid_columnconfigure(1, weight=1)
+            
+            ctk.CTkLabel(header, text=icon, font=("Segoe UI", 24), text_color=self.accent_color).grid(row=0, column=0, padx=(0, 12))
+            ctk.CTkLabel(header, text=title, font=("Segoe UI", 16, "bold"), text_color=COLORS['text'], anchor="w").grid(row=0, column=1, sticky="w")
+            
+            ctk.CTkButton(
+                header, text="✕", width=28, height=28,
+                fg_color="transparent", hover_color=COLORS['surface_light'],
+                text_color=COLORS['text_muted'], font=("Segoe UI", 14),
+                corner_radius=6, command=self._close
+            ).grid(row=0, column=2)
+            
+            # Message
+            msg_frame = ctk.CTkFrame(inner, fg_color="transparent")
+            msg_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=12)
+            inner.grid_rowconfigure(1, weight=1)
+            
+            ctk.CTkLabel(
+                msg_frame, text=message, font=("Segoe UI", 13),
+                text_color=COLORS['text_secondary'], wraplength=width - 60,
+                justify="left", anchor="nw"
+            ).pack(fill="both", expand=True)
+            
+            # Buttons
+            self.buttons_frame = ctk.CTkFrame(inner, fg_color="transparent")
+            self.buttons_frame.grid(row=2, column=0, sticky="e", padx=20, pady=(0, 16))
+            
+            # Модальность и фокус
+            self.transient(parent)
+            self.grab_set()
+            self.lift()
+            self.focus_force()
+            self.bind("<Escape>", lambda e: self._close())
+            
+            # Центрируем и показываем после создания всех виджетов
+            self.after(50, self._center_and_show)
+        
+        def _center_and_show(self):
+            """Центрирует окно и делает его видимым"""
+            try:
+                self.update_idletasks()
+                
+                # Получаем размеры родительского окна
+                try:
+                    px = self.parent_window.winfo_x()
+                    py = self.parent_window.winfo_y()
+                    pw = self.parent_window.winfo_width()
+                    ph = self.parent_window.winfo_height()
+                except:
+                    # Если не удалось получить размеры родителя, центрируем на экране
+                    sw = self.winfo_screenwidth()
+                    sh = self.winfo_screenheight()
+                    x = (sw - self.dialog_width) // 2
+                    y = (sh - self.dialog_height) // 2
+                    self.geometry(f"{self.dialog_width}x{self.dialog_height}+{x}+{y}")
+                    self.deiconify()
+                    return
+                
+                # Центрируем относительно родителя
+                x = px + (pw - self.dialog_width) // 2
+                y = py + (ph - self.dialog_height) // 2
+                
+                # Не выходим за границы экрана
+                sw = self.winfo_screenwidth()
+                sh = self.winfo_screenheight()
+                x = max(0, min(x, sw - self.dialog_width))
+                y = max(0, min(y, sh - self.dialog_height))
+                
+                self.geometry(f"{self.dialog_width}x{self.dialog_height}+{x}+{y}")
+                self.deiconify()  # Убеждаемся, что окно видимо
+                self.lift()  # Поднимаем наверх
+                self.focus_force()  # Устанавливаем фокус
+            except Exception as e:
+                # В случае ошибки просто показываем окно
+                try:
+                    self.deiconify()
+                    self.lift()
+                except:
+                    pass
+        
+        def _close(self):
+            self.result = False
+            self.destroy()
+        
+        def add_button(self, text, command, primary=False, danger=False):
+            fg = COLORS['danger'] if danger else (self.accent_color if primary else "transparent")
+            hover = "#dc2626" if danger else (COLORS['primary_hover'] if primary else COLORS['surface_light'])
+            btn = ctk.CTkButton(
+                self.buttons_frame, text=text, width=100, height=36,
+                fg_color=fg, hover_color=hover,
+                text_color="white" if (primary or danger) else COLORS['text_secondary'],
+                font=("Segoe UI", 12, "bold") if (primary or danger) else ("Segoe UI", 12),
+                corner_radius=8, command=command
+            )
+            btn.pack(side="left", padx=(8, 0))
+            return btn
+        
+        def wait_result(self):
+            self.wait_window()
+            return self.result
+    
+    def show_info(self, title, message):
+        """Информационный диалог"""
+        dialog = self.ModernDialog(self, title, message, "info")
+        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], primary=True)
+        return dialog.wait_result()
+    
+    def show_success(self, title, message):
+        """Диалог успеха"""
+        dialog = self.ModernDialog(self, title, message, "success")
+        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], primary=True)
+        return dialog.wait_result()
+    
+    def show_warning(self, title, message):
+        """Предупреждение"""
+        dialog = self.ModernDialog(self, title, message, "warning", height=200)
+        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], primary=True)
+        return dialog.wait_result()
+    
+    def show_error(self, title, message):
+        """Ошибка"""
+        dialog = self.ModernDialog(self, title, message, "error", height=200)
+        dialog.add_button("OK", lambda: [setattr(dialog, 'result', True), dialog.destroy()], danger=True)
+        return dialog.wait_result()
+    
+    def show_confirm(self, title, message, yes_text="Да", no_text="Отмена", danger=False):
+        """Диалог подтверждения"""
+        dialog = self.ModernDialog(self, title, message, "error" if danger else "question", height=200)
+        dialog.add_button(no_text, lambda: [setattr(dialog, 'result', False), dialog.destroy()])
+        dialog.add_button(yes_text, lambda: [setattr(dialog, 'result', True), dialog.destroy()], danger=danger, primary=not danger)
+        return dialog.wait_result()
+    
     def create_analytics_page(self):
         """Создает страницу аналитики с графиками и статистикой"""
         frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
@@ -2934,18 +3431,15 @@ class ModernLauncher(ctk.CTk):
         
         # Header with title and update check
         header = ctk.CTkFrame(frame, fg_color="transparent", height=70)
-        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 25))
+        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 20))
         header.grid_columnconfigure(0, weight=1)
         
-        title_frame = ctk.CTkFrame(header, fg_color="transparent")
-        title_frame.grid(row=0, column=0, sticky="w")
-        
         ctk.CTkLabel(
-            title_frame,
+            header,
             text="📈 " + t("ui.launcher.analytics", default="Аналитика"),
             font=("Segoe UI", 32, "bold"),
             text_color=COLORS['text']
-        ).pack(side="left")
+        ).grid(row=0, column=0, sticky="w")
         
         # Version and update check
         update_frame = ctk.CTkFrame(header, fg_color="transparent")
@@ -2954,20 +3448,20 @@ class ModernLauncher(ctk.CTk):
         version_text = self.updater.get_current_version() if self.updater else "v1.0.0"
         self.version_label = ctk.CTkLabel(
             update_frame,
-            text=version_text,
+            text=f"Версия: {version_text}",
             font=("Segoe UI", 11),
             text_color=COLORS['text_muted']
         )
-        self.version_label.pack(side="left", padx=(0, 10))
+        self.version_label.pack(side="left", padx=(0, 12))
         
         self.update_btn = ctk.CTkButton(
             update_frame,
             text="🔄 Проверить обновления",
             font=("Segoe UI", 12),
-            fg_color=COLORS['surface_light'],
-            hover_color=COLORS['surface'],
-            text_color=COLORS['text'],
-            width=180,
+            fg_color=COLORS['primary'],
+            hover_color=COLORS['primary_hover'],
+            text_color="white",
+            width=200,
             height=36,
             corner_radius=8,
             command=self._check_for_updates
@@ -2977,157 +3471,254 @@ class ModernLauncher(ctk.CTk):
         # Main content
         content = ctk.CTkScrollableFrame(frame, fg_color=COLORS['bg'])
         content.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
-        content.grid_columnconfigure((0, 1), weight=1)
-        
-        # Stats cards row
-        stats_frame = ctk.CTkFrame(content, fg_color="transparent")
-        stats_frame.pack(fill="x", pady=(0, 20))
-        stats_frame.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        content.grid_columnconfigure(0, weight=1)
         
         # Get stats
         stats = self.analytics.get_stats() if self.analytics else {}
         
+        # Stats cards in 2x2 grid
+        stats_container = ctk.CTkFrame(content, fg_color="transparent")
+        stats_container.pack(fill="x", pady=(0, 16))
+        stats_container.grid_columnconfigure((0, 1, 2, 3), weight=1)
+        
         stat_cards = [
-            ("📝", t("ui.launcher.analytics.posts", default="Постов"), stats.get('posts_total', 0), stats.get('posts_today', 0)),
-            ("🤖", t("ui.launcher.analytics.text_gen", default="Генераций текста"), stats.get('text_generations_total', 0), stats.get('text_generations_today', 0)),
-            ("🎨", t("ui.launcher.analytics.image_gen", default="Генераций изображений"), stats.get('image_generations_total', 0), stats.get('image_generations_today', 0)),
-            ("✏️", t("ui.launcher.analytics.edits", default="Ручных правок"), stats.get('manual_edits_total', 0), 0),
+            ("📝", "Постов", stats.get('posts_total', 0), stats.get('posts_today', 0), COLORS['primary']),
+            ("🤖", "Текст", stats.get('text_generations_total', 0), stats.get('text_generations_today', 0), COLORS['success']),
+            ("🎨", "Картинки", stats.get('image_generations_total', 0), stats.get('image_generations_today', 0), COLORS['warning']),
+            ("✏️", "Правки", stats.get('manual_edits_total', 0), 0, COLORS['secondary']),
         ]
         
-        for idx, (icon, title, total, today) in enumerate(stat_cards):
-            card = self.create_glass_card(stats_frame, fg_color=COLORS['surface'])
-            card.grid(row=0, column=idx, sticky="nsew", padx=8, pady=8)
+        for idx, (icon, title, total, today, color) in enumerate(stat_cards):
+            card = ctk.CTkFrame(stats_container, fg_color=COLORS['surface'], corner_radius=12)
+            card.grid(row=0, column=idx, sticky="nsew", padx=6, pady=6)
+            
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="both", expand=True, padx=16, pady=16)
+            
+            # Icon and value row
+            top_row = ctk.CTkFrame(inner, fg_color="transparent")
+            top_row.pack(fill="x")
             
             ctk.CTkLabel(
-                card,
+                top_row,
                 text=icon,
-                font=("Segoe UI", 32),
-                text_color=COLORS['primary']
-            ).pack(pady=(20, 8))
+                font=("Segoe UI", 24),
+                text_color=color
+            ).pack(side="left")
             
             ctk.CTkLabel(
-                card,
+                top_row,
                 text=str(total),
-                font=("Segoe UI", 28, "bold"),
+                font=("Segoe UI", 24, "bold"),
                 text_color=COLORS['text']
-            ).pack()
+            ).pack(side="right")
             
+            # Title and today
             ctk.CTkLabel(
-                card,
+                inner,
                 text=title,
                 font=("Segoe UI", 12),
-                text_color=COLORS['text_secondary']
-            ).pack()
+                text_color=COLORS['text_secondary'],
+                anchor="w"
+            ).pack(fill="x", pady=(8, 0))
             
             if today > 0:
                 ctk.CTkLabel(
-                    card,
+                    inner,
                     text=f"+{today} сегодня",
-                    font=("Segoe UI", 11),
-                    text_color=COLORS['success']
-                ).pack(pady=(4, 20))
-            else:
-                ctk.CTkFrame(card, fg_color="transparent", height=20).pack()
+                    font=("Segoe UI", 10),
+                    text_color=COLORS['success'],
+                    anchor="w"
+                ).pack(fill="x")
         
-        # Chart section
-        chart_card = self.create_glass_card(content, fg_color=COLORS['surface'])
-        chart_card.pack(fill="x", pady=(0, 20))
+        # Two column layout for rest
+        two_col = ctk.CTkFrame(content, fg_color="transparent")
+        two_col.pack(fill="both", expand=True, pady=(0, 16))
+        two_col.grid_columnconfigure((0, 1), weight=1)
+        two_col.grid_rowconfigure(0, weight=1)
+        
+        # Left: Activity chart
+        chart_card = ctk.CTkFrame(two_col, fg_color=COLORS['surface'], corner_radius=12)
+        chart_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=0)
         
         ctk.CTkLabel(
             chart_card,
-            text="📊 " + t("ui.launcher.analytics.activity", default="Активность за 7 дней"),
-            font=("Segoe UI", 18, "bold"),
-            text_color=COLORS['text']
-        ).pack(anchor="w", padx=20, pady=(20, 16))
+            text="📊 Активность (7 дней)",
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text'],
+            anchor="w"
+        ).pack(fill="x", padx=16, pady=(16, 12))
         
-        # Simple text-based chart
+        # Chart data
         chart_data = self.analytics.get_chart_data(7) if self.analytics else {"dates": [], "posts": [], "text_generations": [], "image_generations": []}
+        dates = chart_data.get('dates', [])
+        posts = chart_data.get('posts', [])
+        text_gens = chart_data.get('text_generations', [])
+        img_gens = chart_data.get('image_generations', [])
         
-        chart_frame = ctk.CTkFrame(chart_card, fg_color=COLORS['bg'], corner_radius=12)
-        chart_frame.pack(fill="x", padx=20, pady=(0, 20))
-        chart_frame.grid_columnconfigure(0, weight=1)
+        # Calculate max for scaling
+        all_vals = posts + text_gens + img_gens
+        max_val = max(all_vals) if all_vals and max(all_vals) > 0 else 1
         
-        # Bar chart representation
-        max_val = max(max(chart_data.get('posts', [0]) or [0]), max(chart_data.get('text_generations', [0]) or [0]), max(chart_data.get('image_generations', [0]) or [0]), 1)
+        chart_inner = ctk.CTkFrame(chart_card, fg_color=COLORS['bg'], corner_radius=8)
+        chart_inner.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         
-        for i, date in enumerate(chart_data.get('dates', [])):
-            row_frame = ctk.CTkFrame(chart_frame, fg_color="transparent")
-            row_frame.pack(fill="x", padx=16, pady=4)
-            row_frame.grid_columnconfigure(1, weight=1)
-            
-            ctk.CTkLabel(
-                row_frame,
-                text=date,
-                font=("Consolas", 11),
-                text_color=COLORS['text_muted'],
-                width=50
-            ).grid(row=0, column=0, sticky="w")
-            
-            bars_frame = ctk.CTkFrame(row_frame, fg_color="transparent")
-            bars_frame.grid(row=0, column=1, sticky="ew", padx=(10, 0))
-            
-            posts_val = chart_data.get('posts', [])[i] if i < len(chart_data.get('posts', [])) else 0
-            text_val = chart_data.get('text_generations', [])[i] if i < len(chart_data.get('text_generations', [])) else 0
-            img_val = chart_data.get('image_generations', [])[i] if i < len(chart_data.get('image_generations', [])) else 0
-            
-            # Posts bar
-            if posts_val > 0:
-                posts_width = int((posts_val / max_val) * 200)
-                ctk.CTkFrame(
-                    bars_frame,
-                    fg_color=COLORS['primary'],
-                    height=8,
-                    width=max(posts_width, 4),
-                    corner_radius=4
-                ).pack(side="left", padx=(0, 4))
-            
-            # Text gen bar
-            if text_val > 0:
-                text_width = int((text_val / max_val) * 200)
-                ctk.CTkFrame(
-                    bars_frame,
-                    fg_color=COLORS['success'],
-                    height=8,
-                    width=max(text_width, 4),
-                    corner_radius=4
-                ).pack(side="left", padx=(0, 4))
-            
-            # Image gen bar
-            if img_val > 0:
-                img_width = int((img_val / max_val) * 200)
-                ctk.CTkFrame(
-                    bars_frame,
-                    fg_color=COLORS['warning'],
-                    height=8,
-                    width=max(img_width, 4),
-                    corner_radius=4
+        if dates:
+            for i, date in enumerate(dates):
+                row = ctk.CTkFrame(chart_inner, fg_color="transparent", height=28)
+                row.pack(fill="x", padx=12, pady=2)
+                row.pack_propagate(False)
+                
+                # Date label
+                ctk.CTkLabel(
+                    row,
+                    text=date,
+                    font=("Consolas", 10),
+                    text_color=COLORS['text_muted'],
+                    width=45,
+                    anchor="w"
                 ).pack(side="left")
-            
-            # Values
+                
+                # Bars container
+                bars = ctk.CTkFrame(row, fg_color="transparent")
+                bars.pack(side="left", fill="x", expand=True, padx=8)
+                
+                p = posts[i] if i < len(posts) else 0
+                t_val = text_gens[i] if i < len(text_gens) else 0
+                im = img_gens[i] if i < len(img_gens) else 0
+                
+                # Create stacked horizontal bars
+                bar_frame = ctk.CTkFrame(bars, fg_color=COLORS['surface_light'], height=16, corner_radius=4)
+                bar_frame.pack(fill="x", pady=4)
+                bar_frame.pack_propagate(False)
+                
+                total_width = 300  # Base width for calculations
+                if p > 0:
+                    w = max(int((p / max_val) * total_width), 8)
+                    ctk.CTkFrame(bar_frame, fg_color=COLORS['primary'], width=w, corner_radius=4).pack(side="left", fill="y")
+                if t_val > 0:
+                    w = max(int((t_val / max_val) * total_width), 8)
+                    ctk.CTkFrame(bar_frame, fg_color=COLORS['success'], width=w, corner_radius=4).pack(side="left", fill="y", padx=(1, 0))
+                if im > 0:
+                    w = max(int((im / max_val) * total_width), 8)
+                    ctk.CTkFrame(bar_frame, fg_color=COLORS['warning'], width=w, corner_radius=4).pack(side="left", fill="y", padx=(1, 0))
+                
+                # Values
+                ctk.CTkLabel(
+                    row,
+                    text=f"{p}/{t_val}/{im}",
+                    font=("Consolas", 9),
+                    text_color=COLORS['text_muted'],
+                    width=50,
+                    anchor="e"
+                ).pack(side="right")
+        else:
             ctk.CTkLabel(
-                row_frame,
-                text=f"{posts_val}/{text_val}/{img_val}",
-                font=("Consolas", 10),
-                text_color=COLORS['text_muted'],
-                width=60
-            ).grid(row=0, column=2, sticky="e")
+                chart_inner,
+                text="Нет данных",
+                font=("Segoe UI", 12),
+                text_color=COLORS['text_muted']
+            ).pack(expand=True, pady=30)
         
         # Legend
-        legend_frame = ctk.CTkFrame(chart_card, fg_color="transparent")
-        legend_frame.pack(fill="x", padx=20, pady=(0, 20))
+        legend = ctk.CTkFrame(chart_card, fg_color="transparent")
+        legend.pack(fill="x", padx=16, pady=(0, 12))
         
-        legends = [
-            (COLORS['primary'], t("ui.launcher.analytics.posts", default="Посты")),
-            (COLORS['success'], t("ui.launcher.analytics.text_gen", default="Текст")),
-            (COLORS['warning'], t("ui.launcher.analytics.image_gen", default="Изображения"))
+        for color, name in [(COLORS['primary'], "Посты"), (COLORS['success'], "Текст"), (COLORS['warning'], "Картинки")]:
+            item = ctk.CTkFrame(legend, fg_color="transparent")
+            item.pack(side="left", padx=(0, 16))
+            ctk.CTkFrame(item, fg_color=color, width=10, height=10, corner_radius=2).pack(side="left", padx=(0, 4))
+            ctk.CTkLabel(item, text=name, font=("Segoe UI", 10), text_color=COLORS['text_muted']).pack(side="left")
+        
+        # Right: Hotkeys + Info
+        right_col = ctk.CTkFrame(two_col, fg_color="transparent")
+        right_col.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=0)
+        right_col.grid_rowconfigure(1, weight=1)
+        
+        # Hotkeys card
+        hotkeys_card = ctk.CTkFrame(right_col, fg_color=COLORS['surface'], corner_radius=12)
+        hotkeys_card.pack(fill="x", pady=(0, 12))
+        
+        ctk.CTkLabel(
+            hotkeys_card,
+            text="⌨️ Горячие клавиши",
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text'],
+            anchor="w"
+        ).pack(fill="x", padx=16, pady=(16, 12))
+        
+        hotkeys = [
+            ("Ctrl+S", "Сохранить"),
+            ("Ctrl+1-4", "Вкладки"),
+            ("F5", "Обновить модели"),
+            ("Ctrl+R", "Перезагрузить"),
         ]
         
-        for color, text in legends:
-            item = ctk.CTkFrame(legend_frame, fg_color="transparent")
-            item.pack(side="left", padx=(0, 20))
+        for key, desc in hotkeys:
+            hk_row = ctk.CTkFrame(hotkeys_card, fg_color="transparent")
+            hk_row.pack(fill="x", padx=16, pady=3)
             
-            ctk.CTkFrame(item, fg_color=color, width=12, height=12, corner_radius=2).pack(side="left", padx=(0, 6))
-            ctk.CTkLabel(item, text=text, font=("Segoe UI", 11), text_color=COLORS['text_secondary']).pack(side="left")
+            ctk.CTkLabel(
+                hk_row,
+                text=key,
+                font=("Consolas", 11, "bold"),
+                text_color=COLORS['primary'],
+                width=80,
+                anchor="w"
+            ).pack(side="left")
+            
+            ctk.CTkLabel(
+                hk_row,
+                text=desc,
+                font=("Segoe UI", 11),
+                text_color=COLORS['text_secondary']
+            ).pack(side="left")
+        
+        ctk.CTkFrame(hotkeys_card, fg_color="transparent", height=12).pack()
+        
+        # Topics stats card
+        topics_card = ctk.CTkFrame(right_col, fg_color=COLORS['surface'], corner_radius=12)
+        topics_card.pack(fill="both", expand=True)
+        
+        ctk.CTkLabel(
+            topics_card,
+            text="📁 По темам",
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text'],
+            anchor="w"
+        ).pack(fill="x", padx=16, pady=(16, 12))
+        
+        topics_data = stats.get('posts_by_topic', {})
+        if topics_data:
+            for topic, count in sorted(topics_data.items(), key=lambda x: x[1], reverse=True)[:5]:
+                t_row = ctk.CTkFrame(topics_card, fg_color="transparent")
+                t_row.pack(fill="x", padx=16, pady=3)
+                
+                ctk.CTkLabel(
+                    t_row,
+                    text=topic[:20] + "..." if len(topic) > 20 else topic,
+                    font=("Segoe UI", 11),
+                    text_color=COLORS['text'],
+                    anchor="w"
+                ).pack(side="left", fill="x", expand=True)
+                
+                ctk.CTkLabel(
+                    t_row,
+                    text=str(count),
+                    font=("Segoe UI", 11, "bold"),
+                    text_color=COLORS['primary']
+                ).pack(side="right")
+        else:
+            ctk.CTkLabel(
+                topics_card,
+                text="Нет данных",
+                font=("Segoe UI", 11),
+                text_color=COLORS['text_muted']
+            ).pack(pady=20)
+        
+        ctk.CTkFrame(topics_card, fg_color="transparent", height=12).pack()
+        
+        return frame
         
         # Topics stats
         topics_card = self.create_glass_card(content, fg_color=COLORS['surface'])
@@ -3291,25 +3882,59 @@ class ModernLauncher(ctk.CTk):
             def update():
                 progress_dialog.destroy()
                 if success:
-                    dialog = ModernLauncher.ModernInfoDialog(
-                        self,
-                        message + "\n\nПерезапустите приложение для применения изменений.",
-                        t("ui.launcher.update.complete", default="Обновление завершено")
+                    self.show_success(
+                        t("ui.launcher.update.complete", default="Обновление завершено"),
+                        message + "\n\nПерезапустите приложение для применения изменений."
                     )
-                    self.wait_window(dialog)
                 else:
-                    dialog = ModernLauncher.ModernWarningDialog(
-                        self,
-                        f"Ошибка: {message}",
-                        t("ui.launcher.update.error", default="Ошибка обновления")
+                    self.show_error(
+                        t("ui.launcher.update.error", default="Ошибка обновления"),
+                        f"Ошибка: {message}"
                     )
-                    self.wait_window(dialog)
             self.after(0, update)
         
         self.updater.download_update(progress_callback=on_progress, complete_callback=on_complete)
     
+    def _update_topic_highlight(self):
+        """Обновляет только подсветку активной темы без полной перерисовки"""
+        if not hasattr(self, 'scroll_topics'):
+            return
+        
+        # Проходим по всем существующим кнопкам тем и обновляем их стиль
+        for child in self.scroll_topics.winfo_children():
+            if isinstance(child, ctk.CTkFrame):
+                # Собираем все кнопки в фрейме
+                topic_btn = None
+                delete_btn = None
+                
+                for widget in child.winfo_children():
+                    if isinstance(widget, ctk.CTkButton):
+                        btn_text = widget.cget("text")
+                        if btn_text.startswith("📂 "):
+                            topic_btn = widget
+                        elif btn_text == "×":
+                            delete_btn = widget
+                
+                # Обновляем кнопку темы
+                if topic_btn:
+                    topic_name = topic_btn.cget("text")[2:]  # Убираем "📂 "
+                    is_active = (topic_name == self.current_topic)
+                    
+                    topic_btn.configure(
+                        fg_color=COLORS['primary'] if is_active else COLORS['surface_light'],
+                        text_color="white" if is_active else COLORS['text_secondary'],
+                        hover_color=COLORS['primary_hover'] if is_active else COLORS['surface']
+                    )
+                    
+                    # Показываем/скрываем кнопку удаления
+                    if delete_btn:
+                        if is_active:
+                            delete_btn.grid()
+                        else:
+                            delete_btn.grid_remove()
+    
     def refresh_topics(self):
-        """Обновляет только список тем"""
+        """Обновляет только список тем (полная перерисовка)"""
         if not hasattr(self, 'scroll_topics'):
             return
             
@@ -3341,7 +3966,10 @@ class ModernLauncher(ctk.CTk):
             topic_frame.grid(row=idx, column=0, sticky="ew", padx=4, pady=4)
             topic_frame.grid_columnconfigure(0, weight=1)
             
-            # Кнопка темы
+            # Сохраняем название темы в фрейме для drag-and-drop
+            topic_frame.topic_name = t
+            
+            # Кнопка темы с drag-and-drop
             btn = ctk.CTkButton(
                 topic_frame,
                 text=f"📂 {t}",
@@ -3356,34 +3984,43 @@ class ModernLauncher(ctk.CTk):
             )
             btn.grid(row=0, column=0, sticky="ew", padx=(0, 4))
             
-            # Кнопка удаления (только для активной темы)
+            # Добавляем drag-and-drop обработчики к кнопке
+            btn.bind("<Button-1>", lambda e, tp=t: self._on_topic_drag_start(e, tp))
+            btn.bind("<B1-Motion>", lambda e, tp=t: self._on_topic_drag(e, tp))
+            btn.bind("<ButtonRelease-1>", lambda e, tp=t: self._on_topic_drag_stop(e, tp))
+            
+            # Кнопка удаления (создаем для всех тем, но показываем только для активной)
+            delete_btn = ctk.CTkButton(
+                topic_frame,
+                text="×",
+                width=40,
+                height=45,
+                fg_color=COLORS['danger'],
+                hover_color="#dc2626",
+                text_color="white",
+                font=("Segoe UI", 20, "bold"),
+                corner_radius=8,
+                command=lambda tp=t: self.delete_topic(tp)
+            )
             if is_active:
-                delete_btn = ctk.CTkButton(
-                    topic_frame,
-                    text="×",
-                    width=40,
-                    height=45,
-                    fg_color=COLORS['danger'],
-                    hover_color="#dc2626",
-                    text_color="white",
-                    font=("Segoe UI", 20, "bold"),
-                    corner_radius=8,
-                    command=lambda tp=t: self.delete_topic(tp)
-                )
                 delete_btn.grid(row=0, column=1, sticky="e")
-                
-                # Add Windows-style hover animation for delete topic button
-                if self.animations_enabled:
-                    try:
-                        button_hover_effect(delete_btn, hover_color="#dc2626", normal_color=COLORS['danger'], duration=100)
-                    except:
-                        pass
+            else:
+                delete_btn.grid(row=0, column=1, sticky="e")
+                delete_btn.grid_remove()  # Скрываем для неактивных тем
+            
+            # Add Windows-style hover animation for delete topic button
+            if self.animations_enabled:
+                try:
+                    button_hover_effect(delete_btn, hover_color="#dc2626", normal_color=COLORS['danger'], duration=100)
+                except:
+                    pass
     
     def refresh_channels_only(self):
         """Обновляет только список каналов (плавно)"""
         # Очищаем старые каналы
-        for w in self.scroll_chans.winfo_children():
-            w.destroy()
+        if hasattr(self, 'scroll_chans'):
+            for w in self.scroll_chans.winfo_children():
+                w.destroy()
         
         # Небольшая задержка для плавности перед отрисовкой новых
         self.after(50, self._draw_channels)
@@ -3443,6 +4080,43 @@ class ModernLauncher(ctk.CTk):
             # Есть каналы - показываем список
             for idx, ch in enumerate(data[self.current_topic]):
                 self.draw_channel_card(ch, idx)
+        
+        # Обновляем прокрутку после отрисовки
+        self.after(100, self._update_channels_scrollbar)
+    
+    def _on_channels_frame_configure(self, event):
+        """Обновляет область прокрутки при изменении размера фрейма"""
+        self.channels_canvas.configure(scrollregion=self.channels_canvas.bbox("all"))
+    
+    def _on_channels_canvas_configure(self, event):
+        """Обновляет ширину фрейма при изменении размера canvas"""
+        canvas_width = event.width
+        self.channels_canvas.itemconfig(self.channels_canvas_window, width=canvas_width)
+    
+    def _update_channels_scrollbar(self):
+        """Обновляет видимость scrollbar в зависимости от количества контента"""
+        if not hasattr(self, 'channels_canvas') or not hasattr(self, 'scroll_chans'):
+            return
+        
+        try:
+            # Обновляем scrollregion
+            self.channels_canvas.update_idletasks()
+            self.channels_canvas.configure(scrollregion=self.channels_canvas.bbox("all"))
+            
+            # Проверяем, нужна ли прокрутка
+            canvas_height = self.channels_canvas.winfo_height()
+            frame_height = self.scroll_chans.winfo_reqheight()
+            
+            if frame_height > canvas_height:
+                # Нужна прокрутка - показываем scrollbar
+                self.channels_scrollbar.grid()
+                self.channels_canvas.configure(yscrollcommand=self.channels_scrollbar.set)
+            else:
+                # Прокрутка не нужна - скрываем scrollbar
+                self.channels_scrollbar.grid_remove()
+                self.channels_canvas.configure(yscrollcommand=None)
+        except:
+            pass
     
     def _show_empty_state(self, icon, title, subtitle=""):
         """Показывает красивое пустое состояние (Empty State)"""
@@ -3485,6 +4159,9 @@ class ModernLauncher(ctk.CTk):
                 fg_color="transparent"
             )
             subtitle_label.grid(row=2, column=0)
+        
+        # Обновляем прокрутку - скрываем, так как контента мало
+        self.after(100, self._update_channels_scrollbar)
     
     def refresh_channels(self):
         """Полное обновление (темы + каналы)"""
@@ -3493,9 +4170,12 @@ class ModernLauncher(ctk.CTk):
     
     def select_topic(self, t):
         """Выбирает тему и обновляет только каналы"""
+        if self.current_topic == t:
+            return  # Уже выбрана эта тема
+        
         self.current_topic = t
-        # Обновляем список тем для подсветки активной
-        self.refresh_topics()
+        # Обновляем только подсветку активной темы (без полной перерисовки)
+        self._update_topic_highlight()
         # Обновляем каналы
         self.refresh_channels_only()
     
@@ -3727,14 +4407,28 @@ class ModernLauncher(ctk.CTk):
                 
                 if found:
                     # Если список каналов стал пустым, удаляем тему, а если тем не осталось - удаляем файл
+                    topic_was_deleted = False
                     if not db[self.current_topic]:
                         del db[self.current_topic]
+                        topic_was_deleted = True
+                        # Обновляем текущую тему
+                        remaining_topics = list(db.keys())
+                        if remaining_topics:
+                            self.current_topic = remaining_topics[0]
+                        else:
+                            self.current_topic = None
+                    
                     if not db:
                         os.remove(FILE_CHANNELS)
                     else:
                         with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
                             json.dump(db, f, indent=4, ensure_ascii=False)
-                    self.refresh_channels_only()  # Только каналы, тема не изменилась
+                    
+                    # Если тема была удалена - полное обновление, иначе только каналы
+                    if topic_was_deleted:
+                        self.refresh_channels()  # Полное обновление, так как тема удалена
+                    else:
+                        self.refresh_channels_only()  # Только каналы, тема не изменилась
         except Exception as e:
             self.log(f"❌ [CHANNELS] Ошибка при удалении канала: {e}", "SYSTEM")
     
@@ -4003,7 +4697,7 @@ class ModernLauncher(ctk.CTk):
                 set_key(FILE_ENV, "SD_MODEL_URL", model_url)
                 self.log(t("ui.launcher.log.settings_sd_model_url_saved", default="✅ [SETTINGS] URL модели SD сохранен"), "SETTINGS")
         
-        messagebox.showinfo(t("ui.launcher.success.title"), t("ui.launcher.settings.saved"))
+        self.show_success(t("ui.launcher.success.title", default="Успешно"), t("ui.launcher.settings.saved", default="Настройки сохранены"))
     
     def _create_backup(self):
         """Создает резервную копию конфигурационных файлов"""
@@ -4098,25 +4792,54 @@ class ModernLauncher(ctk.CTk):
     # CONSOLE
     
     def log(self, txt, tab="BOT"):
-        """Логирование сообщений в консоль"""
+        """Логирование сообщений в консоль с фильтрацией"""
+        if not txt:
+            return
+        
         try:
-            # Используем "BOT" как дефолтную вкладку
-            if not tab or tab == "SYSTEM" or tab == "Все":
-                tab = "BOT"
-            self.log_queue.put((txt, tab))
+            # Фильтрация пустых строк и пробелов
+            txt_stripped = txt.strip()
+            if not txt_stripped or txt_stripped == "\n":
+                return
+            
+            # Быстрая фильтрация через lower() один раз
+            txt_lower = txt.lower()
+            
+            # Фильтруем по паттернам
+            if any(pattern in txt_lower for pattern in LOG_SKIP_PATTERNS):
+                return
+            
+            # Фильтруем прогресс-бары (строки с процентами и барами)
+            if ("%" in txt and "|" in txt) or txt.strip().startswith(("0%", "1%", "2%", "3%", "4%", "5%", "6%", "7%", "8%", "9%")):
+                # Проверяем, не является ли это важным сообщением
+                if not any(keyword in txt_lower for keyword in ["error", "warning", "failed", "success", "complete"]):
+                    return
+            
+            # Фильтруем строки только с техническими данными (только цифры, проценты, скобки)
+            if len(txt_stripped) < 10 and all(c in "0123456789%|[]()/\\-:., " for c in txt_stripped):
+                return
+            
+            # Маппинг на названия вкладок
+            target_tab = LOG_TAB_MAP.get(tab, "Бот")
+            
+            # Записываем в конкретную вкладку (без префикса)
+            self.log_queue.put((txt, target_tab))
+            
+            # Записываем в общую вкладку (с префиксом)
+            prefix = LOG_PREFIX_MAP.get(target_tab, "📝")
+            self.log_queue.put((f"{prefix} {txt}", "Все"))
+            
         except Exception as e:
-            # Если очередь недоступна, выводим в stderr
             import sys
-            print(f"[LOG ERROR] Failed to log message: {e}", file=sys.stderr, flush=True)
-            print(f"[LOG] {txt}", file=sys.stderr, flush=True)
+            print(f"[LOG ERROR] {e}", file=sys.stderr, flush=True)
 
     def clear_console(self):
-        for c in self.consoles.values():
+        """Очищает все консоли"""
+        for console in self.consoles.values():
             try:
-                c.configure(state="normal")
-                c.delete("1.0", "end")
-                c.configure(state="normal")  # Оставляем normal для возможности выделения
-            except:
+                console.configure(state="normal")
+                console.delete("1.0", "end")
+            except (AttributeError, tk.TclError):
                 pass
     
     def setup_console_context_menu(self, textbox):
@@ -4262,35 +4985,24 @@ class ModernLauncher(ctk.CTk):
                 pass
 
     def console_loop(self):
-        while not self.log_queue.empty():
+        """Оптимизированный цикл обработки логов"""
+        batch_size = 10  # Обрабатываем по 10 сообщений за раз
+        processed = 0
+        
+        while not self.log_queue.empty() and processed < batch_size:
             try:
                 txt, tab = self.log_queue.get_nowait()
+                console = self.consoles.get(tab)
                 
-                def write(widget):
-                    try:
-                        # Сохраняем позицию прокрутки
-                        scroll_pos = widget.yview()[0]
-                        widget.configure(state="normal")
-                        widget.insert("end", f"{txt}\n")
-                        # Автопрокрутка только если пользователь внизу
-                        if scroll_pos >= 0.99:
-                            widget.see("end")
-                        widget.configure(state="normal")
-                    except Exception as e:
-                        # Если ошибка записи, выводим в stderr для отладки
-                        import sys
-                        print(f"[CONSOLE ERROR] Failed to write to console: {e}", file=sys.stderr, flush=True)
-                
-                # Записываем в конкретную вкладку, если она существует
-                if tab and tab in self.consoles:
-                    write(self.consoles[tab])
-                elif self.consoles:
-                    # Если вкладка не найдена, записываем в первую доступную
-                    write(list(self.consoles.values())[0])
-            except Exception as e:
-                # Логируем ошибки в stderr
-                import sys
-                print(f"[CONSOLE LOOP ERROR] {e}", file=sys.stderr, flush=True)
+                if console:
+                    console.configure(state="normal")
+                    console.insert("end", f"{txt}\n")
+                    # Автопрокрутка только для активной вкладки
+                    if getattr(self, 'current_console_tab', None) == tab:
+                        console.see("end")
+                processed += 1
+            except (KeyError, AttributeError):
+                break
         
         self.after(50, self.console_loop)
     
@@ -4352,18 +5064,18 @@ class ModernLauncher(ctk.CTk):
     def _delete_ollama(self):
         """Удаляет Ollama и все связанные файлы"""
         # Спрашиваем, сохранять ли модели
-        save_models = messagebox.askyesno(
+        save_models = self.show_confirm(
             t("ui.launcher.delete.ollama_save_models_title", default="Сохранение моделей"),
             t("ui.launcher.delete.ollama_save_models_message", default="Сохранить импортированные модели Ollama перед удалением?\n\n• Да - модели будут сохранены и восстановлены при следующей установке\n• Нет - все будет удалено полностью"),
-            icon="question"
+            yes_text="Сохранить", no_text="Удалить всё"
         )
         
         # Подтверждение удаления
         models_text = t("ui.launcher.delete.models_saved", default="• Модели будут сохранены\n") if save_models else t("ui.launcher.delete.all_files_deleted", default="• Все импортированные модели\n")
-        result = messagebox.askyesno(
+        result = self.show_confirm(
             t("ui.launcher.delete.ollama_confirm_title", default="Подтверждение удаления"),
             t("ui.launcher.delete.ollama_confirm_message", default="Вы уверены, что хотите удалить Ollama?\n\nЭто действие удалит:\n• Ollama сервер (ollama.exe)\n{models_text}• Все данные Ollama\n\nЭто действие нельзя отменить!", models_text=models_text),
-            icon="warning"
+            yes_text="Удалить", danger=True
         )
         
         if not result:
@@ -4470,7 +5182,7 @@ class ModernLauncher(ctk.CTk):
                     proc.kill()
                 except Exception as e:
                     self.log(t("ui.launcher.log.llm_uninstaller_error", default="❌ [LLM] Ошибка при запуске деинсталлятора: {error}", error=str(e)), "LLM")
-                    messagebox.showerror(
+                    self.show_error(
                         t("ui.launcher.delete.error", default="Ошибка удаления"),
                         t("ui.launcher.delete.ollama_installer_error", default="Не удалось запустить деинсталлятор Ollama:\n{error}\n\nПопробуйте удалить вручную через Панель управления.", error=str(e))
                     )
@@ -4498,7 +5210,7 @@ class ModernLauncher(ctk.CTk):
                         self.log(t("ui.launcher.log.llm_folder_deleted", default="✅ [LLM] Рабочая папка Ollama успешно удалена"), "LLM")
                     except Exception as e:
                         self.log(t("ui.launcher.log.llm_folder_delete_error", default="❌ [LLM] Ошибка при удалении папки: {error}", error=str(e)), "LLM")
-                        messagebox.showerror(
+                        self.show_error(
                             t("ui.launcher.delete.error", default="Ошибка удаления"),
                             t("ui.launcher.delete.ollama_folder_error", default="Не удалось удалить папку Ollama:\n{error}\n\nПопробуйте удалить вручную:\n{path}", error=str(e), path=OLLAMA_DIR)
                         )
@@ -4556,30 +5268,30 @@ class ModernLauncher(ctk.CTk):
                 success_msg += t("ui.launcher.delete.all_files_deleted", default="Все файлы и данные были удалены.\n")
             success_msg += t("ui.launcher.delete.ollama_will_reinstall", default="При следующем запуске LLM сервиса Ollama будет загружен заново.")
             
-            messagebox.showinfo(t("ui.launcher.delete.complete", default="Удаление завершено"), success_msg)
+            self.show_success(t("ui.launcher.delete.complete", default="Удаление завершено"), success_msg)
             
         except Exception as e:
             self.log(t("ui.launcher.log.llm_deletion_error", default="❌ [LLM] Ошибка при удалении Ollama: {error}", error=str(e)), "LLM")
-            messagebox.showerror(
-                t("ui.launcher.error.title"),
-                t("ui.launcher.delete.ollama_error", error=str(e))
+            self.show_error(
+                t("ui.launcher.error.title", default="Ошибка"),
+                t("ui.launcher.delete.ollama_error", default="Ошибка удаления: {error}", error=str(e))
             )
     
     def _delete_sd(self):
         """Удаляет Stable Diffusion и все связанные файлы"""
         # Спрашиваем, сохранять ли модели
-        save_models = messagebox.askyesno(
+        save_models = self.show_confirm(
             t("ui.launcher.delete.sd_save_models_title", default="Сохранение моделей"),
             t("ui.launcher.delete.sd_save_models_message", default="Сохранить модели изображений перед удалением?\n\n• Да - модели будут сохранены и восстановлены при следующей установке\n• Нет - все будет удалено полностью"),
-            icon="question"
+            yes_text="Сохранить", no_text="Удалить всё"
         )
         
         # Подтверждение удаления
         models_text = t("ui.launcher.delete.models_saved", default="• Модели будут сохранены\n") if save_models else t("ui.launcher.delete.all_files_deleted", default="• Все модели изображений\n")
-        result = messagebox.askyesno(
+        result = self.show_confirm(
             t("ui.launcher.delete.sd_confirm_title", default="Подтверждение удаления"),
             t("ui.launcher.delete.sd_confirm_message", default="Вы уверены, что хотите удалить Stable Diffusion?\n\nЭто действие удалит:\n• Stable Diffusion WebUI (весь репозиторий)\n{models_text}• Все расширения (включая ADetailer)\n• Виртуальное окружение Python\n• Все настройки и конфигурации\n\nЭто действие нельзя отменить!", models_text=models_text),
-            icon="warning"
+            yes_text="Удалить", danger=True
         )
         
         if not result:
@@ -4665,7 +5377,7 @@ class ModernLauncher(ctk.CTk):
                             self.log(t("ui.launcher.log.sd_space_freed_mb", default="📊 [SD] Освобождено места: {size} MB", size=f"{size_mb:.2f}"), "SD")
                 except Exception as e:
                     self.log(t("ui.launcher.log.sd_folder_delete_error", default="❌ [SD] Ошибка при удалении папки: {error}", error=str(e)), "SD")
-                    messagebox.showerror(
+                    self.show_error(
                         t("ui.launcher.delete.error", default="Ошибка удаления"),
                         t("ui.launcher.delete.sd_folder_error", default="Не удалось удалить папку Stable Diffusion:\n{error}\n\nПопробуйте удалить вручную:\n{path}", error=str(e), path=SD_DIR)
                     )
@@ -4705,11 +5417,11 @@ class ModernLauncher(ctk.CTk):
                 success_msg += t("ui.launcher.delete.all_files_deleted", default="Все файлы и данные были удалены.\n")
             success_msg += t("ui.launcher.delete.sd_will_reinstall", default="При следующем запуске SD сервиса он будет установлен заново.")
             
-            messagebox.showinfo(t("ui.launcher.delete.complete", default="Удаление завершено"), success_msg)
+            self.show_success(t("ui.launcher.delete.complete", default="Удаление завершено"), success_msg)
             
         except Exception as e:
             self.log(t("ui.launcher.log.sd_deletion_error", default="❌ [SD] Ошибка при удалении Stable Diffusion: {error}", error=str(e)), "SD")
-            messagebox.showerror(
+            self.show_error(
                 t("ui.launcher.delete.error", default="Ошибка удаления"),
                 t("ui.launcher.delete.sd_error", default="Произошла ошибка при удалении Stable Diffusion:\n{error}", error=str(e))
             )
