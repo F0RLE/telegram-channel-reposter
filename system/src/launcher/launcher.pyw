@@ -3312,7 +3312,8 @@ class ModernLauncher(ctk.CTk):
             }
             self.accent_color, icon = type_config.get(dialog_type, type_config["info"])
             
-            self.configure(fg_color="transparent")
+            # Используем цвет фона вместо transparent для избежания ошибок
+            self.configure(fg_color=COLORS['bg'])
             
             # Рамка с закруглением
             outer = ctk.CTkFrame(self, fg_color=self.accent_color, corner_radius=16)

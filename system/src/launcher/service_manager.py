@@ -162,6 +162,39 @@ class ServiceManager:
                 model_type = llm_model_info['type']
                 model_path = llm_model_info.get('path')
 
+                # Проверяем и загружаем модель Ollama, если она не загружена
+                if model_type == 'ollama':
+                    # Проверяем наличие модели в Ollama
+                    if not self.model_manager.check_ollama_model(model_name):
+                        self.log(f"📦 [LLM] Модель {model_name} не найдена, загружаю...", "LLM")
+                        # Загружаем модель через ollama pull
+                        try:
+                            startupinfo = subprocess.STARTUPINFO()
+                            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                            startupinfo.wShowWindow = subprocess.SW_HIDE
+                            
+                            pull_result = subprocess.run(
+                                [OLLAMA_EXE, "pull", model_name],
+                                cwd=OLLAMA_DIR,
+                                capture_output=True,
+                                text=True,
+                                timeout=600,  # 10 минут на загрузку
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                                startupinfo=startupinfo
+                            )
+                            
+                            if pull_result.returncode == 0:
+                                self.log(f"✅ [LLM] Модель {model_name} успешно загружена", "LLM")
+                            else:
+                                self.log(f"❌ [LLM] Ошибка загрузки модели {model_name}: {pull_result.stderr}", "LLM")
+                                raise Exception(f"Failed to pull model: {pull_result.stderr}")
+                        except subprocess.TimeoutExpired:
+                            self.log(f"❌ [LLM] Таймаут при загрузке модели {model_name}", "LLM")
+                            raise Exception("Model download timeout")
+                        except Exception as e:
+                            self.log(f"❌ [LLM] Ошибка при загрузке модели: {e}", "LLM")
+                            raise
+
                 # Import GGUF model if needed
                 if model_type == 'gguf' and model_path:
                     if not self.model_manager.check_ollama_model(model_name):
