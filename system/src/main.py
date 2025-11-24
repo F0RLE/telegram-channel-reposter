@@ -115,13 +115,17 @@ async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
     Удаляет все последние сообщения бота при выключении.
     Обрабатывает как last_message_id, так и last_message_ids (список).
     """
+    logger.info("🗑️ Начало удаления всех последних сообщений...")
     storage = dispatcher.storage
     if not isinstance(storage, MemoryStorage):
+        logger.warning("⚠️ Storage не является MemoryStorage, пропускаем удаление")
         return
 
     try:
         keys = list(storage.storage.keys())
-    except (AttributeError, TypeError, KeyError):
+        logger.info(f"📋 Найдено {len(keys)} активных сессий для обработки")
+    except (AttributeError, TypeError, KeyError) as e:
+        logger.error(f"❌ Ошибка получения ключей storage: {e}")
         return
 
     # Удаляем сообщения для всех состояний, не только viewing_post
@@ -137,13 +141,17 @@ async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
             except (AttributeError, IndexError, TypeError):
                 continue
             
+            deleted_count = 0
+            
             # Удаляем last_message_id (одно сообщение)
             msg_id = data.get("last_message_id")
             if msg_id:
                 try:
                     await bot.delete_message(chat_id, msg_id)
-                except Exception:
-                    pass
+                    deleted_count += 1
+                    logger.info(f"✅ Удалено сообщение {msg_id} из чата {chat_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось удалить сообщение {msg_id}: {e}")
             
             # Удаляем last_message_ids (список сообщений)
             msg_ids = data.get("last_message_ids", [])
@@ -151,23 +159,29 @@ async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
                 for mid in msg_ids:
                     try:
                         await bot.delete_message(chat_id, mid)
-                    except Exception:
-                        pass
+                        deleted_count += 1
+                        logger.info(f"✅ Удалено сообщение {mid} из чата {chat_id}")
+                    except Exception as e:
+                        logger.warning(f"⚠️ Не удалось удалить сообщение {mid}: {e}")
             
-            # Удаляем last_markup_id (сообщение с клавиатурой)
+            # Удаляем last_markup_id (сообщение с клавиатурой) - это главное меню и другие меню
             markup_id = data.get("last_markup_id")
             if markup_id:
                 try:
                     await bot.delete_message(chat_id, markup_id)
-                except Exception:
-                    pass
+                    deleted_count += 1
+                    logger.info(f"✅ Удалено сообщение с клавиатурой {markup_id} из чата {chat_id}")
+                except Exception as e:
+                    logger.warning(f"⚠️ Не удалось удалить сообщение с клавиатурой {markup_id}: {e}")
             
             # Очищаем состояние
             await storage.set_state(key=key, state=None)
             await storage.set_data(key=key, data={})
 
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"❌ Ошибка при обработке ключа {key}: {e}")
+    
+    logger.info(f"✅ Удаление завершено. Всего удалено сообщений: {deleted_count}")
 
 # ==========================================
 # 6. BOT STARTUP
