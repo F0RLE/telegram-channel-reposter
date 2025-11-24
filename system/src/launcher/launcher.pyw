@@ -607,8 +607,30 @@ class ModernLauncher(ctk.CTk):
     
     def on_language_change(self, value):
         """Handle language change"""
-        lang_code = value.split(' - ')[0] if ' - ' in value else value
-        if lang_code in SUPPORTED_LANGUAGES and lang_code != self.current_language:
+        # Извлекаем код языка из строки с флагом (например, "🇬🇧 English" -> "en")
+        lang_code = None
+        lang_flags = {"ru": "🇷🇺", "en": "🇬🇧"}
+        
+        # Пробуем найти код языка по флагу
+        for code, flag in lang_flags.items():
+            if value.startswith(flag):
+                lang_code = code
+                break
+        
+        # Если не нашли по флагу, пробуем по названию
+        if not lang_code:
+            for code, name in LANGUAGE_NAMES.items():
+                if name in value:
+                    lang_code = code
+                    break
+        
+        # Если всё ещё не нашли, пробуем старый формат
+        if not lang_code:
+            lang_code = value.split(' - ')[0] if ' - ' in value else value
+            # Убираем флаги и пробелы
+            lang_code = lang_code.replace("🇷🇺", "").replace("🇬🇧", "").replace("🌐", "").strip()
+        
+        if lang_code and lang_code in SUPPORTED_LANGUAGES and lang_code != self.current_language:
             # Set new language
             set_language(lang_code)
             self.current_language = lang_code
