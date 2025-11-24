@@ -5643,9 +5643,21 @@ class ModernLauncher(ctk.CTk):
         
         def cleanup_and_close():
             try:
-                # Останавливаем все сервисы в фоне (не блокируем UI)
+                # Сначала останавливаем бота, чтобы он успел удалить свои сообщения
+                # (функция delete_all_last_messages вызывается автоматически при shutdown бота)
                 if self.service_manager and hasattr(self.service_manager, 'procs'):
-                    for name in ["bot", "llm", "sd"]:
+                    bot_proc = self.service_manager.procs.get("bot")
+                    if bot_proc:
+                        try:
+                            # Даем боту время на удаление сообщений перед остановкой
+                            # Функция delete_all_last_messages вызывается автоматически при shutdown
+                            self.service_manager.stop_service("bot")
+                            time.sleep(1)  # Небольшая задержка для завершения удаления сообщений
+                        except:
+                            pass
+                    
+                    # Останавливаем остальные сервисы
+                    for name in ["llm", "sd"]:
                         if self.service_manager.procs.get(name):
                             try:
                                 # Останавливаем асинхронно, не ждем завершения
