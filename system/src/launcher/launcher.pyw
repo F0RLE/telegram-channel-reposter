@@ -1,5 +1,6 @@
 ﻿import sys
 import os
+import glob
 import subprocess
 import threading
 import queue
@@ -39,10 +40,10 @@ except (ImportError, ValueError):
         print(f"ERROR: Failed to import required modules: {e}\n{traceback.format_exc()}")
         raise
 
-try:
-    from .i18n import init_i18n, set_language, get_language, t, LANGUAGE_NAMES, SUPPORTED_LANGUAGES
-except (ImportError, ValueError):
-    from i18n import init_i18n, set_language, get_language, t, LANGUAGE_NAMES, SUPPORTED_LANGUAGES
+    try:
+        from .i18n import init_i18n, set_language, get_language, t, LANGUAGE_NAMES, SUPPORTED_LANGUAGES
+    except (ImportError, ValueError):
+        from i18n import init_i18n, set_language, get_language, t, LANGUAGE_NAMES, SUPPORTED_LANGUAGES
 except ImportError:
     def t(key, default=None, **kwargs):
         return default or key
@@ -257,14 +258,15 @@ class ModernLauncher(ctk.CTk):
             current_lang = init_i18n(saved_lang)
         else:
             current_lang = init_i18n(None)
-            def save_language():
-                try:
-                    from dotenv import set_key  # type: ignore
-                    set_key(FILE_ENV, "LANGUAGE", current_lang)
-                except:
-                    pass
-            threading.Thread(target=save_language, daemon=True).start()
-            self._detected_lang = current_lang
+        
+        def save_language():
+            try:
+                from dotenv import set_key  # type: ignore
+                set_key(FILE_ENV, "LANGUAGE", current_lang)
+            except:
+                pass
+        threading.Thread(target=save_language, daemon=True).start()
+        self._detected_lang = current_lang
         
         self.title(t("ui.launcher.title"))
         self.geometry("1400x900")
@@ -320,7 +322,7 @@ class ModernLauncher(ctk.CTk):
         
         # Backward compatibility: expose procs for legacy code
         self.procs = self.service_manager.procs
-        
+
         # Initialize
         try:
             self.init_filesystem()
@@ -377,7 +379,7 @@ class ModernLauncher(ctk.CTk):
                 open(FILE_ENV, "w", encoding="utf-8").close()
             except (OSError, PermissionError):
                 pass
-        
+
         if not os.path.exists(FILE_GEN_CONFIG):
             try:
                 with open(FILE_GEN_CONFIG, "w", encoding="utf-8") as f:
@@ -397,10 +399,10 @@ class ModernLauncher(ctk.CTk):
             with open(FILE_PID, 'r') as f:
                 pid = int(f.read().strip())
             
-            # Quick check without detailed process analysis
+            # Быстрая проверка без детального анализа процесса
             try:
-                if psutil.pid_exists(pid):
-                    # Simple check without detailed status for speed
+                if psutil.pid_exists(pid): 
+                    # Простая проверка без детального статуса для скорости
                     try:
                         proc = psutil.Process(pid)
                         if proc.is_running():
@@ -409,19 +411,19 @@ class ModernLauncher(ctk.CTk):
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         try:
                             os.remove(FILE_PID)
-                        except (OSError, PermissionError):
+                        except:
                             pass
                         return False
             except Exception:
                 try:
                     os.remove(FILE_PID)
-                except (OSError, PermissionError):
+                except:
                     pass
                 return False
         except (ValueError, IOError, OSError):
             try:
                 os.remove(FILE_PID)
-            except (OSError, PermissionError):
+            except:
                 pass
             return False
         
@@ -431,13 +433,13 @@ class ModernLauncher(ctk.CTk):
         try:
             with open(FILE_PID, 'w') as f:
                 f.write(str(os.getpid()))
-        except (OSError, PermissionError):
+        except:
             pass
 
     def kill_old(self):
         try:
             psutil.Process(self.old_pid).kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        except:
             pass
         self.register_pid()
         self.build_ui()
@@ -481,21 +483,21 @@ class ModernLauncher(ctk.CTk):
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
         
-        # Lazy loading: create pages only on first show
+        # Lazy loading: создаем страницы только при первом показе
         self.pages = [None, None, None]
         self.pages_created = [False, False, False]
         
-        # Create only first page (console) immediately
+        # Создаем только первую страницу (консоль) сразу
         self.pages[0] = self.create_console_page()
         self.pages_created[0] = True
         
         self.show_page(0)
         
-        # Start loops with minimal delay for fast startup
+        # Запускаем циклы с минимальной задержкой для быстрого старта
         self.after(50, self.console_loop)
         self.after(500, self.service_status_loop)
         
-        # Add initial logging (deferred to avoid blocking UI)
+        # Добавляем начальное логирование (отложенное, чтобы не блокировать UI)
         self.after(200, lambda: self.log(t("ui.launcher.log.startup", default="🚀 [SYSTEM] Launcher started successfully"), "SYSTEM"))
         if hasattr(self, '_detected_lang'):
             self.after(250, lambda: self.log(t("ui.launcher.log.language_detected", default="🌐 [SYSTEM] Detected system language: {lang}", lang=LANGUAGE_NAMES.get(self._detected_lang, self._detected_lang)), "SYSTEM"))
@@ -531,7 +533,7 @@ class ModernLauncher(ctk.CTk):
         sidebar = ctk.CTkFrame(self, width=280, corner_radius=0, fg_color=COLORS['sidebar'])
         sidebar.grid(row=0, column=0, sticky="nsew", padx=0)
         sidebar.grid_propagate(False)
-        
+
         # Logo section
         logo_card = self.create_glass_card(sidebar, fg_color=COLORS['surface'])
         logo_card.pack(fill="x", padx=16, pady=(20, 16))
@@ -1998,7 +2000,7 @@ class ModernLauncher(ctk.CTk):
         if not hasattr(self, 'current_topic'):
             self.current_topic = None
         self.refresh_channels()
-        
+    
         return frame
     
     # SERVICE MANAGEMENT
@@ -2045,7 +2047,7 @@ class ModernLauncher(ctk.CTk):
                 kwargs["text_color"] = color
             if kwargs:
                 self.safe_widget_configure(label, **kwargs)
-        
+
         # Update status card if exists
         if hasattr(self, 'status_card_labels') and name in self.status_card_labels:
             card_label = self.status_card_labels.get(name)
@@ -2121,7 +2123,7 @@ class ModernLauncher(ctk.CTk):
                             t("ui.launcher.model.select_in_settings", default="Выберите модель в настройках перед запуском")
                         )
                         return
-                
+                    
                 # Run start in thread
                 threading.Thread(target=self.service_manager.start_service, 
                                args=(name, llm_config), daemon=True).start()
@@ -2355,17 +2357,17 @@ class ModernLauncher(ctk.CTk):
                         self.log("[LLM] Используется существующий сервер Ollama", "LLM")
             except:
                 pass
-            
+                                
             # Если сервер не запущен, используем метод из model_manager
             if not server_running:
                 if hasattr(self.model_manager, 'is_ollama_running'):
                     if not self.model_manager.is_ollama_running():
                         self.log("[LLM] Сервер Ollama не запущен, команда pull запустит его автоматически", "LLM")
             
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = subprocess.SW_HIDE
-            
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = subprocess.SW_HIDE
+                    
             # Устанавливаем переменные окружения для pull
             pull_env = os.environ.copy()
             pull_env["OLLAMA_HOST"] = "127.0.0.1:11434"
@@ -2377,12 +2379,12 @@ class ModernLauncher(ctk.CTk):
                 env=pull_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
-                text=True,
+                        text=True,
                 bufsize=1,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            
+                        creationflags=subprocess.CREATE_NO_WINDOW,
+                        startupinfo=startupinfo
+                    )
+                    
             output_lines = []
             for line in iter(process.stdout.readline, ''):
                 if line:
@@ -2426,8 +2428,8 @@ class ModernLauncher(ctk.CTk):
             t("ui.launcher.model.delete_confirm", default="Подтверждение удаления"),
             t("ui.launcher.model.delete_confirm_message", default="Удалить модель {model}?", model=model_name)
         ):
-            return
-        
+                            return
+                    
         threading.Thread(
             target=self._delete_ollama_model_thread,
             args=(model_name,),
@@ -2446,13 +2448,13 @@ class ModernLauncher(ctk.CTk):
             result = subprocess.run(
                 [OLLAMA_EXE, "rm", model_name],
                 cwd=OLLAMA_DIR,
-                capture_output=True,
-                text=True,
-                timeout=60,
-                creationflags=subprocess.CREATE_NO_WINDOW,
-                startupinfo=startupinfo
-            )
-            
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=60,
+                                        creationflags=subprocess.CREATE_NO_WINDOW,
+                                        startupinfo=startupinfo
+                                    )
+                                    
             if result.returncode == 0:
                 self.log(t("ui.launcher.log.model_deleted", default="✅ [LLM] Модель {model} удалена", model=model_name), "LLM")
                 self.after(0, self.scan_llm_models)
@@ -2584,7 +2586,7 @@ class ModernLauncher(ctk.CTk):
                 content_frame,
                 placeholder_text=placeholder or t("ui.launcher.channels.new_topic_dialog", default="Название..."),
                 font=("Segoe UI", 14),
-                height=40,
+                        height=40,
                 fg_color=COLORS['bg'],
                 border_color=COLORS['border']
             )
@@ -2784,7 +2786,7 @@ class ModernLauncher(ctk.CTk):
             return
             
         for w in self.scroll_topics.winfo_children():
-            w.destroy()
+                w.destroy()
         
         try:
             if os.path.exists(FILE_CHANNELS):
@@ -3479,6 +3481,7 @@ class ModernLauncher(ctk.CTk):
             try:
                 from console_manager import ConsoleManager
             except ImportError:
+                # Если ConsoleManager не найден, используем встроенное меню
                 def show_context_menu(event):
                     try:
                         try:
@@ -3489,8 +3492,8 @@ class ModernLauncher(ctk.CTk):
                         except:
                             selected = None
                         menu = tk.Menu(self, tearoff=0, bg=COLORS['card_bg'], fg=COLORS['text'],
-                                      activebackground=COLORS['primary'], activeforeground='white',
-                                      font=("Segoe UI", 10))
+                              activebackground=COLORS['primary'], activeforeground='white',
+                              font=("Segoe UI", 10))
                         if selected:
                             menu.add_command(label=t("ui.launcher.console.copy", default="Копировать"), command=lambda: self.copy_selected(textbox))
                         else:
@@ -3510,6 +3513,7 @@ class ModernLauncher(ctk.CTk):
                 textbox.bind("<Button-1>", lambda e: textbox.focus_set())
                 return
         
+        # Если ConsoleManager найден, используем его
         if not hasattr(self, '_console_manager'):
             self._console_manager = ConsoleManager(self)
         self._console_manager.setup_console_context_menu(textbox)
@@ -3674,7 +3678,7 @@ class ModernLauncher(ctk.CTk):
                                 ).start()
                             except:
                                 pass
-                
+        
                 # Убиваем процессы Ollama в фоне
                 if self.installer:
                     try:
