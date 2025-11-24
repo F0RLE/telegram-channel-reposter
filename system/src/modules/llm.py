@@ -277,34 +277,35 @@ async def rewrite_text(post_text: str) -> Optional[str]:
 # 3. PROMPT ENGINEERING
 # ==========================================
 
-async def create_image_prompt(post_text: str) -> Optional[str]:
+async def create_image_prompt(post_text: str, raw_text: Optional[str] = None) -> Optional[str]:
     """
     Generates a Stable Diffusion prompt based on text.
+    Compatible with old version signature.
     
     Args:
         post_text: Text to generate prompt from (max 1000 chars)
+        raw_text: Optional raw text (used if post_text is empty)
         
     Returns:
         Generated prompt string or None on error
     """
-    if not post_text:
+    text = post_text.strip() if post_text else (raw_text or "").strip()
+    if not text:
         logger.warning("⚠️ Пустой текст для генерации промпта изображения")
         return None
 
-    logger.info(f"🎨 Генерация промпта для изображения из текста (длина: {len(post_text)} символов)")
+    logger.info(f"🎨 Генерация промпта для изображения из текста (длина: {len(text)} символов)")
 
     system = (
-        "You are a Stable Diffusion prompt engineer. "
-        "Create a detailed, comma-separated English prompt describing the visual subject of the text. "
-        "Include lighting, style (realistic, 8k), and mood. "
-        "Output ONLY the prompt."
+        "You are a prompt engineer. Create a short, detailed prompt for Stable Diffusion. "
+        "Include subject, atmosphere, style, lighting. No comments, only prompt text."
     )
 
     from core.monitoring import record_api_call
     import time
     
-    instruction = f"Text:\n{post_text[:1000]}\n\nCreate visual prompt:"
-    payload = _build_payload(instruction, system, temp=0.7)
+    instruction = f"Text:\n{text[:1000]}\n\nCreate a single-line image prompt."
+    payload = _build_payload(instruction, system, temp=0.85)
     
     logger.debug(f"📤 Отправка запроса на генерацию промпта: {instruction[:200]}...")
     
@@ -319,13 +320,9 @@ async def create_image_prompt(post_text: str) -> Optional[str]:
 
     logger.debug(f"📥 Получен ответ от LLM для промпта: {res[:200]}...")
 
-    # Cleanup
-    original_res = res
-    res = re.sub(r'^(prompt:|result:)\s*', '', res, flags=re.I)
-    res = res.replace('\n', ' ').replace('"', '').strip()
-    
-    if res != original_res:
-        logger.debug(f"🧹 Очищен промпт: {res[:200]}...")
+    # Cleanup (как в старой версии)
+    res = re.sub(r'^(prompt:|the prompt is|result:)\s*', '', res, flags=re.I)
+    res = res.replace('\n', ' ').replace('\r', ' ').replace('"', '').strip()
     
     logger.info(f"✅ Сгенерирован промпт для изображения: {res[:100]}...")
     return res

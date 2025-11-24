@@ -68,7 +68,7 @@ def _load_post_to_state(state_data: Dict[str, Any], post_data: Dict[str, Any]):
         "original_video_file_id": None,
         "media_group_raw": None,
         
-        # Prompts
+        # Prompts - используем сохраненный или None (будет сгенерирован при генерации)
         "image_prompt": post_data.get("image_prompt"),
     }
     state_data.update(clean_data)
