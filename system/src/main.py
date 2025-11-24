@@ -128,6 +128,7 @@ async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
         logger.error(f"❌ Ошибка получения ключей storage: {e}")
         return
 
+    deleted_count = 0
     # Удаляем сообщения для всех состояний, не только viewing_post
     for key in keys:
         try:
@@ -138,10 +139,9 @@ async def delete_all_last_messages(bot: Bot, dispatcher: Dispatcher):
             # Получаем chat_id
             try:
                 chat_id = key.chat_id if hasattr(key, "chat_id") else key[1]
-            except (AttributeError, IndexError, TypeError):
+            except (AttributeError, IndexError, TypeError) as e:
+                logger.warning(f"⚠️ Не удалось получить chat_id для ключа {key}: {e}")
                 continue
-            
-            deleted_count = 0
             
             # Удаляем last_message_id (одно сообщение)
             msg_id = data.get("last_message_id")
