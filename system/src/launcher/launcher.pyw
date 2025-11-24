@@ -30,11 +30,21 @@ try:
     from .installer import Installer
     from .service_manager import ServiceManager
     from .model_manager import ModelManager
+    from .animations import (
+        fade_in, fade_out, slide_in, slide_out, scale_in, pulse,
+        button_hover_effect, smooth_color_transition, shake, bounce_in,
+        stagger_children, interpolate_color
+    )
 except (ImportError, ValueError):
     try:
         from installer import Installer
         from service_manager import ServiceManager
         from model_manager import ModelManager
+        from animations import (
+            fade_in, fade_out, slide_in, slide_out, scale_in, pulse,
+            button_hover_effect, smooth_color_transition, shake, bounce_in,
+            stagger_children, interpolate_color
+        )
     except ImportError as e:
         import traceback
         print(f"ERROR: Failed to import required modules: {e}\n{traceback.format_exc()}")
@@ -527,7 +537,17 @@ class ModernLauncher(ctk.CTk):
             'border_color': COLORS['border']
         }
         default_kwargs.update(kwargs)
-        return ctk.CTkFrame(parent, **default_kwargs)
+        card = ctk.CTkFrame(parent, **default_kwargs)
+        
+        # Add animation on creation
+        if self.animations_enabled and not kwargs.get('no_animation', False):
+            try:
+                scale_in(card, start_scale=0.95, duration=200, steps=10)
+                fade_in(card, duration=200, steps=10)
+            except:
+                pass
+        
+        return card
     
     def create_sidebar(self):
         """Создает боковую панель с glassmorphism дизайном"""
@@ -581,7 +601,7 @@ class ModernLauncher(ctk.CTk):
             (t("ui.launcher.channels", default="Channels"), "📡", 2)
         ]
 
-        for text, icon, idx in nav_items:
+        for i, (text, icon, idx) in enumerate(nav_items):
             btn = ctk.CTkButton(
                 nav_content,
                 text=f"  {icon}  {text}",
@@ -596,6 +616,19 @@ class ModernLauncher(ctk.CTk):
             )
             btn.pack(fill="x", pady=4)
             self.nav_buttons.append(btn)
+            
+            # Add hover animations
+            if self.animations_enabled:
+                try:
+                    button_hover_effect(btn, hover_color=COLORS['hover'], normal_color="transparent", duration=150)
+                except:
+                    pass
+            
+            # Stagger animation for buttons
+            if self.animations_enabled:
+                def animate_btn(b=btn, delay=i*30):
+                    self.after(delay, lambda: fade_in(b, duration=200, steps=10))
+                animate_btn()
         
         # Highlight first button
         if len(self.nav_buttons) > 0:
@@ -680,6 +713,13 @@ class ModernLauncher(ctk.CTk):
         )
         btn.pack(side="right")
         self.service_buttons[key] = btn
+        
+        # Add hover animation
+        if self.animations_enabled:
+            try:
+                button_hover_effect(btn, hover_color=COLORS['primary_hover'], normal_color=COLORS['primary'], duration=150)
+            except:
+                pass
 
     def show_page(self, idx):
         self.current_frame = idx
@@ -730,26 +770,64 @@ class ModernLauncher(ctk.CTk):
                 self.pages[idx] = error_frame
                 self.pages_created[idx] = True
         
+        # Animate page transitions
         for i, page in enumerate(self.pages):
             if page is not None:
                 if i == idx:
-                    page.grid(row=0, column=0, sticky="nsew")
-                    page.lift()  # Bring to front
-                    page.update()  # Force update
+                    # Show new page with animation
+                    if self.animations_enabled:
+                        page.grid(row=0, column=0, sticky="nsew")
+                        page.lift()
+                        fade_in(page, duration=250, steps=15)
+                        slide_in(page, direction='right', distance=30, duration=250, steps=15)
+                    else:
+                        page.grid(row=0, column=0, sticky="nsew")
+                        page.lift()
+                    page.update()
                 else:
-                    page.grid_forget()
+                    # Hide old page with animation
+                    if self.animations_enabled and page.winfo_viewable():
+                        def hide_page():
+                            page.grid_forget()
+                        fade_out(page, duration=200, steps=10, callback=hide_page)
+                    else:
+                        page.grid_forget()
         
         for i, btn in enumerate(self.nav_buttons):
             if i == idx:
-                btn.configure(
-                    fg_color=COLORS['primary'],
-                    text_color="white"
-                )
+                # Animate active button
+                if self.animations_enabled:
+                    try:
+                        old_color = btn.cget('fg_color')
+                        smooth_color_transition(btn, 'fg_color', old_color, COLORS['primary'], duration=200, steps=10)
+                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), "white", duration=200, steps=10)
+                    except:
+                        btn.configure(
+                            fg_color=COLORS['primary'],
+                            text_color="white"
+                        )
+                else:
+                    btn.configure(
+                        fg_color=COLORS['primary'],
+                        text_color="white"
+                    )
             else:
-                btn.configure(
-                    fg_color="transparent",
-                    text_color=COLORS['text_secondary']
-                )
+                # Animate inactive button
+                if self.animations_enabled:
+                    try:
+                        old_color = btn.cget('fg_color')
+                        smooth_color_transition(btn, 'fg_color', old_color, "transparent", duration=200, steps=10)
+                        smooth_color_transition(btn, 'text_color', btn.cget('text_color'), COLORS['text_secondary'], duration=200, steps=10)
+                    except:
+                        btn.configure(
+                            fg_color="transparent",
+                            text_color=COLORS['text_secondary']
+                        )
+                else:
+                    btn.configure(
+                        fg_color="transparent",
+                        text_color=COLORS['text_secondary']
+                    )
 
     def create_console_page(self):
         """Создает страницу консоли с glassmorphism дизайном и статус-карточками"""
@@ -2024,7 +2102,14 @@ class ModernLauncher(ctk.CTk):
 
     def _set_service_indicator(self, name, color):
         indicator = self.status_indicators.get(name)
-        self.safe_widget_configure(indicator, text_color=color)
+        if indicator and self.animations_enabled:
+            try:
+                old_color = indicator.cget('text_color')
+                smooth_color_transition(indicator, 'text_color', old_color, color, duration=200, steps=10)
+            except:
+                self.safe_widget_configure(indicator, text_color=color)
+        else:
+            self.safe_widget_configure(indicator, text_color=color)
 
     def _set_service_button(self, name, text=None, fg_color=None):
         button = getattr(self, 'service_buttons', {}).get(name)
@@ -2033,7 +2118,14 @@ class ModernLauncher(ctk.CTk):
             if text is not None:
                 kwargs["text"] = text
             if fg_color is not None:
-                kwargs["fg_color"] = fg_color
+                if self.animations_enabled:
+                    try:
+                        old_color = button.cget('fg_color')
+                        smooth_color_transition(button, 'fg_color', old_color, fg_color, duration=200, steps=10)
+                    except:
+                        kwargs["fg_color"] = fg_color
+                else:
+                    kwargs["fg_color"] = fg_color
             if kwargs:
                 self.safe_widget_configure(button, **kwargs)
 
@@ -2045,7 +2137,14 @@ class ModernLauncher(ctk.CTk):
             if text is not None:
                 kwargs["text"] = text
             if color is not None:
-                kwargs["text_color"] = color
+                if self.animations_enabled:
+                    try:
+                        old_color = label.cget('text_color')
+                        smooth_color_transition(label, 'text_color', old_color, color, duration=200, steps=10)
+                    except:
+                        kwargs["text_color"] = color
+                else:
+                    kwargs["text_color"] = color
             if kwargs:
                 self.safe_widget_configure(label, **kwargs)
 
@@ -2066,15 +2165,32 @@ class ModernLauncher(ctk.CTk):
             card = self.summary_cards[name]
             if text is not None:
                 self.safe_widget_configure(card['status'], text=text)
+                new_color = None
                 if "running" in text.lower() or "запущен" in text.lower():
-                    self.safe_widget_configure(card['dot'], text_color=COLORS['success'])
+                    new_color = COLORS['success']
                 elif "error" in text.lower() or "ошибка" in text.lower():
-                    self.safe_widget_configure(card['dot'], text_color=COLORS['danger'])
+                    new_color = COLORS['danger']
                 else:
-                    self.safe_widget_configure(card['dot'], text_color=COLORS['text_muted'])
+                    new_color = COLORS['text_muted']
+                
+                if new_color and self.animations_enabled:
+                    try:
+                        old_color = card['dot'].cget('text_color')
+                        smooth_color_transition(card['dot'], 'text_color', old_color, new_color, duration=200, steps=10)
+                    except:
+                        self.safe_widget_configure(card['dot'], text_color=new_color)
+                elif new_color:
+                    self.safe_widget_configure(card['dot'], text_color=new_color)
             
             if color is not None:
-                self.safe_widget_configure(card['status'], text_color=color)
+                if self.animations_enabled:
+                    try:
+                        old_color = card['status'].cget('text_color')
+                        smooth_color_transition(card['status'], 'text_color', old_color, color, duration=200, steps=10)
+                    except:
+                        self.safe_widget_configure(card['status'], text_color=color)
+                else:
+                    self.safe_widget_configure(card['status'], text_color=color)
     
     def _get_service_name(self, name):
         """Получает локализованное название сервиса"""
@@ -2086,6 +2202,15 @@ class ModernLauncher(ctk.CTk):
         return service_names.get(name, name)
 
     def toggle_service(self, name):
+        # Add click animation
+        if self.animations_enabled:
+            button = self.service_buttons.get(name)
+            if button:
+                try:
+                    # Bounce effect on click
+                    bounce_in(button, duration=200, steps=10)
+                except:
+                    pass
         threading.Thread(target=self._manage_service, args=(name,), daemon=True).start()
 
     def _manage_service(self, name):
