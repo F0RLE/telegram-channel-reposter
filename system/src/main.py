@@ -268,8 +268,34 @@ async def main():
 
 
 if __name__ == "__main__":
+    bot_instance = None
+    dispatcher_instance = None
+    
+    async def run_with_cleanup():
+        global bot_instance, dispatcher_instance
+        try:
+            await main()
+        except KeyboardInterrupt:
+            logger.info("🛑 Bot stopped by user.")
+        except Exception as e:
+            logger.critical(f"❌ Critical error: {e}", exc_info=True)
+        finally:
+            # В любом случае удаляем сообщения перед завершением
+            if bot_instance and dispatcher_instance:
+                try:
+                    logger.info("🔄 Удаление сообщений перед завершением...")
+                    await delete_all_last_messages(bot_instance, dispatcher_instance)
+                    logger.info("✅ Сообщения удалены")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка при удалении сообщений: {e}")
+                finally:
+                    try:
+                        await bot_instance.session.close()
+                    except:
+                        pass
+    
     try:
-        asyncio.run(main())
+        asyncio.run(run_with_cleanup())
     except KeyboardInterrupt:
         logger.info("🛑 Bot stopped by user.")
     except Exception as e:
