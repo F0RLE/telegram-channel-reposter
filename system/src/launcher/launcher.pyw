@@ -1576,7 +1576,8 @@ class ModernLauncher(ctk.CTk):
             variable=self.debug_mode,
             font=("Segoe UI", 11),
             onvalue=True,
-            offvalue=False
+            offvalue=False,
+            command=lambda: self._auto_save_settings()
         )
         debug_switch.pack(side="left")
         
@@ -1732,6 +1733,9 @@ class ModernLauncher(ctk.CTk):
         models_dir_entry.insert(0, current_path)
         models_dir_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8), pady=8)
         self.models_dir_entry = models_dir_entry
+        # Автосохранение при изменении
+        models_dir_entry.bind("<KeyRelease>", lambda e: self._auto_save_settings())
+        models_dir_entry.bind("<FocusOut>", lambda e: self._auto_save_settings())
         
         ctk.CTkButton(
             models_dir_card,
@@ -2151,6 +2155,10 @@ class ModernLauncher(ctk.CTk):
         except:
             default_url = MODEL_SD_URL
             model_url_entry.insert(0, default_url)
+        
+        # Автосохранение при изменении
+        model_url_entry.bind("<KeyRelease>", lambda e: self._auto_save_settings())
+        model_url_entry.bind("<FocusOut>", lambda e: self._auto_save_settings())
         
         # Кнопка скачивания модели
         download_btn = ctk.CTkButton(
@@ -4777,6 +4785,21 @@ class ModernLauncher(ctk.CTk):
                 gen_config['sd_sampler'] = self.sd_sampler_var.get()
             if hasattr(self, 'sd_scheduler_var'):
                 gen_config['sd_scheduler'] = self.sd_scheduler_var.get()
+            
+            # Сохраняем промпты из Textbox
+            if hasattr(self, 'sd_positive_prefix_entry'):
+                try:
+                    positive_prefix = self.sd_positive_prefix_entry.get("1.0", "end-1c").strip()
+                    gen_config['sd_positive_prefix'] = positive_prefix
+                except:
+                    pass
+            
+            if hasattr(self, 'sd_negative_prompt_entry'):
+                try:
+                    negative_prompt = self.sd_negative_prompt_entry.get("1.0", "end-1c").strip()
+                    gen_config['sd_negative_prompt'] = negative_prompt
+                except:
+                    pass
             
             # Сохраняем в файл
             with open(FILE_GEN_CONFIG, 'w', encoding='utf-8') as f:
