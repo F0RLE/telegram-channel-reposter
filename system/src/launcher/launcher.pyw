@@ -508,11 +508,8 @@ class ModernLauncher(ctk.CTk):
         self.after(50, self.console_loop)
         self.after(500, self.service_status_loop)
         
-        # Добавляем начальное логирование (отложенное, чтобы не блокировать UI)
-        self.after(200, lambda: self.log(t("ui.launcher.log.startup", default="🚀 [SYSTEM] Launcher started successfully"), "SYSTEM"))
-        if hasattr(self, '_detected_lang'):
-            self.after(250, lambda: self.log(t("ui.launcher.log.language_detected", default="🌐 [SYSTEM] Detected system language: {lang}", lang=LANGUAGE_NAMES.get(self._detected_lang, self._detected_lang)), "SYSTEM"))
-        self.after(300, lambda: self.log(t("ui.launcher.log.ready", default="✅ [SYSTEM] Ready to use"), "SYSTEM"))
+        # Добавляем одно начальное логирование
+        self.after(200, lambda: self.log(t("ui.launcher.log.startup", default="✅ [SYSTEM] Система запущена"), "BOT"))
     
     def on_language_change(self, value):
         """Handle language change"""
@@ -862,22 +859,19 @@ class ModernLauncher(ctk.CTk):
         
         self.console_tabs = tabs
         
-        all_tab = t("ui.launcher.logs.all", default="All")
         bot_tab = t("ui.launcher.logs.bot", default="Bot")
         llm_tab = t("ui.launcher.logs.llm", default="LLM")
         sd_tab = t("ui.launcher.logs.sd", default="SD")
         
-        self.all_tab_name = all_tab
         self.bot_tab_name = bot_tab
         self.llm_tab_name = llm_tab
         self.sd_tab_name = sd_tab
         
-        self.bind("<Control-1>", lambda e: tabs.set(all_tab))
-        self.bind("<Control-2>", lambda e: tabs.set(bot_tab))
-        self.bind("<Control-3>", lambda e: tabs.set(llm_tab))
-        self.bind("<Control-4>", lambda e: tabs.set(sd_tab))
+        self.bind("<Control-1>", lambda e: tabs.set(bot_tab))
+        self.bind("<Control-2>", lambda e: tabs.set(llm_tab))
+        self.bind("<Control-3>", lambda e: tabs.set(sd_tab))
         
-        for tab_name in [all_tab, bot_tab, llm_tab, sd_tab]:
+        for tab_name in [bot_tab, llm_tab, sd_tab]:
             tab = tabs.add(tab_name)
             console = ctk.CTkTextbox(
                 tab,
@@ -1106,16 +1100,7 @@ class ModernLauncher(ctk.CTk):
         if not hasattr(self, 'settings_tab_buttons'):
             self.settings_tab_buttons = []
         
-        # Загружаем настройки асинхронно (не блокируем UI)
-        def load_settings_async():
-            try:
-                self._load_gen_config()
-                self._load_settings()
-            except Exception as e:
-                self.log(f"❌ [SETTINGS] Ошибка загрузки настроек: {e}", "SYSTEM")
-        
-        # Запускаем загрузку в фоне
-        threading.Thread(target=load_settings_async, daemon=True).start()
+        # Settings are loaded directly in tab creation methods
         
         frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
         frame.grid_columnconfigure(0, weight=1)
@@ -3584,12 +3569,12 @@ class ModernLauncher(ctk.CTk):
     
     # CONSOLE
     
-    def log(self, txt, tab="SYSTEM"):
+    def log(self, txt, tab="BOT"):
         """Логирование сообщений в консоль"""
         try:
-            # Используем "SYSTEM" как дефолтную вкладку вместо "Все"
-            if not tab or tab == "Все":
-                tab = "SYSTEM"
+            # Используем "BOT" как дефолтную вкладку
+            if not tab or tab == "SYSTEM" or tab == "Все":
+                tab = "BOT"
             self.log_queue.put((txt, tab))
         except Exception as e:
             # Если очередь недоступна, выводим в stderr
@@ -3768,19 +3753,12 @@ class ModernLauncher(ctk.CTk):
                         import sys
                         print(f"[CONSOLE ERROR] Failed to write to console: {e}", file=sys.stderr, flush=True)
                 
-                # Получаем имя вкладки "Все" (используем сохраненное значение)
-                all_tab_name = getattr(self, 'all_tab_name', t("ui.launcher.logs.all", default="Все"))
-                
-                # Записываем во вкладку "Все" (все логи)
-                if all_tab_name in self.consoles:
-                    write(self.consoles[all_tab_name])
-                else:
-                    if self.consoles:
-                        write(list(self.consoles.values())[0])
-                
                 # Записываем в конкретную вкладку, если она существует
                 if tab and tab in self.consoles:
                     write(self.consoles[tab])
+                elif self.consoles:
+                    # Если вкладка не найдена, записываем в первую доступную
+                    write(list(self.consoles.values())[0])
             except Exception as e:
                 # Логируем ошибки в stderr
                 import sys
