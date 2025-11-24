@@ -1387,15 +1387,15 @@ class ModernLauncher(ctk.CTk):
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_rowconfigure(1, weight=1)
         
-        header = ctk.CTkFrame(frame, fg_color="transparent", height=70)
-        header.grid(row=0, column=0, sticky="ew", padx=30, pady=(30, 25))
+        header = ctk.CTkFrame(frame, fg_color="transparent", height=50)
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(16, 12))
         header.grid_columnconfigure(0, weight=1)
         header.grid_columnconfigure(1, weight=0)
         
         ctk.CTkLabel(
             header,
             text=t("ui.launcher.settings"),
-            font=("Segoe UI", 32, "bold"),
+            font=("Segoe UI", 24, "bold"),
             text_color=COLORS['text']
         ).grid(row=0, column=0, sticky="w")
         
@@ -1411,7 +1411,7 @@ class ModernLauncher(ctk.CTk):
             text_color=COLORS['success'],
             width=120
         )
-        self.save_indicator.pack(side="left", padx=(0, 16))
+        self.save_indicator.pack(side="left", padx=(0, 10))
         
         # Language selector with flags
         lang_flags = {"ru": "🇷🇺", "en": "🇬🇧"}
@@ -1424,30 +1424,30 @@ class ModernLauncher(ctk.CTk):
             values=lang_values,
             variable=self.language_var,
             command=self.on_language_change,
-            font=("Segoe UI", 13),
-            width=150,
-            height=36,
+            font=("Segoe UI", 11),
+            width=130,
+            height=30,
             fg_color=COLORS['surface_light'],
             button_color=COLORS['primary'],
             button_hover_color=COLORS['primary_hover'],
-            corner_radius=8
+            corner_radius=6
         )
         lang_menu.pack(side="left")
 
         # Settings tabs container
         tabs_container = ctk.CTkFrame(frame, fg_color=COLORS['surface'], corner_radius=8)
-        tabs_container.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 24))
+        tabs_container.grid(row=1, column=0, sticky="nsew", padx=16, pady=(0, 16))
         tabs_container.grid_columnconfigure(0, weight=1)
         tabs_container.grid_rowconfigure(1, weight=1)
         
         # Tab buttons row
         tab_buttons_frame = ctk.CTkFrame(tabs_container, fg_color="transparent")
-        tab_buttons_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 0))
+        tab_buttons_frame.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 0))
         tab_buttons_frame.grid_columnconfigure((0, 1, 2), weight=1)
         
         # Content area
         content_area = ctk.CTkFrame(tabs_container, fg_color=COLORS['bg'], corner_radius=8)
-        content_area.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
+        content_area.grid(row=1, column=0, sticky="nsew", padx=6, pady=6)
         content_area.grid_columnconfigure(0, weight=1)
         content_area.grid_rowconfigure(0, weight=1)
         
@@ -1470,11 +1470,11 @@ class ModernLauncher(ctk.CTk):
                 fg_color=COLORS['primary'] if idx == 0 else COLORS['surface_light'],
                 hover_color=COLORS['primary_hover'] if idx == 0 else COLORS['surface'],
                 text_color="white" if idx == 0 else COLORS['text_secondary'],
-                font=("Segoe UI", 13, "bold" if idx == 0 else "normal"),
-                corner_radius=8,
-                height=40
+                font=("Segoe UI", 11, "bold" if idx == 0 else "normal"),
+                corner_radius=6,
+                height=32
             )
-            btn.grid(row=0, column=idx, sticky="ew", padx=4, pady=8)
+            btn.grid(row=0, column=idx, sticky="ew", padx=3, pady=4)
             self.settings_tab_buttons.append((key, btn))
             
             # Create content frame
@@ -1543,7 +1543,7 @@ class ModernLauncher(ctk.CTk):
     def _create_main_settings_tab(self, parent):
         """Создает вкладку основных настроек"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
-        scroll.pack(fill="both", expand=True, padx=20, pady=20)
+        scroll.pack(fill="both", expand=True, padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
         
         # Telegram Bot settings
@@ -1551,34 +1551,34 @@ class ModernLauncher(ctk.CTk):
             ("BOT_TOKEN", t("ui.launcher.settings.bot_token"), t("ui.launcher.settings.bot_token.placeholder", default="Bot token from @BotFather")),
             ("TARGET_CHANNEL_ID", t("ui.launcher.settings.target_channel"), t("ui.launcher.settings.target_channel.placeholder", default="Target channel ID"))
         ])
-        bot_card.pack(fill="x", pady=(0, 15))
+        bot_card.pack(fill="x", pady=(0, 10))
         
         # Debug режим
-        debug_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
-        debug_card.pack(fill="x", pady=(0, 15))
+        debug_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
+        debug_card.pack(fill="x", pady=(0, 10))
         
         ctk.CTkLabel(
             debug_card,
             text=t("ui.launcher.settings.debug", default="Debug"),
-            font=("Segoe UI", 16, "bold"),
+            font=("Segoe UI", 13, "bold"),
             text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=20, pady=(20, 15))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 10))
         
         debug_frame = ctk.CTkFrame(debug_card, fg_color="transparent")
-        debug_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 20))
+        debug_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
         
         ctk.CTkLabel(
             debug_frame,
             text=t("ui.launcher.settings.debug_mode", default="Debug mode"),
-            font=("Segoe UI", 13),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).pack(side="left", padx=(0, 10))
+        ).pack(side="left", padx=(0, 8))
         
         debug_switch = ctk.CTkSwitch(
             debug_frame,
             text=t("ui.launcher.settings.show_debug", default="Show debug messages"),
             variable=self.debug_mode,
-            font=("Segoe UI", 13),
+            font=("Segoe UI", 11),
             onvalue=True,
             offvalue=False
         )
@@ -1595,7 +1595,7 @@ class ModernLauncher(ctk.CTk):
     def _create_text_settings_tab(self, parent):
         """Создает компактную вкладку настроек генерации текста"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
-        scroll.pack(fill="both", expand=True, padx=16, pady=16)
+        scroll.pack(fill="both", expand=True, padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
         
         gen_config = {}
@@ -1607,24 +1607,24 @@ class ModernLauncher(ctk.CTk):
                 pass
         
         # LLM Generation Settings - Compact
-        llm_gen_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
-        llm_gen_card.pack(fill="x", pady=(0, 12))
+        llm_gen_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
+        llm_gen_card.pack(fill="x", pady=(0, 10))
         llm_gen_card.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(
             llm_gen_card,
             text=t("ui.launcher.settings.text_generation", default="Генерация текста"),
-            font=("Segoe UI", 14, "bold"),
+            font=("Segoe UI", 12, "bold"),
             text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=15, pady=(12, 10))
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 8))
         
         # Temperature
         ctk.CTkLabel(
             llm_gen_card,
             text=t("ui.launcher.settings.llm_temp", default="Температура"),
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=15, pady=6)
+        ).grid(row=1, column=0, sticky="w", padx=12, pady=4)
         
         temp_var = tk.DoubleVar(value=float(gen_config.get("llm_temp", 0.7)))
         temp_slider = ctk.CTkSlider(
@@ -1635,16 +1635,16 @@ class ModernLauncher(ctk.CTk):
             variable=temp_var,
             width=250
         )
-        temp_slider.grid(row=1, column=1, sticky="ew", padx=8, pady=6)
+        temp_slider.grid(row=1, column=1, sticky="ew", padx=6, pady=4)
         
         temp_label = ctk.CTkLabel(
             llm_gen_card,
             textvariable=temp_var,
-            font=("Segoe UI", 12, "bold"),
+            font=("Segoe UI", 11, "bold"),
             text_color=COLORS['text'],
-            width=50
+            width=45
         )
-        temp_label.grid(row=1, column=2, padx=(0, 15), pady=6)
+        temp_label.grid(row=1, column=2, padx=(0, 12), pady=4)
         self.llm_temp_var = temp_var
         temp_var.trace_add("write", lambda *args: self._save_generation_config())
         
@@ -1652,57 +1652,58 @@ class ModernLauncher(ctk.CTk):
         ctk.CTkLabel(
             llm_gen_card,
             text=t("ui.launcher.settings.llm_ctx", default="Контекст"),
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=2, column=0, sticky="w", padx=15, pady=6)
+        ).grid(row=2, column=0, sticky="w", padx=12, pady=4)
         
         ctx_var = tk.IntVar(value=int(gen_config.get("llm_ctx", 4096)))
         ctx_entry = ctk.CTkEntry(
             llm_gen_card,
             textvariable=ctx_var,
-            font=("Segoe UI", 12),
-            width=120
+            font=("Segoe UI", 11),
+            width=110,
+            height=28
         )
-        ctx_entry.grid(row=2, column=1, sticky="w", padx=8, pady=6)
+        ctx_entry.grid(row=2, column=1, sticky="w", padx=6, pady=4)
         self.llm_ctx_var = ctx_var
         ctx_var.trace_add("write", lambda *args: self._save_generation_config())
         
         ctk.CTkLabel(
             llm_gen_card,
             text="токенов",
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 10),
             text_color=COLORS['text_muted']
-        ).grid(row=2, column=2, sticky="w", padx=(0, 15), pady=6)
+        ).grid(row=2, column=2, sticky="w", padx=(0, 12), pady=4)
         
         # Кнопка сброса настроек LLM
         reset_llm_frame = ctk.CTkFrame(llm_gen_card, fg_color="transparent")
-        reset_llm_frame.grid(row=3, column=0, columnspan=3, sticky="e", padx=15, pady=(8, 12))
+        reset_llm_frame.grid(row=3, column=0, columnspan=3, sticky="e", padx=12, pady=(6, 10))
         
         reset_llm_btn = ctk.CTkButton(
             reset_llm_frame,
             text=t("ui.launcher.settings.reset_llm", default="🔄 Сбросить на дефолтные"),
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 10),
             fg_color=COLORS['surface_light'],
             hover_color=COLORS['surface'],
             text_color=COLORS['text_secondary'],
-            height=32,
-            corner_radius=8,
+            height=28,
+            corner_radius=6,
             command=self._reset_llm_settings
         )
         reset_llm_btn.pack(side="right")
         
         # LLM Model Management - Unified
-        llm_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
-        llm_card.pack(fill="both", expand=True, pady=(0, 12))
+        llm_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
+        llm_card.pack(fill="both", expand=True, pady=(0, 10))
         llm_card.grid_columnconfigure(0, weight=1)
         llm_card.grid_rowconfigure(1, weight=1)
         
         ctk.CTkLabel(
             llm_card,
             text=t("ui.launcher.settings.llm_model_management", default="Модели LLM"),
-            font=("Segoe UI", 14, "bold"),
+            font=("Segoe UI", 12, "bold"),
             text_color=COLORS['text']
-        ).grid(row=0, column=0, sticky="w", padx=15, pady=(12, 10))
+        ).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 8))
         
         # Container for unified models tab content
         models_content = ctk.CTkFrame(llm_card, fg_color="transparent")
@@ -1750,7 +1751,7 @@ class ModernLauncher(ctk.CTk):
     def _create_image_settings_tab(self, parent):
         """Создает вкладку настроек генерации изображений с Discord-стилем"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
-        scroll.pack(fill="both", expand=True, padx=16, pady=16)
+        scroll.pack(fill="both", expand=True, padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
         
         gen_config = {}
@@ -1763,34 +1764,34 @@ class ModernLauncher(ctk.CTk):
         
         # Card 1: Параметры генерации
         gen_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        gen_card.pack(fill="x", pady=(0, 16))
+        gen_card.pack(fill="x", pady=(0, 10))
         gen_card.grid_columnconfigure(1, weight=1)
         
         card_header = ctk.CTkFrame(gen_card, fg_color="transparent")
-        card_header.pack(fill="x", padx=20, pady=(20, 16))
+        card_header.pack(fill="x", padx=14, pady=(12, 10))
         
         ctk.CTkLabel(
             card_header,
             text="🎨 " + t("ui.launcher.settings.image_generation", default="Параметры генерации"),
-            font=("Segoe UI", 18, "bold"),
+            font=("Segoe UI", 13, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
         card_content = ctk.CTkFrame(gen_card, fg_color="transparent")
-        card_content.pack(fill="x", padx=20, pady=(0, 20))
+        card_content.pack(fill="x", padx=14, pady=(0, 12))
         card_content.grid_columnconfigure(1, weight=1)
         
         # Steps with live value
         ctk.CTkLabel(
             card_content,
             text=t("ui.launcher.settings.sd_steps", default="Количество шагов"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="w", padx=(0, 16), pady=12)
+        ).grid(row=0, column=0, sticky="w", padx=(0, 12), pady=8)
         
         steps_var = tk.IntVar(value=int(gen_config.get("sd_steps", 30)))
         steps_frame = ctk.CTkFrame(card_content, fg_color="transparent")
-        steps_frame.grid(row=0, column=1, sticky="ew", pady=12)
+        steps_frame.grid(row=0, column=1, sticky="ew", pady=8)
         steps_frame.grid_columnconfigure(0, weight=1)
         
         steps_slider = ctk.CTkSlider(
@@ -1803,16 +1804,16 @@ class ModernLauncher(ctk.CTk):
             button_color=COLORS['primary'],
             button_hover_color=COLORS['primary_hover']
         )
-        steps_slider.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        steps_slider.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         
         steps_label = ctk.CTkLabel(
             steps_frame,
             textvariable=steps_var,
-            font=("Segoe UI", 14, "bold"),
+            font=("Segoe UI", 11, "bold"),
             text_color=COLORS['primary'],
-            width=60,
+            width=50,
             fg_color=COLORS['surface_light'],
-            corner_radius=8
+            corner_radius=6
         )
         steps_label.grid(row=0, column=1)
         self.sd_steps_var = steps_var
@@ -1822,13 +1823,13 @@ class ModernLauncher(ctk.CTk):
         ctk.CTkLabel(
             card_content,
             text=t("ui.launcher.settings.sd_cfg", default="CFG Scale"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=12)
+        ).grid(row=1, column=0, sticky="w", padx=(0, 12), pady=8)
         
         cfg_var = tk.DoubleVar(value=float(gen_config.get("sd_cfg", 6.0)))
         cfg_frame = ctk.CTkFrame(card_content, fg_color="transparent")
-        cfg_frame.grid(row=1, column=1, sticky="ew", pady=12)
+        cfg_frame.grid(row=1, column=1, sticky="ew", pady=8)
         cfg_frame.grid_columnconfigure(0, weight=1)
         
         cfg_slider = ctk.CTkSlider(
@@ -1841,16 +1842,16 @@ class ModernLauncher(ctk.CTk):
             button_color=COLORS['primary'],
             button_hover_color=COLORS['primary_hover']
         )
-        cfg_slider.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+        cfg_slider.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         
         cfg_label = ctk.CTkLabel(
             cfg_frame,
             textvariable=cfg_var,
-            font=("Segoe UI", 14, "bold"),
+            font=("Segoe UI", 11, "bold"),
             text_color=COLORS['primary'],
-            width=60,
+            width=50,
             fg_color=COLORS['surface_light'],
-            corner_radius=8
+            corner_radius=6
         )
         cfg_label.grid(row=0, column=1)
         self.sd_cfg_var = cfg_var
@@ -1858,42 +1859,43 @@ class ModernLauncher(ctk.CTk):
         
         # Card 2: Размер изображения
         size_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        size_card.pack(fill="x", pady=(0, 16))
+        size_card.pack(fill="x", pady=(0, 10))
         size_card.grid_columnconfigure(1, weight=1)
         
         size_header = ctk.CTkFrame(size_card, fg_color="transparent")
-        size_header.pack(fill="x", padx=20, pady=(20, 16))
+        size_header.pack(fill="x", padx=14, pady=(12, 10))
         
         ctk.CTkLabel(
             size_header,
             text="📐 " + t("ui.launcher.settings.image_size", default="Размер изображения"),
-            font=("Segoe UI", 18, "bold"),
+            font=("Segoe UI", 13, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
         size_content = ctk.CTkFrame(size_card, fg_color="transparent")
-        size_content.pack(fill="x", padx=20, pady=(0, 20))
+        size_content.pack(fill="x", padx=14, pady=(0, 12))
         size_content.grid_columnconfigure((1, 3), weight=1)
         
         # Width
         ctk.CTkLabel(
             size_content,
             text=t("ui.launcher.settings.sd_width", default="Ширина"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="w", padx=(0, 12), pady=12)
+        ).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=8)
         
         width_var = tk.IntVar(value=int(gen_config.get("sd_width", 896)))
         width_entry = ctk.CTkEntry(
             size_content,
             textvariable=width_var,
-            font=("Segoe UI", 13),
-            width=140,
+            font=("Segoe UI", 11),
+            width=120,
+            height=28,
             fg_color=COLORS['bg'],
             border_color=COLORS['border'],
-            corner_radius=8
+            corner_radius=6
         )
-        width_entry.grid(row=0, column=1, sticky="w", padx=(0, 24), pady=12)
+        width_entry.grid(row=0, column=1, sticky="w", padx=(0, 16), pady=8)
         self.sd_width_var = width_var
         width_var.trace_add("write", lambda *args: self._save_generation_config())
         
@@ -1901,50 +1903,51 @@ class ModernLauncher(ctk.CTk):
         ctk.CTkLabel(
             size_content,
             text=t("ui.launcher.settings.sd_height", default="Высота"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=2, sticky="w", padx=(0, 12), pady=12)
+        ).grid(row=0, column=2, sticky="w", padx=(0, 10), pady=8)
         
         height_var = tk.IntVar(value=int(gen_config.get("sd_height", 1152)))
         height_entry = ctk.CTkEntry(
             size_content,
             textvariable=height_var,
-            font=("Segoe UI", 13),
-            width=140,
+            font=("Segoe UI", 11),
+            width=120,
+            height=28,
             fg_color=COLORS['bg'],
             border_color=COLORS['border'],
-            corner_radius=8
+            corner_radius=6
         )
-        height_entry.grid(row=0, column=3, sticky="w", pady=12)
+        height_entry.grid(row=0, column=3, sticky="w", pady=8)
         self.sd_height_var = height_var
         height_var.trace_add("write", lambda *args: self._save_generation_config())
         
         # Card 3: Параметры сэмплинга
         sampling_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        sampling_card.pack(fill="x", pady=(0, 16))
+        sampling_card.pack(fill="x", pady=(0, 10))
         sampling_card.grid_columnconfigure(1, weight=1)
         
         sampling_header = ctk.CTkFrame(sampling_card, fg_color="transparent")
-        sampling_header.pack(fill="x", padx=20, pady=(20, 16))
+        sampling_header.pack(fill="x", padx=14, pady=(12, 10))
         
         ctk.CTkLabel(
             sampling_header,
             text="⚙️ " + t("ui.launcher.settings.sampling", default="Параметры сэмплинга"),
-            font=("Segoe UI", 18, "bold"),
+            font=("Segoe UI", 13, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
         sampling_content = ctk.CTkFrame(sampling_card, fg_color="transparent")
-        sampling_content.pack(fill="x", padx=20, pady=(0, 20))
+        sampling_content.pack(fill="x", padx=14, pady=(0, 12))
         sampling_content.grid_columnconfigure(1, weight=1)
         
         # Sampler
         ctk.CTkLabel(
             sampling_content,
             text=t("ui.launcher.settings.sd_sampler", default="Семплер"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="w", padx=(0, 16), pady=12)
+        ).grid(row=0, column=0, sticky="w", padx=(0, 12), pady=8)
         
         sampler_options = ["DPM++ 2M", "DPM++ 2M Karras", "DPM++ SDE", "DPM++ SDE Karras", "Euler", "Euler a", "LMS", "LMS Karras", "DDIM", "PLMS"]
         sampler_var = tk.StringVar(value=gen_config.get("sd_sampler", "DPM++ 2M"))
@@ -1952,13 +1955,14 @@ class ModernLauncher(ctk.CTk):
             sampling_content,
             values=sampler_options,
             variable=sampler_var,
-            width=220,
-            font=("Segoe UI", 13),
+            width=200,
+            height=28,
+            font=("Segoe UI", 11),
             fg_color=COLORS['surface_light'],
             button_color=COLORS['primary'],
             button_hover_color=COLORS['primary_hover']
         )
-        sampler_menu.grid(row=0, column=1, sticky="w", pady=12)
+        sampler_menu.grid(row=0, column=1, sticky="w", pady=8)
         self.sd_sampler_var = sampler_var
         sampler_var.trace_add("write", lambda *args: self._save_generation_config())
         
@@ -1966,9 +1970,9 @@ class ModernLauncher(ctk.CTk):
         ctk.CTkLabel(
             sampling_content,
             text=t("ui.launcher.settings.sd_scheduler", default="Планировщик"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=(0, 16), pady=12)
+        ).grid(row=1, column=0, sticky="w", padx=(0, 12), pady=8)
         
         scheduler_options = ["Karras", "Exponential", "SGM Uniform", "Simple", "DDIM Uniform"]
         scheduler_var = tk.StringVar(value=gen_config.get("sd_scheduler", "Karras"))
@@ -1976,55 +1980,56 @@ class ModernLauncher(ctk.CTk):
             sampling_content,
             values=scheduler_options,
             variable=scheduler_var,
-            width=220,
-            font=("Segoe UI", 13),
+            width=200,
+            height=28,
+            font=("Segoe UI", 11),
             fg_color=COLORS['surface_light'],
             button_color=COLORS['primary'],
             button_hover_color=COLORS['primary_hover']
         )
-        scheduler_menu.grid(row=1, column=1, sticky="w", pady=12)
+        scheduler_menu.grid(row=1, column=1, sticky="w", pady=8)
         self.sd_scheduler_var = scheduler_var
         scheduler_var.trace_add("write", lambda *args: self._save_generation_config())
         
         # Card 4: Промпты
         prompts_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        prompts_card.pack(fill="x", pady=(0, 16))
+        prompts_card.pack(fill="x", pady=(0, 10))
         prompts_card.grid_columnconfigure(1, weight=1)
         
         prompts_header = ctk.CTkFrame(prompts_card, fg_color="transparent")
-        prompts_header.pack(fill="x", padx=20, pady=(20, 16))
+        prompts_header.pack(fill="x", padx=14, pady=(12, 10))
         
         ctk.CTkLabel(
             prompts_header,
             text="✍️ " + t("ui.launcher.settings.prompts", default="Промпты"),
-            font=("Segoe UI", 18, "bold"),
+            font=("Segoe UI", 13, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
         prompts_content = ctk.CTkFrame(prompts_card, fg_color="transparent")
-        prompts_content.pack(fill="x", padx=20, pady=(0, 20))
+        prompts_content.pack(fill="x", padx=14, pady=(0, 12))
         prompts_content.grid_columnconfigure(1, weight=1)
         
         # Positive Prompt Prefix
         ctk.CTkLabel(
             prompts_content,
             text=t("ui.launcher.settings.sd_positive_prefix", default="Префикс позитивного промпта"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="nw", padx=(0, 16), pady=12)
+        ).grid(row=0, column=0, sticky="nw", padx=(0, 12), pady=8)
         
         positive_prefix_var = tk.StringVar(value=gen_config.get("sd_positive_prefix", "score_9, score_8_up, score_7_up, source_anime, "))
         positive_prefix_entry = ctk.CTkTextbox(
             prompts_content,
-            height=70,
-            font=("Segoe UI", 12),
+            height=60,
+            font=("Segoe UI", 11),
             wrap="word",
             fg_color=COLORS['bg'],
             border_color=COLORS['border'],
-            corner_radius=8
+            corner_radius=6
         )
         positive_prefix_entry.insert("1.0", positive_prefix_var.get())
-        positive_prefix_entry.grid(row=0, column=1, sticky="ew", pady=12)
+        positive_prefix_entry.grid(row=0, column=1, sticky="ew", pady=8)
         self.sd_positive_prefix_entry = positive_prefix_entry
         def save_positive_prefix(*args):
             self.after(500, self._save_generation_config())
@@ -2034,109 +2039,109 @@ class ModernLauncher(ctk.CTk):
         ctk.CTkLabel(
             prompts_content,
             text=t("ui.launcher.settings.sd_negative_prompt", default="Негативный промпт"),
-            font=("Segoe UI", 14),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="nw", padx=(0, 16), pady=12)
+        ).grid(row=1, column=0, sticky="nw", padx=(0, 12), pady=8)
         
         negative_prompt_default = gen_config.get("sd_negative_prompt", "score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs, text, username, artist name")
         negative_prompt_entry = ctk.CTkTextbox(
             prompts_content,
-            height=90,
-            font=("Segoe UI", 12),
+            height=75,
+            font=("Segoe UI", 11),
             wrap="word",
             fg_color=COLORS['bg'],
             border_color=COLORS['border'],
-            corner_radius=8
+            corner_radius=6
         )
         negative_prompt_entry.insert("1.0", negative_prompt_default)
-        negative_prompt_entry.grid(row=1, column=1, sticky="ew", pady=12)
+        negative_prompt_entry.grid(row=1, column=1, sticky="ew", pady=8)
         self.sd_negative_prompt_entry = negative_prompt_entry
         def save_negative_prompt(*args):
             self.after(500, self._save_generation_config())
         negative_prompt_entry.bind("<KeyRelease>", save_negative_prompt)
         
         # Кнопка сброса настроек SD
-        reset_sd_frame = ctk.CTkFrame(card_content, fg_color="transparent")
-        reset_sd_frame.grid(row=10, column=0, columnspan=2, sticky="e", padx=(0, 20), pady=(8, 0))
+        reset_sd_frame = ctk.CTkFrame(prompts_content, fg_color="transparent")
+        reset_sd_frame.grid(row=2, column=0, columnspan=2, sticky="e", padx=(0, 14), pady=(6, 0))
         
         reset_sd_btn = ctk.CTkButton(
             reset_sd_frame,
             text=t("ui.launcher.settings.reset_sd", default="🔄 Сбросить на дефолтные"),
-            font=("Segoe UI", 12),
+            font=("Segoe UI", 10),
             fg_color=COLORS['surface_light'],
             hover_color=COLORS['surface'],
             text_color=COLORS['text_secondary'],
-            height=32,
-            corner_radius=8,
+            height=28,
+            corner_radius=6,
             command=self._reset_sd_settings
         )
         reset_sd_btn.pack(side="right")
         
         # Card 5: Управление SD
         delete_sd_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        delete_sd_card.pack(fill="x", pady=(0, 16))
+        delete_sd_card.pack(fill="x", pady=(0, 10))
         
         delete_sd_header = ctk.CTkFrame(delete_sd_card, fg_color="transparent")
-        delete_sd_header.pack(fill="x", padx=20, pady=(20, 16))
+        delete_sd_header.pack(fill="x", padx=14, pady=(12, 10))
         
         ctk.CTkLabel(
             delete_sd_header,
             text="🗑️ " + t("ui.launcher.settings.sd_management", default="Управление Stable Diffusion"),
-            font=("Segoe UI", 18, "bold"),
+            font=("Segoe UI", 13, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
         delete_sd_content = ctk.CTkFrame(delete_sd_card, fg_color="transparent")
-        delete_sd_content.pack(fill="x", padx=20, pady=(0, 20))
+        delete_sd_content.pack(fill="x", padx=14, pady=(0, 12))
         delete_sd_content.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(
             delete_sd_content,
             text=t("ui.launcher.settings.delete_sd_description", default="Удалить Stable Diffusion и все связанные файлы"),
-            font=("Segoe UI", 13),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="w", padx=(0, 16), pady=12)
+        ).grid(row=0, column=0, sticky="w", padx=(0, 12), pady=8)
         
         delete_btn = ctk.CTkButton(
             delete_sd_content,
             text="🗑️ Удалить SD",
-            width=140,
-            height=40,
+            width=120,
+            height=32,
             command=self._delete_sd,
             fg_color=COLORS['danger'],
             hover_color="#dc2626",
-            font=("Segoe UI", 13, "bold"),
-            corner_radius=8
+            font=("Segoe UI", 11, "bold"),
+            corner_radius=6
         )
-        delete_btn.grid(row=0, column=1, sticky="e", pady=12)
+        delete_btn.grid(row=0, column=1, sticky="e", pady=8)
         
         # Настройки модели SD
-        model_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
-        model_card.pack(fill="x", pady=(0, 15))
+        model_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
+        model_card.pack(fill="x", pady=(0, 10))
         model_card.grid_columnconfigure(1, weight=1)
         
         ctk.CTkLabel(
             model_card,
             text=t("ui.launcher.settings.sd_model"),
-            font=("Segoe UI", 16, "bold"),
+            font=("Segoe UI", 12, "bold"),
             text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=20, pady=(20, 15))
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 8))
         
         ctk.CTkLabel(
             model_card,
             text=t("ui.launcher.settings.sd_model_url"),
-            font=("Segoe UI", 13),
+            font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=20, pady=(0, 10))
+        ).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 8))
         
         # Поле для ссылки на модель
         model_url_entry = ctk.CTkEntry(
             model_card,
             placeholder_text="https://civitai.com/api/download/models/...",
-            font=("Segoe UI", 12),
-            height=35
+            font=("Segoe UI", 11),
+            height=28
         )
-        model_url_entry.grid(row=1, column=1, sticky="ew", padx=(10, 10), pady=(0, 10))
+        model_url_entry.grid(row=1, column=1, sticky="ew", padx=(8, 12), pady=(0, 12))
         
         # Загружаем сохраненную ссылку
         try:
