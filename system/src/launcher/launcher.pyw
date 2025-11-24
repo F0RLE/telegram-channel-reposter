@@ -2406,6 +2406,7 @@ class ModernLauncher(ctk.CTk):
             return "break"  # Предотвращаем стандартную обработку
         
         self.entry_chan.bind("<Control-v>", paste_from_clipboard)
+        self.entry_chan.bind("<Shift-Insert>", paste_from_clipboard)  # Также поддерживаем Shift+Insert
         self.entry_chan.bind("<Button-1>", lambda e: self.entry_chan.focus_set())  # Фокус при клике
         
         add_btn = ctk.CTkButton(
