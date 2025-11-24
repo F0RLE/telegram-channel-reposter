@@ -147,6 +147,9 @@ DIR_TEMP = os.path.join(DATA_ROOT, "temp")
 PYTHON_EXE = os.path.join(ENV_DIR, "python", "python.exe")
 GIT_CMD = os.path.join(ENV_DIR, "git", "cmd", "git.exe")
 
+# Define FILE_ENV early so it can be used in functions
+FILE_ENV = os.path.join(DIR_CONFIGS, ".env")
+
 # Universal folder for all LLM models (GGUF and Ollama)
 OLLAMA_DIR = os.path.join(DIR_ENGINE, "ollama")
 OLLAMA_EXE = os.path.join(OLLAMA_DIR, "ollama.exe")
@@ -172,8 +175,6 @@ SD_DIR = os.path.join(DIR_ENGINE, "stable-diffusion-webui-reforge")
 MODELS_SD_DIR = os.path.join(SD_DIR, "models", "Stable-diffusion")
 AD_MODELS_DIR = os.path.join(SD_DIR, "models", "adetailer")
 ADETAILER_DIR = os.path.join(SD_DIR, "extensions", "adetailer")
-
-FILE_ENV = os.path.join(DIR_CONFIGS, ".env")
 FILE_CHANNELS = os.path.join(DIR_CONFIGS, "channels.json")
 FILE_GEN_CONFIG = os.path.join(DIR_CONFIGS, "generation_config.json")
 FILE_PID = os.path.join(DIR_TEMP, "launcher.pid")
