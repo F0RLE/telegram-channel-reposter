@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 
-from config.settings import TELEGRAM_CHANNELS, reload_channels
+from config.settings import TELEGRAM_CHANNELS, reload_channels, reload_channels
 from core.utils import load_published_posts
 
 logger = logging.getLogger(__name__)
@@ -187,6 +187,8 @@ async def aggregate_topic_posts(
     """
     Main function. Scrapes all channels in the topic concurrently.
     """
+    # Перезагружаем каналы для актуальности
+    reload_channels()
     channels = TELEGRAM_CHANNELS.get(topic_key, [])
     if not channels:
         return []
