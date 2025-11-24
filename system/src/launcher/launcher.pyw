@@ -3236,8 +3236,9 @@ class ModernLauncher(ctk.CTk):
             self.focus_force()
             self.bind("<Escape>", lambda e: self.cancel())
             
-            # Центрируем и показываем
-            self.after(50, self._center_and_show)
+            # Показываем окно сразу, затем центрируем
+            self.deiconify()
+            self.after(100, self._center_and_show)
             
             # Фокус на кнопке отмены (безопаснее)
             self.after(200, lambda: cancel_btn.focus())
