@@ -189,42 +189,49 @@ async def rewrite_text(post_text: str) -> Optional[str]:
     """
     Rewrites text to make it engaging.
     Expected format: "Title ||| Body"
+    Matches old working version.
     
     Args:
         post_text: Original text to rewrite
         
     Returns:
-        Rewritten text in HTML format with bold title, or original text on error
+        Rewritten text with title and body separated by newlines, or original text on error
     """
     # Перезагружаем настройки перед каждым запросом (на случай изменения в лаунчере)
     settings = _reload_rewrite_settings()
     
-    # Use cliches from settings
-    CLICHES = [re.escape(c.strip()) for c in settings["cliches"] if c.strip()] if settings["cliches"] else []
+    # Use cliches from settings, but fallback to old defaults
+    if settings["cliches"]:
+        CLICHES = [re.escape(c.strip()) for c in settings["cliches"] if c.strip()]
+    else:
+        CLICHES = [r"а вы знали", r"не может быть", r"ого", r"да ну", r"и такие виды"]
 
-    # Use system prompt from settings
+    # Use system prompt from settings, but fallback to old working version
     system = settings["system_prompt"]
     if not system or not system.strip():
-        logger.warning("⚠️ Системный промпт пуст, используем значение по умолчанию")
-        system = LLM_REWRITE_SYSTEM_PROMPT
+        system = (
+            "Ты — талантливый редактор. Твоя задача — переписать скучный текст, сделав его реалистичным, но очень интересным и цепляющим. "
+            "Самое главное: используй ТОЛЬКО КОНКРЕТИКУ, удали любую 'воду' и вводные фразы. "
+            "Результат должен состоять из **шокирующего, прямого и цепляющего Заголовка** и короткого основного текста. "
+            "Твой ответ должен быть ТОЛЬКО в этом формате: `Заголовок ||| Короткий и конкретный основной текст`"
+        )
 
-    # Use user prompt from settings, replacing {text} placeholder
+    # Use user prompt from settings, but fallback to old simple version
     user_prompt_template = settings["user_prompt"]
     if not user_prompt_template or not user_prompt_template.strip():
-        logger.warning("⚠️ Пользовательский промпт пуст, используем значение по умолчанию")
-        user_prompt_template = LLM_REWRITE_USER_PROMPT
+        prompt = f"Перепиши лаконично:\n\n{post_text.strip()}"
+    else:
+        prompt = user_prompt_template.replace("{text}", post_text.strip())
     
-    prompt = user_prompt_template.replace("{text}", post_text.strip())
+    # Use temperature from settings, but default to 0.85 (old working value)
+    temp = LLM_TEMP if LLM_TEMP > 0 else 0.85
     
-    # Логируем используемые промпты для отладки
     logger.info(f"📝 Переписывание текста (длина: {len(post_text)} символов)")
     logger.debug(f"📝 Системный промпт: {system[:200]}...")
     logger.debug(f"📝 Пользовательский промпт: {prompt[:200]}...")
-    logger.debug(f"📝 Клише для удаления: {CLICHES}")
+    logger.debug(f"📝 Температура: {temp}")
     
-    # Use temperature from settings
-    payload = _build_payload(prompt, system, temp=LLM_TEMP)
-    logger.debug(f"📤 Отправка запроса к LLM: model={payload['model']}, temp={payload['temperature']}")
+    payload = _build_payload(prompt, system, temp=temp)
     
     from core.monitoring import record_api_call, record_error
     import time
@@ -244,34 +251,28 @@ async def rewrite_text(post_text: str) -> Optional[str]:
     
     record_api_call("llm", True, duration)
 
-    # Post-processing
+    # Post-processing (как в старой версии)
     text = res
-    if CLICHES:
-        original_text = text
-        for c in CLICHES:
-            text = re.sub(c, '', text, flags=re.IGNORECASE)
-        if text != original_text:
-            logger.debug(f"🧹 Удалены клише из текста")
+    for c in CLICHES:
+        text = re.sub(c, '', text, flags=re.IGNORECASE)
 
-    # Remove system artifacts, but KEEP markdown (*, `) for HTML parser
-    text = re.sub(r"[#@][a-zA-Z0-9_]+", '', text) # Remove hashtags/mentions
-    text = text.replace('«', '"').replace('»', '"').strip()
+    # Удаляем все markdown и артефакты (как в старой версии)
+    text = re.sub(r"[#@][a-zA-Z0-9_]+", '', text)
+    text = text.replace('**', '').replace('*', '').replace('`', '').replace('«', '').replace('»', '').strip()
 
     # Try splitting by separator
     parts = text.split('|||', 1)
     
-    if len(parts) == 2:
-        title = parts[0].strip()
-        body = parts[1].strip()
-        # Format: Bold Title + Body
-        return f"<b>{title}</b>\n\n{body}"
-    else:
-        # Fallback: Try splitting by first double newline
-        parts = text.split('\n\n', 1)
-        if len(parts) == 2:
-             return f"<b>{parts[0].strip()}</b>\n\n{parts[1].strip()}"
-        
+    if len(parts) != 2:
+        # Если нет разделителя, возвращаем весь текст (как в старой версии)
         return text.strip()
+        
+    title = parts[0].strip()
+    body = parts[1].strip()
+
+    # Возвращаем простой текст без HTML (как в старой версии)
+    # HTML форматирование будет добавлено в render_preview_post если нужно
+    return f"{title}\n\n{body}"
 
 # ==========================================
 # 3. PROMPT ENGINEERING
