@@ -36,7 +36,7 @@ class Updater:
     def _load_version(self) -> dict:
         """Load current version info"""
         default = {
-            "version": "1.0.0",
+            "version": "1.1.0",
             "commit": None,
             "updated_at": None
         }
@@ -244,12 +244,12 @@ class Updater:
     def get_current_version(self) -> str:
         """Get current version string"""
         commit = self.current_version.get('commit', 'unknown')
-        return f"v{self.current_version.get('version', '1.0.0')} ({commit[:7] if commit else '?'})"
+        return f"v{self.current_version.get('version', '1.1.0')} ({commit[:7] if commit else '?'})"
     
     def mark_as_updated(self, commit: str = None):
         """Mark current version as updated"""
         self._save_version(
-            self.current_version.get('version', '1.0.0'),
+            self.current_version.get('version', '1.1.0'),
             commit or self.latest_commit
         )
         self.update_available = False

@@ -3480,7 +3480,7 @@ class ModernLauncher(ctk.CTk):
         update_frame = ctk.CTkFrame(header, fg_color="transparent")
         update_frame.grid(row=0, column=1, sticky="e")
         
-        version_text = self.updater.get_current_version() if self.updater else "v1.0.0"
+        version_text = self.updater.get_current_version() if self.updater else "v1.1.0"
         self.version_label = ctk.CTkLabel(
             update_frame,
             text=f"Версия: {version_text}",
