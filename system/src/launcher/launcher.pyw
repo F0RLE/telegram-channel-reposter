@@ -3200,15 +3200,23 @@ class ModernLauncher(ctk.CTk):
     def _get_llm_model_from_settings(self):
         """Получает выбранную модель LLM из настроек"""
         try:
-            from dotenv import get_key  # type: ignore
+            from dotenv import get_key, set_key  # type: ignore
             model_str = get_key(FILE_ENV, "SELECTED_LLM_MODEL")
             if not model_str:
-                return None
+                # Устанавливаем модель по умолчанию при первом запуске
+                default_model = "ollama:gemma3:4b"
+                set_key(FILE_ENV, "SELECTED_LLM_MODEL", default_model)
+                self.log(t("ui.launcher.log.model_set_default", default="✅ [LLM] Установлена модель по умолчанию: gemma3:4b"), "LLM")
+                model_str = default_model
             
             # Parse model string: "type:name:path" or "type:name"
             parts = model_str.split(":", 2)
             if len(parts) < 2:
-                return None
+                # Если формат неправильный, устанавливаем модель по умолчанию
+                default_model = "ollama:gemma3:4b"
+                set_key(FILE_ENV, "SELECTED_LLM_MODEL", default_model)
+                self.log(t("ui.launcher.log.model_set_default", default="✅ [LLM] Установлена модель по умолчанию: gemma3:4b"), "LLM")
+                parts = default_model.split(":", 2)
             
             model_type = parts[0]
             model_name = parts[1]
@@ -3221,7 +3229,12 @@ class ModernLauncher(ctk.CTk):
             }
         except Exception as e:
             self.log(t("ui.launcher.log.model_load_error", default="❌ [LLM] Ошибка загрузки модели из настроек: {error}", error=str(e)), "LLM")
-            return None
+            # В случае ошибки возвращаем модель по умолчанию
+            return {
+                'name': 'gemma3:4b',
+                'type': 'ollama',
+                'path': None
+            }
     
     def service_status_loop(self):
         # Проверяем, что service_manager инициализирован
@@ -5577,10 +5590,14 @@ class ModernLauncher(ctk.CTk):
             # Сбрасываем LLM настройки
             default_llm_temp = 0.7
             default_llm_ctx = 4096
+            default_llm_model = "ollama:gemma3:4b"  # Модель по умолчанию
             if hasattr(self, 'llm_temp_var'):
                 self.llm_temp_var.set(default_llm_temp)
             if hasattr(self, 'llm_ctx_var'):
                 self.llm_ctx_var.set(default_llm_ctx)
+            
+            # Устанавливаем модель по умолчанию
+            set_key(FILE_ENV, "SELECTED_LLM_MODEL", default_llm_model)
             
             # Сбрасываем SD настройки
             default_sd_steps = 30

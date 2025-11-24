@@ -124,7 +124,7 @@ if os.path.exists(GEN_CONFIG_PATH):
 OLLAMA_API_BASE = "http://127.0.0.1:11434/v1"  # Стандартный порт Ollama
 
 # Load model name from .env file (SELECTED_LLM_MODEL format: "type:name" or "type:name:path")
-OLLAMA_MODEL = "local-model"  # Default fallback
+OLLAMA_MODEL = "gemma3:4b"  # Default fallback
 try:
     from dotenv import get_key
     selected_model = get_key(ENV_PATH, "SELECTED_LLM_MODEL")
@@ -138,7 +138,7 @@ try:
         else:
             logging.warning(f"⚠️ Invalid SELECTED_LLM_MODEL format: {selected_model}, using default")
     else:
-        logging.info("ℹ️ SELECTED_LLM_MODEL not set, using default: local-model")
+        logging.info("ℹ️ SELECTED_LLM_MODEL not set, using default: gemma3:4b")
 except Exception as e:
     logging.warning(f"⚠️ Failed to load SELECTED_LLM_MODEL from .env: {e}, using default")
 
