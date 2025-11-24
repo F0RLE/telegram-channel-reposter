@@ -287,7 +287,11 @@ async def create_image_prompt(post_text: str) -> Optional[str]:
     Returns:
         Generated prompt string or None on error
     """
-    if not post_text: return None
+    if not post_text:
+        logger.warning("⚠️ Пустой текст для генерации промпта изображения")
+        return None
+
+    logger.info(f"🎨 Генерация промпта для изображения из текста (длина: {len(post_text)} символов)")
 
     system = (
         "You are a Stable Diffusion prompt engineer. "
@@ -302,16 +306,29 @@ async def create_image_prompt(post_text: str) -> Optional[str]:
     instruction = f"Text:\n{post_text[:1000]}\n\nCreate visual prompt:"
     payload = _build_payload(instruction, system, temp=0.7)
     
+    logger.debug(f"📤 Отправка запроса на генерацию промпта: {instruction[:200]}...")
+    
     start_time = time.time()
     res = await _safe_request(payload)
     duration = time.time() - start_time
     record_api_call("llm", res is not None, duration)
     
-    if not res: return None
+    if not res:
+        logger.error("❌ LLM не вернул промпт для изображения")
+        return None
+
+    logger.debug(f"📥 Получен ответ от LLM для промпта: {res[:200]}...")
 
     # Cleanup
+    original_res = res
     res = re.sub(r'^(prompt:|result:)\s*', '', res, flags=re.I)
-    return res.replace('\n', ' ').replace('"', '').strip()
+    res = res.replace('\n', ' ').replace('"', '').strip()
+    
+    if res != original_res:
+        logger.debug(f"🧹 Очищен промпт: {res[:200]}...")
+    
+    logger.info(f"✅ Сгенерирован промпт для изображения: {res[:100]}...")
+    return res
 
 # ==========================================
 # 4. TRANSLATION

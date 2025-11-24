@@ -26,7 +26,7 @@ from aiogram.exceptions import TelegramAPIError
 from core.fsm_states import FormState
 from core.animation import animate_message
 from core.utils import load_published_posts, save_published_posts, safe_delete_message
-from modules.llm import rewrite_text, translate_prompt_to_english
+from modules.llm import rewrite_text, translate_prompt_to_english, create_image_prompt
 from modules.image_gen import async_generate_stable_diffusion_image
 from config.settings import TARGET_CHANNEL_ID
 
@@ -614,27 +614,54 @@ async def cb_remove_media(cb: CallbackQuery, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data == "generate_image")
 async def cb_gen_img(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    """Обработчик генерации изображения"""
+    # Сразу отвечаем на callback, чтобы кнопка не задерживалась
+    await cb.answer()
+    
     d = await state.get_data()
     prompt = d.get('image_prompt')
     
+    # Если промпт не сохранен, генерируем его из текста
     if not prompt:
         txt = d.get('text') or d.get('raw_text')
-        if txt: 
-            prompt = await translate_prompt_to_english(txt[:1000])
+        if txt:
+            # Сначала генерируем промпт из текста с помощью LLM
+            logger.info(f"🎨 Генерация промпта для изображения из текста (длина: {len(txt)} символов)")
+            prompt = await create_image_prompt(txt)
+            
+            # Если генерация не удалась, используем простой перевод
+            if not prompt:
+                logger.warning("⚠️ Не удалось сгенерировать промпт, используем перевод")
+                prompt = await translate_prompt_to_english(txt[:1000])
+        else:
+            await cb.answer("❌ Нет текста для генерации промпта.", show_alert=True)
+            return
     
-    if not prompt: return await cb.answer("Нет текста для промпта.", show_alert=True)
-
+    if not prompt:
+        await cb.answer("❌ Не удалось создать промпт для изображения.", show_alert=True)
+        return
+    
+    logger.info(f"✅ Используется промпт для генерации: {prompt[:100]}...")
+    
     mid = cb.message.message_id
-    await bot.edit_message_text(
-        text="🎨 <b>Stable Diffusion:</b> Рисую...", 
-        chat_id=cb.message.chat.id, 
-        message_id=mid
-    )
-    task = asyncio.create_task(animate_message(bot, cb.message.chat.id, mid, "Генерация"))
+    chat_id = cb.message.chat.id
+    
+    # Обновляем сообщение с индикатором загрузки
+    try:
+        await bot.edit_message_text(
+            text="🎨 <b>Stable Diffusion:</b> Генерирую промпт и рисую...", 
+            chat_id=chat_id, 
+            message_id=mid,
+            parse_mode="HTML"
+        )
+    except:
+        pass
+    
+    task = asyncio.create_task(animate_message(bot, chat_id, mid, "Генерация"))
 
     try:
         img_bytes, _ = await async_generate_stable_diffusion_image(
-            bot, cb.message.chat.id, mid, prompt, cb.from_user.id, task
+            bot, chat_id, mid, prompt, cb.from_user.id, task
         )
         if img_bytes:
             await state.update_data(
@@ -644,13 +671,32 @@ async def cb_gen_img(cb: CallbackQuery, state: FSMContext, bot: Bot):
                 force_no_media=False,
                 image_prompt=prompt
             )
+            logger.info(f"✅ Изображение успешно сгенерировано для пользователя {cb.from_user.id}")
+        else:
+            logger.error("❌ Генерация изображения вернула None")
+            await bot.edit_message_text(
+                text="❌ <b>Ошибка:</b> Не удалось сгенерировать изображение.", 
+                chat_id=chat_id, 
+                message_id=mid,
+                parse_mode="HTML"
+            )
     except Exception as e:
-        logger.error(f"Ошибка Stable Diffusion: {e}")
+        logger.error(f"❌ Ошибка Stable Diffusion: {e}", exc_info=True)
+        try:
+            await bot.edit_message_text(
+                text=f"❌ <b>Ошибка генерации:</b>\n{str(e)[:200]}", 
+                chat_id=chat_id, 
+                message_id=mid,
+                parse_mode="HTML"
+            )
+        except:
+            pass
     finally:
-        if not task.done(): task.cancel()
+        if not task.done(): 
+            task.cancel()
         await state.update_data(last_markup_id=mid)
         is_fwd = (d.get("source") == "forwarded_post")
-        await render_preview_post(bot, cb.message.chat.id, state, is_forwarded=is_fwd, edit_message_id=mid)
+        await render_preview_post(bot, chat_id, state, is_forwarded=is_fwd, edit_message_id=mid)
 
 @router.callback_query(F.data == "manual_prompt_input")
 async def cb_prompt_input(cb: CallbackQuery, state: FSMContext):
