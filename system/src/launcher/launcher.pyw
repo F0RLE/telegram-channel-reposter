@@ -4365,18 +4365,35 @@ class ModernLauncher(ctk.CTk):
         topic = dialog.get_input()
         if topic:
             try:
-                with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
-                    db = json.load(f, object_pairs_hook=OrderedDict)
-                if not isinstance(db, OrderedDict):
-                    db = OrderedDict(db)
-                if topic.strip() not in db:
-                    db[topic.strip()] = []
+                topic_name = topic.strip()
+                if not topic_name:
+                    return
+                
+                # Загружаем или создаем файл
+                if not os.path.exists(FILE_CHANNELS):
+                    db = OrderedDict({topic_name: []})
+                else:
+                    with open(FILE_CHANNELS, 'r', encoding='utf-8') as f:
+                        db = json.load(f, object_pairs_hook=OrderedDict)
+                    if not isinstance(db, OrderedDict):
+                        db = OrderedDict(db)
+                
+                # Добавляем тему, если её нет
+                if topic_name not in db:
+                    db[topic_name] = []
                     with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
                         json.dump(db, f, indent=4, ensure_ascii=False)
-                    self.current_topic = topic.strip()
-                    self.refresh_channels()  # Полное обновление, так как добавлена новая тема
-            except:
-                pass
+                
+                # Устанавливаем текущую тему и обновляем UI
+                self.current_topic = topic_name
+                self.refresh_channels()  # Полное обновление, так как добавлена новая тема
+                
+                # Фокусируем поле ввода канала после небольшой задержки
+                self.after(200, lambda: self.entry_chan.focus_set() if hasattr(self, 'entry_chan') else None)
+                
+                self.log(f"✅ [CHANNELS] Создана новая тема: {topic_name}", "SYSTEM")
+            except Exception as e:
+                self.log(f"❌ [CHANNELS] Ошибка при создании темы: {e}", "SYSTEM")
     
     def delete_topic(self, topic):
         """Удаляет тему с подтверждением и показом количества каналов"""
@@ -4542,10 +4559,19 @@ class ModernLauncher(ctk.CTk):
     
     def add_channel(self):
         if not self.current_topic:
+            self.show_warning(
+                t("ui.launcher.warning.title", default="Предупреждение"),
+                t("ui.launcher.channels.no_topic_selected", default="Пожалуйста, выберите тему перед добавлением канала")
+            )
             return
+        
+        if not hasattr(self, 'entry_chan'):
+            return
+            
         txt = self.entry_chan.get().strip().replace("https://t.me/", "").replace("@", "")
         if not txt:
             return
+        
         try:
             # Создаем файл channels.json при первом добавлении канала, если его нет
             if not os.path.exists(FILE_CHANNELS):
@@ -4555,17 +4581,41 @@ class ModernLauncher(ctk.CTk):
                     db = json.load(f, object_pairs_hook=OrderedDict)
             if not isinstance(db, OrderedDict):
                 db = OrderedDict(db)
+            
             # Убеждаемся, что тема существует
             if self.current_topic not in db:
                 db[self.current_topic] = []
-            if txt not in db[self.current_topic]:
-                db[self.current_topic].append(txt)
-                with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
-                    json.dump(db, f, indent=4, ensure_ascii=False)
+            
+            # Проверяем, не добавлен ли уже этот канал
+            if txt in db[self.current_topic]:
+                self.show_info(
+                    t("ui.launcher.info.title", default="Информация"),
+                    t("ui.launcher.channels.channel_already_exists", default="Этот канал уже добавлен в данную тему")
+                )
+                self.entry_chan.delete(0, "end")
+                return
+            
+            # Добавляем канал
+            db[self.current_topic].append(txt)
+            with open(FILE_CHANNELS, 'w', encoding='utf-8') as f:
+                json.dump(db, f, indent=4, ensure_ascii=False)
+            
+            # Очищаем поле ввода
             self.entry_chan.delete(0, "end")
+            
+            # Обновляем UI
             self.refresh_channels_only()  # Только каналы, тема не изменилась
-        except:
-            pass
+            
+            # Фокусируем поле ввода для следующего канала
+            self.after(100, lambda: self.entry_chan.focus_set() if hasattr(self, 'entry_chan') else None)
+            
+            self.log(f"✅ [CHANNELS] Добавлен канал {txt} в тему {self.current_topic}", "SYSTEM")
+        except Exception as e:
+            self.log(f"❌ [CHANNELS] Ошибка при добавлении канала: {e}", "SYSTEM")
+            self.show_error(
+                t("ui.launcher.error.title", default="Ошибка"),
+                t("ui.launcher.channels.add_channel_error", default="Ошибка при добавлении канала: {error}", error=str(e))
+            )
     
     def delete_channel(self, link):
         try:
