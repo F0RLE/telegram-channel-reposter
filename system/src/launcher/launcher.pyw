@@ -2381,6 +2381,9 @@ class ModernLauncher(ctk.CTk):
         )
         self.entry_chan.pack(side="left", padx=(12, 8), pady=8)
         self.entry_chan.bind("<Return>", lambda e: self.add_channel())
+        # Разрешаем вставку текста (Ctrl+V)
+        self.entry_chan.bind("<Control-v>", lambda e: None)  # Разрешаем стандартную вставку
+        self.entry_chan.bind("<Button-1>", lambda e: self.entry_chan.focus_set())  # Фокус при клике
         
         add_btn = ctk.CTkButton(
             input_group,
@@ -3274,11 +3277,19 @@ class ModernLauncher(ctk.CTk):
             text = self.entry.get().strip()
             if text:  # Валидация: нельзя создать пустую тему
                 self.result = text
+                try:
+                    self.grab_release()  # Освобождаем grab перед уничтожением
+                except:
+                    pass
                 self.destroy()
         
         def cancel(self):
             """Отмена"""
             self.result = None
+            try:
+                self.grab_release()  # Освобождаем grab перед уничтожением
+            except:
+                pass
             self.destroy()
         
         def get_input(self):
@@ -4405,14 +4416,18 @@ class ModernLauncher(ctk.CTk):
                 
                 # Фокусируем поле ввода канала после обновления UI
                 def focus_entry():
-                    if hasattr(self, 'entry_chan'):
+                    if hasattr(self, 'entry_chan') and self.entry_chan.winfo_exists():
                         try:
+                            # Убеждаемся, что поле видимо и доступно
+                            self.entry_chan.update_idletasks()
                             self.entry_chan.focus_force()
                             self.entry_chan.icursor(0)
-                        except:
-                            pass
+                            # Пробуем еще раз через небольшую задержку для надежности
+                            self.after(100, lambda: self.entry_chan.focus_force() if hasattr(self, 'entry_chan') and self.entry_chan.winfo_exists() else None)
+                        except Exception as e:
+                            self.log(f"⚠️ [CHANNELS] Не удалось установить фокус на поле ввода: {e}", "SYSTEM")
                 
-                self.after(300, focus_entry)
+                self.after(500, focus_entry)  # Увеличена задержка для полного обновления UI
                 
                 self.log(f"✅ [CHANNELS] Создана новая тема: {topic_name}", "SYSTEM")
             except Exception as e:
