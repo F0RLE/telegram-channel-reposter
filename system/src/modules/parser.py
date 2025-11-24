@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 
-from config.settings import TELEGRAM_CHANNELS
+from config.settings import TELEGRAM_CHANNELS, reload_channels
 from core.utils import load_published_posts
 
 logger = logging.getLogger(__name__)

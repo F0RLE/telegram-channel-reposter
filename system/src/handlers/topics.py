@@ -14,7 +14,7 @@ from core.utils import safe_delete_message
 from modules.parser import aggregate_topic_posts
 from keyboards.inline import topics_keyboard, cancel_jump_keyboard
 from core.animation import animate_message
-from config.settings import TELEGRAM_CHANNELS
+from config.settings import TELEGRAM_CHANNELS, reload_channels
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +169,8 @@ async def callback_topic_chosen(cb: types.CallbackQuery, state: FSMContext, bot:
         if topic_key in _PARSE_CACHE and (now - _PARSE_CACHE[topic_key][0] < CACHE_TTL):
             search_results = _PARSE_CACHE[topic_key][1]
         else:
+            # Перезагружаем каналы для актуальности
+            reload_channels()
             # Parse
             targets = list(TELEGRAM_CHANNELS.keys()) if topic_key == "all" else [topic_key]
             

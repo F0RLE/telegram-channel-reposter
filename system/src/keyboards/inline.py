@@ -1,6 +1,6 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from config.settings import TELEGRAM_CHANNELS
+from config.settings import TELEGRAM_CHANNELS, reload_channels
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     """
@@ -15,7 +15,11 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
 def topics_keyboard() -> InlineKeyboardMarkup:
     """
     List of available topics from channels.json.
+    Перезагружает каналы перед созданием клавиатуры для актуальности.
     """
+    # Перезагружаем каналы для актуальности
+    reload_channels()
+    
     builder = InlineKeyboardBuilder()
     builder.button(text="🔥 Все темы", callback_data="topic:all")
     

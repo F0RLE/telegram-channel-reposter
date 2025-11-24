@@ -55,12 +55,22 @@ except ValueError:
 # Файл channels.json создается только при первом добавлении канала/темы через UI
 # Не создается автоматически при инициализации
 TELEGRAM_CHANNELS = {}
-if os.path.exists(CHANNELS_PATH):
-    try:
-        with open(CHANNELS_PATH, 'r', encoding='utf-8') as f:
-            TELEGRAM_CHANNELS = json.load(f)
-    except Exception as e:
-        logging.error(f"❌ Ошибка чтения channels.json: {e}")
+
+def reload_channels():
+    """Перезагружает каналы из channels.json"""
+    global TELEGRAM_CHANNELS
+    if os.path.exists(CHANNELS_PATH):
+        try:
+            with open(CHANNELS_PATH, 'r', encoding='utf-8') as f:
+                TELEGRAM_CHANNELS = json.load(f)
+            logging.info(f"✅ Каналы перезагружены: {len(TELEGRAM_CHANNELS)} тем")
+        except Exception as e:
+            logging.error(f"❌ Ошибка чтения channels.json: {e}")
+    else:
+        TELEGRAM_CHANNELS = {}
+
+# Загружаем каналы при старте
+reload_channels()
 
 # Generation Settings (Defaults)
 LLM_TEMP = 0.7
