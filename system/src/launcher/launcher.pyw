@@ -32,9 +32,7 @@ try:
     from .service_manager import ServiceManager
     from .model_manager import ModelManager
     from .animations import (
-        fade_in, fade_out, slide_in, slide_out, scale_in, pulse,
-        button_hover_effect, smooth_color_transition, shake, bounce_in,
-        stagger_children, interpolate_color
+        button_hover_effect, smooth_color_transition, bounce_in
     )
     from .analytics import get_analytics, Analytics
     from .updater import get_updater, Updater
@@ -45,9 +43,7 @@ except (ImportError, ValueError):
         from service_manager import ServiceManager
         from model_manager import ModelManager
         from animations import (
-            fade_in, fade_out, slide_in, slide_out, scale_in, pulse,
-            button_hover_effect, smooth_color_transition, shake, bounce_in,
-            stagger_children, interpolate_color
+            button_hover_effect, smooth_color_transition, bounce_in
         )
         from analytics import get_analytics, Analytics
         from updater import get_updater, Updater
