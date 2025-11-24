@@ -615,6 +615,9 @@ async def cb_remove_media(cb: CallbackQuery, state: FSMContext, bot: Bot):
 @router.callback_query(F.data == "generate_image")
 async def cb_gen_img(cb: CallbackQuery, state: FSMContext, bot: Bot):
     """Обработчик генерации изображения (как в старой версии)"""
+    # Сразу отвечаем на callback, чтобы кнопка не задерживалась
+    await cb.answer()
+    
     chat_id = cb.message.chat.id
     user_id = cb.from_user.id
     d = await state.get_data()

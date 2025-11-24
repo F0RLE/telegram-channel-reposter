@@ -110,7 +110,7 @@ class ServiceManager:
                                     self.kill_tree(pid)
                                     time.sleep(2)  # Даем время на освобождение порта
                                     return
-                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError, psutil.AccessDenied):
+                    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, AttributeError):
                         continue
         except Exception as e:
             self.log(t("ui.launcher.log.port_check_error", default="⚠️ Ошибка проверки порта {port}: {error}", port=port, error=str(e)), "SYSTEM")
