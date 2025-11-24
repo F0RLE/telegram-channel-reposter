@@ -92,7 +92,7 @@ class ServiceManager:
             self.stop_events[name].set()
             try:
                 self.kill_tree(proc.pid)
-            except:
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
             self.procs[name] = None
             self.update_status(name, "stopped", "gray")
@@ -110,9 +110,9 @@ class ServiceManager:
                             if pid != current_pid:
                                 p = psutil.Process(pid)
                                 p.terminate()
-                except:
+                except (psutil.NoSuchProcess, psutil.AccessDenied, KeyError, TypeError):
                     pass
-        except:
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
     def start_service(self, name: str, llm_model_info=None):
@@ -196,7 +196,7 @@ class ServiceManager:
                                     with urllib.request.urlopen(req, timeout=2) as response:
                                         if response.status == 200:
                                             break
-                                except:
+                                except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError):
                                     if i == 29:
                                         raise Exception("Ollama server failed to start")
                             
@@ -209,7 +209,7 @@ class ServiceManager:
                                 try:
                                     temp_ollama.terminate()
                                     temp_ollama.wait(timeout=5)
-                                except:
+                                except (subprocess.TimeoutExpired, ProcessLookupError):
                                     if temp_ollama.poll() is None:
                                         temp_ollama.kill()
                             time.sleep(2)
@@ -252,7 +252,7 @@ class ServiceManager:
                     )
                     if check_result.returncode == 0:
                         cuda_supported = True
-                except:
+                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                     pass
                 
                 cmd = [venv_py, "launch.py", "--api", "--nowebui", "--port", "7860", "--skip-python-version-check"]
@@ -281,12 +281,12 @@ class ServiceManager:
                     for line in iter(p.stdout.readline, ''):
                         if line and not self.stop_events[name].is_set():
                             self.log_queue.put((line.strip(), name.upper()))
-                except:
+                except (OSError, ValueError, AttributeError):
                     pass
                 finally:
                     try:
                         p.stdout.close()
-                    except:
+                    except (OSError, AttributeError):
                         pass
                     if self.procs.get(name) == p:  # If this is still the active process
                         self.procs[name] = None

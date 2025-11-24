@@ -1,6 +1,5 @@
 ﻿import sys
 import os
-import glob
 import subprocess
 import threading
 import queue
@@ -19,7 +18,7 @@ try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     if sys.stderr and hasattr(sys.stderr, 'buffer'):
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-except:
+except (AttributeError, OSError, ValueError):
     pass
 
 _launcher_dir = os.path.dirname(os.path.abspath(__file__))
@@ -75,7 +74,7 @@ except ImportError:
 try:
     import webbrowser
 except ImportError:
-    pass  # webbrowser обычно встроен
+    pass  # webbrowser is usually built-in
 
 try:
     from PIL import Image, ImageDraw  # type: ignore
@@ -147,26 +146,26 @@ DIR_TEMP = os.path.join(DATA_ROOT, "temp")
 PYTHON_EXE = os.path.join(ENV_DIR, "python", "python.exe")
 GIT_CMD = os.path.join(ENV_DIR, "git", "cmd", "git.exe")
 
-# Универсальная папка для всех моделей LLM (GGUF и Ollama)
+# Universal folder for all LLM models (GGUF and Ollama)
 OLLAMA_DIR = os.path.join(DIR_ENGINE, "ollama")
 OLLAMA_EXE = os.path.join(OLLAMA_DIR, "ollama.exe")
-OLLAMA_MODELS_DIR = os.path.join(OLLAMA_DIR, "models")  # Универсальная папка для всех моделей
+OLLAMA_MODELS_DIR = os.path.join(OLLAMA_DIR, "models")  # Universal folder for all models
 OLLAMA_DATA_DIR = os.path.join(OLLAMA_DIR, "data")
 
-# MODELS_LLM_DIR будет загружаться из настроек или использовать папку по умолчанию
+# MODELS_LLM_DIR will be loaded from settings or use default folder
 def get_models_llm_dir():
-    """Получает путь к папке с моделями из настроек или использует папку по умолчанию"""
+    """Get path to models folder from settings or use default folder"""
     try:
         from dotenv import get_key  # type: ignore
         custom_path = get_key(FILE_ENV, "MODELS_LLM_DIR")
         if custom_path and os.path.exists(custom_path):
             return custom_path
-    except:
+    except (ImportError, KeyError, OSError):
         pass
-    # По умолчанию используем папку: AppData\Roaming\TelegramBotData\data\Engine\LLM_Models
+    # Default folder: AppData\Roaming\TelegramBotData\data\Engine\LLM_Models
     return os.path.join(DIR_ENGINE, "LLM_Models")
 
-MODELS_LLM_DIR = get_models_llm_dir()  # Будет обновляться при загрузке настроек
+MODELS_LLM_DIR = get_models_llm_dir()  # Will be updated when settings are loaded
 
 SD_DIR = os.path.join(DIR_ENGINE, "stable-diffusion-webui-reforge")
 MODELS_SD_DIR = os.path.join(SD_DIR, "models", "Stable-diffusion")
@@ -310,7 +309,7 @@ class ModernLauncher(ctk.CTk):
             status_text = status_text_map.get(status, status)
             self.after(0, lambda: self._set_service_status_label(name, text=status_text, color=color))
 
-        # Инициализируем ServiceManager сразу
+        # Initialize ServiceManager immediately
         self._status_callback = status_callback
         self.service_manager = ServiceManager(
             log_callback=self.log,
@@ -334,14 +333,14 @@ class ModernLauncher(ctk.CTk):
         else: 
             self.register_pid()
             self.build_ui()
-            # Запускаем мониторинг после небольшой задержки, чтобы не блокировать UI
+            # Start monitoring after a small delay to avoid blocking UI
             self.after(100, self.start_monitor)
         
-        # Обработчик закрытия окна (устанавливаем здесь для надежности)
+        # Window close handler (set here for reliability)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def init_filesystem(self):
-        # Создаем только критически важные директории синхронно
+        # Create only critical directories synchronously
         critical_dirs = [
             DATA_ROOT, 
             DIR_CONFIGS, 
@@ -351,10 +350,10 @@ class ModernLauncher(ctk.CTk):
         for d in critical_dirs:
             try:
                 os.makedirs(d, exist_ok=True)
-            except:
-                pass  # Игнорируем ошибки при создании папок
+            except (OSError, PermissionError):
+                pass  # Ignore errors when creating folders
         
-        # Остальные директории создаем асинхронно
+        # Create remaining directories asynchronously
         def create_remaining_dirs():
             remaining_dirs = [
                 DIR_ENGINE, 
@@ -367,26 +366,26 @@ class ModernLauncher(ctk.CTk):
             for d in remaining_dirs:
                 try:
                     os.makedirs(d, exist_ok=True)
-                except:
+                except (OSError, PermissionError):
                     pass
         
         threading.Thread(target=create_remaining_dirs, daemon=True).start()
         
-        # Создаем файлы только если их нет
+        # Create files only if they don't exist
         if not os.path.exists(FILE_ENV):
             try:
                 open(FILE_ENV, "w", encoding="utf-8").close()
-            except:
+            except (OSError, PermissionError):
                 pass
         
         if not os.path.exists(FILE_GEN_CONFIG):
             try:
                 with open(FILE_GEN_CONFIG, "w", encoding="utf-8") as f:
                     json.dump({"llm_temp": 0.7, "sd_steps": 30, "sd_cfg": 6.0}, f, indent=4)
-            except:
+            except (OSError, PermissionError, json.JSONDecodeError):
                 pass
         
-        # Создаем начальную резервную копию в фоновом потоке (отложено)
+        # Create initial backup in background thread (deferred)
         self.after(2000, lambda: threading.Thread(target=self._create_backup, daemon=True).start())
 
     def check_running(self):
@@ -398,10 +397,10 @@ class ModernLauncher(ctk.CTk):
             with open(FILE_PID, 'r') as f:
                 pid = int(f.read().strip())
             
-            # Быстрая проверка без детального анализа процесса
+            # Quick check without detailed process analysis
             try:
                 if psutil.pid_exists(pid):
-                    # Простая проверка без детального статуса для скорости
+                    # Simple check without detailed status for speed
                     try:
                         proc = psutil.Process(pid)
                         if proc.is_running():
@@ -410,19 +409,19 @@ class ModernLauncher(ctk.CTk):
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         try:
                             os.remove(FILE_PID)
-                        except:
+                        except (OSError, PermissionError):
                             pass
                         return False
             except Exception:
                 try:
                     os.remove(FILE_PID)
-                except:
+                except (OSError, PermissionError):
                     pass
                 return False
         except (ValueError, IOError, OSError):
             try:
                 os.remove(FILE_PID)
-            except:
+            except (OSError, PermissionError):
                 pass
             return False
         
@@ -432,13 +431,13 @@ class ModernLauncher(ctk.CTk):
         try:
             with open(FILE_PID, 'w') as f:
                 f.write(str(os.getpid()))
-        except:
+        except (OSError, PermissionError):
             pass
 
     def kill_old(self):
         try:
             psutil.Process(self.old_pid).kill()
-        except:
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
         self.register_pid()
         self.build_ui()
@@ -482,21 +481,21 @@ class ModernLauncher(ctk.CTk):
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
         
-        # Lazy loading: создаем страницы только при первом показе
+        # Lazy loading: create pages only on first show
         self.pages = [None, None, None]
         self.pages_created = [False, False, False]
         
-        # Создаем только первую страницу (консоль) сразу
+        # Create only first page (console) immediately
         self.pages[0] = self.create_console_page()
         self.pages_created[0] = True
         
         self.show_page(0)
         
-        # Запускаем циклы с минимальной задержкой для быстрого старта
+        # Start loops with minimal delay for fast startup
         self.after(50, self.console_loop)
         self.after(500, self.service_status_loop)
         
-        # Добавляем начальное логирование (отложенное, чтобы не блокировать UI)
+        # Add initial logging (deferred to avoid blocking UI)
         self.after(200, lambda: self.log(t("ui.launcher.log.startup", default="🚀 [SYSTEM] Launcher started successfully"), "SYSTEM"))
         if hasattr(self, '_detected_lang'):
             self.after(250, lambda: self.log(t("ui.launcher.log.language_detected", default="🌐 [SYSTEM] Detected system language: {lang}", lang=LANGUAGE_NAMES.get(self._detected_lang, self._detected_lang)), "SYSTEM"))
