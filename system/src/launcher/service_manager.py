@@ -245,33 +245,103 @@ class ServiceManager:
                     # Проверяем наличие модели в Ollama
                     if not self.model_manager.check_ollama_model(model_name):
                         self.log(f"📦 [LLM] Модель {model_name} не найдена, загружаю...", "LLM")
-                        # Загружаем модель через ollama pull
+                        
+                        # Останавливаем все процессы Ollama перед началом
+                        self.installer.kill_all_ollama_processes()
+                        time.sleep(2)
+                        
+                        # Запускаем временный Ollama server для загрузки
+                        temp_env = env.copy()
+                        temp_env["OLLAMA_HOST"] = "127.0.0.1:11434"
+                        temp_env["OLLAMA_ORIGINS"] = "*"
+                        temp_env["OLLAMA_MODELS"] = MODELS_LLM_DIR
+                        temp_env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
+                        
+                        temp_ollama = None
                         try:
+                            # Стартуем временный сервер
+                            self.log(f"🔧 [LLM] Запуск временного Ollama сервера...", "LLM")
+                            temp_ollama = subprocess.Popen(
+                                [OLLAMA_EXE, "serve"],
+                                cwd=OLLAMA_DIR,
+                                env=temp_env,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                creationflags=subprocess.CREATE_NO_WINDOW,
+                                startupinfo=subprocess.STARTUPINFO()
+                            )
+                            
+                            # Ждем запуска сервера
+                            server_started = False
+                            for i in range(30):
+                                time.sleep(1)
+                                try:
+                                    req = urllib.request.Request("http://127.0.0.1:11434/api/tags")
+                                    with urllib.request.urlopen(req, timeout=2) as response:
+                                        if response.status == 200:
+                                            server_started = True
+                                            self.log(f"✅ [LLM] Временный сервер запущен", "LLM")
+                                            break
+                                except (urllib.error.URLError, urllib.error.HTTPError, OSError, TimeoutError):
+                                    if i == 29:
+                                        raise Exception("Ollama server failed to start")
+                            
+                            if not server_started:
+                                raise Exception("Failed to start temporary Ollama server")
+                            
+                            # Загружаем модель через ollama pull
+                            self.log(f"⬇️ [LLM] Загрузка модели {model_name}...", "LLM")
+                            
                             startupinfo = subprocess.STARTUPINFO()
                             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                             startupinfo.wShowWindow = subprocess.SW_HIDE
                             
-                            pull_result = subprocess.run(
+                            # Используем Popen для отслеживания прогресса
+                            pull_process = subprocess.Popen(
                                 [OLLAMA_EXE, "pull", model_name],
                                 cwd=OLLAMA_DIR,
-                                capture_output=True,
+                                env=temp_env,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT,
                                 text=True,
-                                timeout=600,  # 10 минут на загрузку
                                 creationflags=subprocess.CREATE_NO_WINDOW,
                                 startupinfo=startupinfo
                             )
                             
-                            if pull_result.returncode == 0:
+                            # Читаем вывод в реальном времени
+                            for line in iter(pull_process.stdout.readline, ''):
+                                if line:
+                                    # Логируем прогресс
+                                    line_stripped = line.strip()
+                                    if line_stripped:
+                                        self.log(f"📥 [LLM] {line_stripped}", "LLM")
+                            
+                            pull_process.wait(timeout=600)
+                            
+                            if pull_process.returncode == 0:
                                 self.log(f"✅ [LLM] Модель {model_name} успешно загружена", "LLM")
                             else:
-                                self.log(f"❌ [LLM] Ошибка загрузки модели {model_name}: {pull_result.stderr}", "LLM")
-                                raise Exception(f"Failed to pull model: {pull_result.stderr}")
+                                raise Exception(f"Pull command failed with code {pull_process.returncode}")
+                                
                         except subprocess.TimeoutExpired:
                             self.log(f"❌ [LLM] Таймаут при загрузке модели {model_name}", "LLM")
+                            if pull_process:
+                                pull_process.kill()
                             raise Exception("Model download timeout")
                         except Exception as e:
                             self.log(f"❌ [LLM] Ошибка при загрузке модели: {e}", "LLM")
                             raise
+                        finally:
+                            # Останавливаем временный сервер
+                            if temp_ollama:
+                                try:
+                                    temp_ollama.terminate()
+                                    temp_ollama.wait(timeout=5)
+                                except (subprocess.TimeoutExpired, ProcessLookupError):
+                                    if temp_ollama.poll() is None:
+                                        temp_ollama.kill()
+                            time.sleep(2)
+                            self.installer.kill_all_ollama_processes()
 
                 # Import GGUF model if needed
                 if model_type == 'gguf' and model_path:
