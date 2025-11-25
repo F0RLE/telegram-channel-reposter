@@ -256,6 +256,9 @@ class ServiceManager:
                         temp_env["OLLAMA_ORIGINS"] = "*"
                         temp_env["OLLAMA_MODELS"] = MODELS_LLM_DIR
                         temp_env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
+                        # Force GPU
+                        temp_env["CUDA_VISIBLE_DEVICES"] = "0"
+                        temp_env["OLLAMA_DEBUG"] = "1"
                         
                         temp_ollama = None
                         try:
@@ -371,6 +374,9 @@ class ServiceManager:
                         temp_env["OLLAMA_ORIGINS"] = "*"
                         temp_env["OLLAMA_MODELS"] = MODELS_LLM_DIR  # Use unified models directory
                         temp_env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
+                        # Force GPU
+                        temp_env["CUDA_VISIBLE_DEVICES"] = "0"
+                        temp_env["OLLAMA_DEBUG"] = "1"
                         
                         temp_ollama = None
                         try:

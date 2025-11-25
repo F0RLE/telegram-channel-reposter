@@ -413,6 +413,9 @@ class ModernLauncher(ctk.CTk):
             show_error(t("ui.launcher.error.title"), t("ui.launcher.error.message", error=str(e)))
             sys.exit(1)
         
+        # Set up window close handler to cleanup services
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
         if self.check_running(): 
             self.show_lock_screen()
         else: 
@@ -6712,6 +6715,30 @@ class ModernLauncher(ctk.CTk):
                 label.configure(text=t("ui.launcher.model.models_not_installed", default="Модели не установлены"))
         except Exception as e:
             label.configure(text=t("ui.launcher.model.info_error", default="Ошибка при получении информации: {error}", error=str(e)))
+    
+    def on_closing(self):
+        """Handle window close event"""
+        try:
+            self.log(t("ui.launcher.log.closing", default="🔄 [SYSTEM] Closing launcher and stopping services..."), "SYSTEM")
+            # Stop all running services
+            self.service_manager.stop_all_services()
+            # Give services time to stop gracefully
+            time.sleep(1)
+        except Exception as e:
+            self.log(f"⚠️ [SYSTEM] Error during cleanup: {e}", "SYSTEM")
+        finally:
+            # Clean up PID file
+            try:
+                if os.path.exists(FILE_PID):
+                    os.remove(FILE_PID)
+            except:
+                pass
+            # Destroy window
+            self.destroy()
+    
+    def on_close(self):
+        """Alias for on_closing"""
+        self.on_closing()
 
 if __name__ == "__main__":
     def global_exception_handler(exc_type, exc_value, exc_traceback):
