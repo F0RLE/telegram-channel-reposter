@@ -99,4 +99,5 @@ async def safe_delete_message(
             await bot.delete_message(chat_id=chat_id, message_id=mid)
         except Exception as e:
             # Log unexpected errors but don't fail
-            logger.debug(f"Error deleting message {mid}: {e}")
+            if "message to delete not found" not in str(e).lower():
+                logger.warning(f"Error deleting message {mid}: {e}")

@@ -960,11 +960,11 @@ class ModernLauncher(ctk.CTk):
         if not self.pages_created[idx]:
             try:
                 if idx == 1:
-                # Создаем страницу настроек
-                # Optimization: Create directly on main thread, but content is lazy loaded
-                self.pages[1] = self.create_settings_page()
-                self.pages_created[idx] = True
-            elif idx == 2:
+                    # Создаем страницу настроек
+                    # Optimization: Create directly on main thread, but content is lazy loaded
+                    self.pages[1] = self.create_settings_page()
+                    self.pages_created[idx] = True
+                elif idx == 2:
                     self.pages[2] = self.create_channels_page()
                     self.pages_created[idx] = True
                 elif idx == 3:
@@ -1516,6 +1516,9 @@ class ModernLauncher(ctk.CTk):
             btn.grid(row=0, column=idx, sticky="ew", padx=3, pady=4)
             self.settings_tab_buttons.append((key, btn))
             
+            # Create the tab content frame
+            tab_frame = create_func(content_area)
+            
             if idx > 0:
                 tab_frame.grid_remove()
             
@@ -1870,6 +1873,8 @@ class ModernLauncher(ctk.CTk):
         self.diagnostics_labels['status'] = status_value
         self.diagnostics_labels['ping'] = ping_value
         self.diagnostics_labels['queue'] = queue_value
+        
+        return scroll
     
     def _create_text_settings_tab(self, parent):
         """Создает компактную вкладку настроек генерации текста"""
@@ -2314,6 +2319,8 @@ class ModernLauncher(ctk.CTk):
             hover_color=COLORS['primary_hover'],
             font=("Segoe UI", 12)
         ).grid(row=0, column=2, padx=(0, 15), pady=8)
+        
+        return scroll
     
     def _create_image_settings_tab(self, parent):
         """Создает улучшенную вкладку настроек генерации изображений с сеточной структурой"""
@@ -2906,6 +2913,8 @@ class ModernLauncher(ctk.CTk):
         # Сохраняем ссылки для обновления информации
         self.sd_model_url_entry = model_url_entry
         self.sd_model_info_label = model_info_label
+        
+        return scroll
     
     def create_setting_card(self, parent, title, fields):
         card = ctk.CTkFrame(parent, fg_color=COLORS['card_bg'], corner_radius=12)

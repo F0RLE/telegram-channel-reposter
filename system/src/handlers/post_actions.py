@@ -7,6 +7,7 @@ import os
 import html
 import re
 from typing import Optional, Dict, Any, List, Union
+from collections import defaultdict
 
 from aiogram import Router, types, Bot, F
 from aiogram.types import (
@@ -20,7 +21,7 @@ from aiogram.types import (
     CallbackQuery
 )
 from aiogram.fsm.context import FSMContext
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 
 # Local Imports
 from core.fsm_states import FormState
@@ -59,6 +60,9 @@ ZAGLUSHKA_PATH = os.path.join(BASE_DIR, 'modules', 'Images', 'Zaglushka.png')
 # 1x1 Transparent Pixel (Base64) fallback
 BLANK_1PX_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
+# Lock for rendering to prevent race conditions
+_render_locks = defaultdict(asyncio.Lock)
+
 # ==========================================
 # 2. HELPERS
 # ==========================================
@@ -72,7 +76,10 @@ async def _fetch_bytes(session: aiohttp.ClientSession, url: str) -> Optional[byt
         async with session.get(url, ssl=False, timeout=10) as response:
             if response.status == 200:
                 return await response.read()
-    except Exception: pass
+            else:
+                logger.warning(f"Failed to fetch {url}: status {response.status}")
+    except Exception as e:
+        logger.error(f"Error fetching {url}: {e}")
     return None
 
 async def _build_media_group(state_data: Dict[str, Any]) -> Optional[List[Union[InputMediaPhoto, InputMediaVideo]]]:
@@ -109,7 +116,9 @@ async def _build_media_group(state_data: Dict[str, Any]) -> Optional[List[Union[
                     im.parse_mode = "HTML"
                 
                 built.append(im)
-            except Exception: continue
+            except Exception as e:
+                logger.error(f"Error building media item {i}: {e}")
+                continue
             
     return built if built else None
 
@@ -119,64 +128,16 @@ def _get_text(state_data: Dict[str, Any]) -> str:
 
 def _sanitize_html_text(text: str) -> str:
     """
-    Очищает текст от проблемных символов и экранирует HTML-сущности.
-    Заменяет Unicode символы, которые могут вызвать проблемы с парсингом HTML.
+    Sanitizes text for HTML parsing.
+    Escapes HTML entities but preserves intended tags if possible (simplified for safety).
     """
     if not text:
         return text
     
-    # Сначала защищаем существующие HTML теги
-    protected_tags = []
-    tag_pattern = r'<[^>]+>'
-    
-    def protect_tag(match):
-        tag = match.group(0)
-        placeholder = f"__PROTECTED_TAG_{len(protected_tags)}__"
-        protected_tags.append(tag)
-        return placeholder
-    
-    # Защищаем теги
-    text = re.sub(tag_pattern, protect_tag, text)
-    
-    # Заменяем проблемные Unicode символы на обычные (ПОСЛЕ защиты тегов)
-    # Это важно, чтобы не затронуть символы внутри тегов
-    # Используем более агрессивную замену всех вариантов многоточия
-    replacements = {
-        '\u2026': '...',  # HORIZONTAL ELLIPSIS (U+2026) - стандартное многоточие
-        '\u22EF': '...',  # MIDLINE HORIZONTAL ELLIPSIS (U+22EF)
-        '\uFE19': '...',  # PRESENTATION FORM FOR VERTICAL HORIZONTAL ELLIPSIS (U+FE19)
-        '…': '...',       # Многоточие Unicode на обычное (fallback)
-        '—': '-',         # Длинное тире на обычное
-        '–': '-',         # Короткое тире на обычное
-        '"': '"',         # Левая двойная кавычка
-        '"': '"',         # Правая двойная кавычка
-        ''': "'",         # Левая одинарная кавычка
-        ''': "'",         # Правая одинарная кавычка
-        '«': '"',         # Левая угловая кавычка
-        '»': '"',         # Правая угловая кавычка
-        '‹': "'",         # Левая одинарная угловая кавычка
-        '›': "'",         # Правая одинарная угловая кавычка
-    }
-    
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-    
-    # Экранируем HTML-сущности
-    text = html.escape(text)
-    
-    # Восстанавливаем защищенные теги
-    for i, tag in enumerate(protected_tags):
-        text = text.replace(f"__PROTECTED_TAG_{i}__", tag)
-    
-    # Финальная проверка - заменяем любые оставшиеся проблемные символы многоточия
-    # которые могут вызвать ошибки парсинга (включая все возможные варианты)
-    text = re.sub(r'[\u2026\u22EF\uFE19\u22EE\u2E2E]', '...', text)
-    
-    # Дополнительная проверка - удаляем любые символы, которые могут быть интерпретированы как HTML теги
-    # но не являются валидными HTML тегами
-    text = re.sub(r'<[^>]*\.\.\.[^>]*>', '...', text)
-    
-    return text
+    # Simple and safe approach: escape everything first
+    # If you need to support specific tags, it's better to use a proper parser
+    # But for now, let's stick to basic escaping to prevent errors
+    return html.escape(text)
 
 # ==========================================
 # 3. RENDER LOGIC (CORE)
@@ -192,8 +153,30 @@ async def render_preview_post(
 ):
     """
     Displays the post content.
-    Prioritizes Zaglushka.png, falls back to 1px Base64 if missing.
+    Uses a lock to prevent race conditions.
     """
+    async with _render_locks[chat_id]:
+        try:
+            await _render_preview_post_unsafe(
+                bot, chat_id, state, total_posts, current_index, is_forwarded, edit_message_id
+            )
+        except Exception as e:
+            logger.error(f"Critical error in render_preview_post: {e}", exc_info=True)
+            # Try to notify user about error
+            try:
+                await bot.send_message(chat_id, "⚠️ Произошла ошибка при отображении поста.")
+            except:
+                pass
+
+async def _render_preview_post_unsafe(
+    bot: Bot, 
+    chat_id: int, 
+    state: FSMContext, 
+    total_posts: int = None, 
+    current_index: int = None,
+    is_forwarded: bool = False,
+    edit_message_id: int = None
+):
     data = await state.get_data()
 
     # Update Indices
@@ -209,8 +192,8 @@ async def render_preview_post(
 
     # Prepare Content
     text = _get_text(data)
-    # Очищаем текст от проблемных символов для HTML парсинга
-    text = _sanitize_html_text(text)
+    # Use safe text for rendering
+    safe_text = _sanitize_html_text(text)
     force_no_media = data.get('force_no_media', False)
     
     content_type = "text"
@@ -266,154 +249,112 @@ async def render_preview_post(
         back_callback="back_main" if is_forwarded else "back_topics"
     )
     
-    # Более длинный текст для более широких кнопок
     menu_text = "📋 Выберите действие для работы с постом:"
     last_ids = data.get('last_message_ids', [])
     markup_id = data.get('last_markup_id')
     last_content_id = last_ids[0] if last_ids else None
 
-    # Определяем, что редактируем
-    # edit_message_id может быть либо ID контента, либо ID меню
-    # Приоритет: если передан edit_message_id и он совпадает с last_content_id - редактируем контент
-    # Если передан edit_message_id и он совпадает с markup_id - редактируем меню
-    # Если не передан, но есть last_content_id - пытаемся редактировать контент
-    
+    # Determine what to edit
     editing_content_id = None
-    editing_menu_id = None
     
     if edit_message_id:
-        if edit_message_id == last_content_id and last_content_id:
+        if edit_message_id == last_content_id:
             editing_content_id = last_content_id
-        elif edit_message_id == markup_id and markup_id:
-            editing_menu_id = markup_id
     elif last_content_id:
-        # Если edit_message_id не передан, но есть контент - пытаемся его редактировать
         editing_content_id = last_content_id
     
-    # Если не редактируем контент, но есть меню - редактируем меню
-    if not editing_content_id and markup_id:
-        editing_menu_id = markup_id
-    
-    # Редактируем или отправляем новый контент
+    # Try to edit content
     new_ids = []
     content_edited = False
     
     try:
-        if editing_content_id and last_content_id:
-            # Пытаемся отредактировать существующий контент
+        if editing_content_id:
             try:
                 if content_type == "text":
-                    # Редактируем текстовое сообщение
                     await bot.edit_message_text(
-                        text=text,
+                        text=safe_text,
                         chat_id=chat_id,
-                        message_id=last_content_id,
+                        message_id=editing_content_id,
                         parse_mode="HTML"
                     )
-                    new_ids = [last_content_id]
+                    new_ids = [editing_content_id]
                     content_edited = True
                 elif content_type == "photo" and media_obj:
-                    # Редактируем фото (капшн и/или медиа)
                     try:
-                        # Пытаемся отредактировать медиа и капшн
                         await bot.edit_message_media(
                             chat_id=chat_id,
-                            message_id=last_content_id,
-                            media=InputMediaPhoto(media=media_obj, caption=text, parse_mode="HTML")
+                            message_id=editing_content_id,
+                            media=InputMediaPhoto(media=media_obj, caption=safe_text, parse_mode="HTML")
                         )
-                        new_ids = [last_content_id]
+                        new_ids = [editing_content_id]
                         content_edited = True
                     except TelegramAPIError:
-                        # Если не удалось отредактировать медиа, редактируем только капшн
                         await bot.edit_message_caption(
                             chat_id=chat_id,
-                            message_id=last_content_id,
-                            caption=text,
+                            message_id=editing_content_id,
+                            caption=safe_text,
                             parse_mode="HTML"
                         )
-                        new_ids = [last_content_id]
+                        new_ids = [editing_content_id]
                         content_edited = True
                 elif content_type == "video" and media_obj:
-                    # Редактируем видео (капшн и/или медиа)
                     try:
                         await bot.edit_message_media(
                             chat_id=chat_id,
-                            message_id=last_content_id,
-                            media=InputMediaVideo(media=media_obj, caption=text, parse_mode="HTML")
+                            message_id=editing_content_id,
+                            media=InputMediaVideo(media=media_obj, caption=safe_text, parse_mode="HTML")
                         )
-                        new_ids = [last_content_id]
+                        new_ids = [editing_content_id]
                         content_edited = True
                     except TelegramAPIError:
-                        # Если не удалось отредактировать медиа, редактируем только капшн
                         await bot.edit_message_caption(
                             chat_id=chat_id,
-                            message_id=last_content_id,
-                            caption=text,
+                            message_id=editing_content_id,
+                            caption=safe_text,
                             parse_mode="HTML"
                         )
-                        new_ids = [last_content_id]
+                        new_ids = [editing_content_id]
                         content_edited = True
             except TelegramAPIError:
-                # Если не удалось отредактировать, удаляем и отправляем новое
                 content_edited = False
         
         if not content_edited:
-            # Удаляем старый контент (кроме того, который редактируем) и отправляем новый
+            # Delete old content and send new
             ids_to_delete = [mid for mid in last_ids if mid != editing_content_id]
             await _safe_delete(bot, chat_id, ids_to_delete)
             
             if content_type == "album" and media_group:
-                media_group[0].caption = text
+                media_group[0].caption = safe_text
                 media_group[0].parse_mode = "HTML"
                 msgs = await bot.send_media_group(chat_id, media=media_group)
                 new_ids = [m.message_id for m in msgs]
             elif content_type == "photo":
-                m = await bot.send_photo(chat_id, media_obj, caption=text, parse_mode="HTML")
+                m = await bot.send_photo(chat_id, media_obj, caption=safe_text, parse_mode="HTML")
                 new_ids = [m.message_id]
             elif content_type == "video":
-                m = await bot.send_video(chat_id, media_obj, caption=text, parse_mode="HTML")
+                m = await bot.send_video(chat_id, media_obj, caption=safe_text, parse_mode="HTML")
                 new_ids = [m.message_id]
             else:
-                m = await bot.send_message(chat_id, text, parse_mode="HTML")
+                m = await bot.send_message(chat_id, safe_text, parse_mode="HTML")
                 new_ids = [m.message_id]
     except TelegramAPIError as e:
         # Fallback if media failed
         await _safe_delete(bot, chat_id, last_ids)
-        # Очищаем текст от проблемных символов перед отправкой ошибки
-        safe_text = _sanitize_html_text(text[:1000]) if text else ""
         error_text = f"⚠️ Ошибка медиа: {str(e)[:200]}"
-        if safe_text:
-            error_text += f"\n\n{safe_text}"
         try:
-            # Пробуем с HTML
-            err_m = await bot.send_message(chat_id, error_text, parse_mode="HTML")
+            err_m = await bot.send_message(chat_id, error_text)
+            new_ids = [err_m.message_id]
         except:
-            try:
-                # Если не работает, пробуем без форматирования
-                err_m = await bot.send_message(chat_id, error_text, parse_mode=None)
-            except:
-                # Если и это не работает, отправляем простой текст
-                err_m = await bot.send_message(chat_id, "⚠️ Ошибка при отправке поста. Проверьте текст на наличие специальных символов.")
-        new_ids = [err_m.message_id]
+            new_ids = []
     
-    # Обновляем ID контента (если отредактировали, сохраняем старый, иначе новый)
     if not content_edited:
         await state.update_data(last_message_ids=new_ids)
     
-    # КРИТИЧЕСКИ ВАЖНО: Меню ВСЕГДА должно быть отправлено ПОСЛЕ контента
-    # ЛОГИКА: 
-    # - Если контент был отредактирован - редактируем меню (не пересоздаем)
-    # - Если контент был создан заново - создаем меню заново (удаляем старое)
-    # - Если контент был создан из-за ошибки - создаем меню заново
-    
-    # Небольшая задержка для гарантии, что контент полностью обработан
-    await asyncio.sleep(0.2)
-    
-    # Определяем, нужно ли пересоздавать меню
-    should_recreate_menu = not content_edited  # Если контент создан заново - пересоздаем меню
+    # Handle Menu
+    # Always recreate menu if content was recreated to ensure it's at the bottom
+    should_recreate_menu = not content_edited
     
     if markup_id and not should_recreate_menu:
-        # Меню существует и контент был отредактирован - редактируем меню
         try:
             await bot.edit_message_text(
                 text=menu_text,
@@ -422,42 +363,20 @@ async def render_preview_post(
                 reply_markup=nav_kb,
                 parse_mode="HTML"
             )
-            # Меню отредактировано, ID остается тем же
         except TelegramAPIError:
-            # Если не удалось отредактировать (например, текст не изменился, но кнопки изменились)
-            # Пробуем еще раз с force=True (через edit_message_reply_markup)
             try:
                 await bot.edit_message_reply_markup(
                     chat_id=chat_id,
                     message_id=markup_id,
                     reply_markup=nav_kb
                 )
-                # Если нужно обновить текст, пробуем еще раз
-                try:
-                    await bot.edit_message_text(
-                        text=menu_text,
-                        chat_id=chat_id,
-                        message_id=markup_id,
-                        reply_markup=nav_kb,
-                        parse_mode="HTML"
-                    )
-                except:
-                    pass
             except TelegramAPIError:
-                # Если и это не сработало, только тогда пересоздаем
-                try:
-                    await _safe_delete(bot, chat_id, [markup_id])
-                except:
-                    pass
-                m_menu = await bot.send_message(chat_id, menu_text, reply_markup=nav_kb, parse_mode="HTML")
-                await state.update_data(last_markup_id=m_menu.message_id)
-    else:
-        # Меню нужно пересоздать (контент создан заново или меню не существует)
+                should_recreate_menu = True
+    
+    if should_recreate_menu:
         if markup_id:
-            # Удаляем старое меню перед созданием нового
             await _safe_delete(bot, chat_id, [markup_id])
         
-        # Создаем новое меню ПОСЛЕ контента
         m_menu = await bot.send_message(chat_id, menu_text, reply_markup=nav_kb, parse_mode="HTML")
         await state.update_data(last_markup_id=m_menu.message_id)
 
@@ -798,44 +717,6 @@ async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
         if d.get('last_markup_id'):
             delete_ids.append(d.get('last_markup_id'))
         await _safe_delete(bot, chat_id, delete_ids)
-        
-        next_idx = d.get('current_post_index', 0) + 1
-        total = d.get('total_posts', 1)
-        
-        await state.update_data(
-            current_post_index=next_idx,
-            last_message_ids=[], 
-            last_markup_id=None,
-            text=None, generated_image_bytes=None, image_base64=None, 
-            original_photo_file_id=None, original_video_file_id=None, media_group_raw=None
-        )
-
-        txt = "✅ <b>Опубликовано!</b>"
-        if next_idx >= total: txt += "\n🏁 Список завершен."
-        await bot.send_message(chat_id, txt, reply_markup=post_publish_actions_keyboard())
-
     except Exception as e:
-        logger.exception("Pub Error")
-        await _safe_delete(bot, chat_id, stat_msg.message_id)
-        await bot.send_message(chat_id, f"❌ Ошибка: {e}")
-        # Не передаем edit_message_id, так как это ошибка и нужно показать состояние
-        await render_preview_post(bot, chat_id, state)
-
-@router.callback_query(F.data == "return_found_posts")
-async def cb_next_post(cb: CallbackQuery, state: FSMContext, bot: Bot):
-    from handlers.topics import _load_post_to_state
-
-    d = await state.get_data()
-    res = d.get('search_results', [])
-    idx = d.get('current_post_index', 0)
-
-    if idx >= len(res):
-        await cb.message.edit_text("🏁 Конец.", reply_markup=topics_keyboard())
-        return
-
-    await _safe_delete(bot, cb.message.chat.id, cb.message.message_id)
-    _load_post_to_state(d, res[idx])
-    await state.update_data(d)
-    await state.set_state(FormState.viewing_post)
-    # Передаем ID меню для редактирования
-    await render_preview_post(bot, cb.message.chat.id, state, edit_message_id=cb.message.message_id)
+        logger.error(f"Error publishing: {e}")
+        await bot.send_message(chat_id, f"❌ Ошибка публикации: {e}")

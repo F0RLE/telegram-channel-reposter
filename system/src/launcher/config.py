@@ -75,16 +75,19 @@ COLORS = {
     'surface_dark': '#0a0d12',  # Darker surfaces
     'card_bg': '#181c24',  # Card background (graphite)
     'sidebar': '#141820',  # Sidebar background
+    'input_bg': '#1c2028',  # Input fields background (lighter than bg for contrast, ~5% brighter)
     'primary': '#3d7bff',  # Electric blue for actions
     'primary_hover': '#5a8fff',  # Lighter blue on hover
     'secondary': '#59d4c8',  # Turquoise for statuses
     'success': '#10b981',
     'danger': '#ef4444',
     'warning': '#ffb84d',  # Warm amber
-    'text': '#ffffff',  # White for headings
-    'text_secondary': '#a0a0a0',  # Gray for labels
-    'text_muted': '#6b7280',  # Muted gray
-    'border': '#2a2f38',  # Subtle borders
+    'text': '#E0E0E0',  # Light gray for body text (better readability)
+    'text_secondary': '#C0C0C0',  # Medium gray for labels (14px, medium weight)
+    'text_muted': '#8a8a8a',  # Muted gray for small elements (12-13px)
+    'border': '#3a3f48',  # Default border (dark gray, more visible)
+    'border_focus': '#3d7bff',  # Focus border (accent color)
+    'border_hover': '#4a4f58',  # Hover border (slightly lighter)
     'accent': '#3d7bff',
 }
 
