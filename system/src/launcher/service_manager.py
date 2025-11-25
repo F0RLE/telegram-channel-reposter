@@ -308,12 +308,27 @@ class ServiceManager:
                                 startupinfo=startupinfo
                             )
                             
-                            # Читаем вывод в реальном времени
+                            # Отслеживаем прогресс, показываем каждые 5%
+                            last_logged_percent = -5
                             for line in iter(pull_process.stdout.readline, ''):
                                 if line:
-                                    # Логируем прогресс
                                     line_stripped = line.strip()
-                                    if line_stripped:
+                                    
+                                    # Извлекаем процент из строки (формат: "pulling... 26%")
+                                    if "pulling" in line_stripped.lower() and "%" in line_stripped:
+                                        try:
+                                            # Ищем процент в строке
+                                            percent_str = line_stripped.split("%")[0].split()[-1]
+                                            current_percent = int(percent_str)
+                                            
+                                            # Логируем каждые 5%
+                                            if current_percent >= last_logged_percent + 5:
+                                                self.log(f"⬇️ [LLM] Загрузка: {current_percent}%", "LLM")
+                                                last_logged_percent = current_percent
+                                        except (ValueError, IndexError):
+                                            pass
+                                    # Логируем важные сообщения (success, error, verifying)
+                                    elif any(keyword in line_stripped.lower() for keyword in ['success', 'error', 'verifying', 'failed']):
                                         self.log(f"📥 [LLM] {line_stripped}", "LLM")
                             
                             pull_process.wait(timeout=600)
