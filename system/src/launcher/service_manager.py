@@ -418,6 +418,13 @@ class ServiceManager:
                 env["OLLAMA_MODELS"] = MODELS_LLM_DIR  # Use unified models directory
                 env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
                 
+                # Force GPU usage
+                env["CUDA_VISIBLE_DEVICES"] = "0"  # Use first GPU
+                env["OLLAMA_DEBUG"] = "1"  # Enable debug for GPU info
+                # Remove CPU-only flag if present
+                if "OLLAMA_VULKAN" in env:
+                    del env["OLLAMA_VULKAN"]
+                
                 cmd = [OLLAMA_EXE, "serve"]
                 cwd = OLLAMA_DIR
 
