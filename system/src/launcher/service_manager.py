@@ -449,9 +449,12 @@ class ServiceManager:
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = subprocess.SW_HIDE
             
+            service_name = self._get_service_name(name)
+            self.log(t("ui.launcher.log.service_launching", default=f"🚀 [{name.upper()}] Launching {service_name}...", service=service_name), name.upper())
+            
             p = subprocess.Popen(
                 cmd, cwd=cwd, env=env,
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,  # Separate stderr
                 encoding='utf-8', errors='replace',
                 creationflags=subprocess.CREATE_NO_WINDOW,
                 startupinfo=startupinfo
@@ -459,6 +462,7 @@ class ServiceManager:
             
             self.procs[name] = p
             self.update_status(name, "running", "green")
+            self.log(t("ui.launcher.log.service_pid", default=f"✅ [{name.upper()}] Process started (PID: {p.pid})", service=service_name, pid=p.pid), name.upper())
             
             def reader():
                 try:
@@ -475,8 +479,23 @@ class ServiceManager:
                     if self.procs.get(name) == p:  # If this is still the active process
                         self.procs[name] = None
                         self.update_status(name, "stopped", "gray")
-
+            
+            def error_reader():
+                try:
+                    for line in iter(p.stderr.readline, ''):
+                        if line and not self.stop_events[name].is_set():
+                            # Log errors with warning prefix
+                            self.log_queue.put((f"⚠️ {line.strip()}", name.upper()))
+                except (OSError, ValueError, AttributeError):
+                    pass
+                finally:
+                    try:
+                        p.stderr.close()
+                    except (OSError, AttributeError):
+                        pass
+            
             threading.Thread(target=reader, daemon=True).start()
+            threading.Thread(target=error_reader, daemon=True).start()
 
         except Exception as e:
             service_name = self._get_service_name(name)
