@@ -45,7 +45,6 @@ from aiogram.fsm.storage.memory import MemoryStorage
 try:
     from config.settings import BOT_TOKEN, CONFIG_DIR
     from core.bot_manager import BotManager
-    from core.debug_server import start_debug_server, WebSocketLogHandler
     from core.utils import safe_delete_message
     from handlers.start import router as start_router
     from handlers.topics import router as topics_router
@@ -169,18 +168,6 @@ async def main():
     bot_manager.initialize(BOT_TOKEN)
     bot = bot_manager.bot
     dp = bot_manager.dispatcher
-
-    # Setup Debug Server
-    try:
-        # Add WebSocket handler to root logger
-        ws_handler = WebSocketLogHandler()
-        ws_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%H:%M:%S"))
-        logging.getLogger().addHandler(ws_handler)
-        
-        # Start server
-        await start_debug_server()
-    except Exception as e:
-        logger.error(f"Failed to start debug server: {e}")
 
     # Register Routers
     dp.include_routers(start_router, topics_router, post_actions_router, forward_router)
