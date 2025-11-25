@@ -1583,7 +1583,7 @@ class ModernLauncher(ctk.CTk):
     def _create_main_settings_tab(self, parent):
         """Создает улучшенную вкладку основных настроек с двухколоночной сеткой"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
-        scroll.pack(fill="both", expand=True, padx=12, pady=12)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
         
         # Контейнер для двухколоночной сетки
@@ -1879,7 +1879,7 @@ class ModernLauncher(ctk.CTk):
     def _create_text_settings_tab(self, parent):
         """Создает компактную вкладку настроек генерации текста"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
-        scroll.pack(fill="both", expand=True, padx=12, pady=12)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
         
         gen_config = {}
@@ -2325,7 +2325,7 @@ class ModernLauncher(ctk.CTk):
     def _create_image_settings_tab(self, parent):
         """Создает улучшенную вкладку настроек генерации изображений с сеточной структурой"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
-        scroll.pack(fill="both", expand=True, padx=12, pady=12)
+        scroll.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
         
         gen_config = {}
