@@ -67,22 +67,24 @@ AD_MODELS_URLS = {
     "hand_yolov9c.pt": "https://huggingface.co/Bingsu/adetailer/resolve/main/hand_yolov9c.pt"
 }
 
-# Color scheme
+# Color scheme - Modern dark theme with glassmorphism
 COLORS = {
-    'bg': '#0a0a0a',
-    'surface': '#141414',
-    'surface_light': '#1a1a1a',
-    'surface_dark': '#0f0f0f',
-    'primary': '#6366f1',
-    'primary_hover': '#818cf8',
-    'secondary': '#8b5cf6',
+    'bg': '#0f1117',  # Deep charcoal base
+    'surface': '#181c24',  # Graphite cards
+    'surface_light': '#1f2329',  # Lighter cards
+    'surface_dark': '#0a0d12',  # Darker surfaces
+    'card_bg': '#181c24',  # Card background (graphite)
+    'sidebar': '#141820',  # Sidebar background
+    'primary': '#3d7bff',  # Electric blue for actions
+    'primary_hover': '#5a8fff',  # Lighter blue on hover
+    'secondary': '#59d4c8',  # Turquoise for statuses
     'success': '#10b981',
     'danger': '#ef4444',
-    'warning': '#f59e0b',
-    'text': '#e5e7eb',
-    'text_secondary': '#9ca3af',
-    'text_muted': '#6b7280',
-    'border': '#262626',
-    'accent': '#3b82f6',
+    'warning': '#ffb84d',  # Warm amber
+    'text': '#ffffff',  # White for headings
+    'text_secondary': '#a0a0a0',  # Gray for labels
+    'text_muted': '#6b7280',  # Muted gray
+    'border': '#2a2f38',  # Subtle borders
+    'accent': '#3d7bff',
 }
 

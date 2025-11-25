@@ -1,4 +1,11 @@
-"""Centralized error handling and retry mechanism"""
+"""
+Centralized error handling and retry mechanism.
+
+This module provides:
+- Retry decorator with exponential backoff
+- Centralized error handling with user-friendly messages
+- Error logging and notification system
+"""
 import asyncio
 import logging
 import time
@@ -11,7 +18,16 @@ T = TypeVar('T')
 
 
 class RetryConfig:
-    """Configuration for retry mechanism"""
+    """
+    Configuration for retry mechanism with exponential backoff.
+    
+    Attributes:
+        max_attempts: Maximum number of retry attempts
+        initial_delay: Initial delay in seconds before first retry
+        max_delay: Maximum delay in seconds (caps exponential growth)
+        exponential_base: Base for exponential backoff calculation
+        retryable_exceptions: Tuple of exception types that should trigger retry
+    """
     def __init__(
         self,
         max_attempts: int = 3,
@@ -20,6 +36,16 @@ class RetryConfig:
         exponential_base: float = 2.0,
         retryable_exceptions: tuple = (Exception,)
     ):
+        """
+        Initialize retry configuration.
+        
+        Args:
+            max_attempts: Maximum number of retry attempts (default: 3)
+            initial_delay: Initial delay in seconds (default: 1.0)
+            max_delay: Maximum delay in seconds (default: 60.0)
+            exponential_base: Base for exponential backoff (default: 2.0)
+            retryable_exceptions: Tuple of exception types to retry (default: Exception)
+        """
         self.max_attempts = max_attempts
         self.initial_delay = initial_delay
         self.max_delay = max_delay
@@ -28,7 +54,24 @@ class RetryConfig:
 
 
 def retry_with_backoff(config: Optional[RetryConfig] = None):
-    """Decorator for retry with exponential backoff"""
+    """
+    Decorator for retry with exponential backoff.
+    
+    Automatically retries function calls on failure with increasing delays.
+    Works with both sync and async functions.
+    
+    Args:
+        config: RetryConfig instance (uses defaults if None)
+        
+    Returns:
+        Decorated function with retry logic
+        
+    Example:
+        @retry_with_backoff(RetryConfig(max_attempts=5, initial_delay=2.0))
+        async def my_function():
+            # Will retry up to 5 times with exponential backoff
+            pass
+    """
     if config is None:
         config = RetryConfig()
     

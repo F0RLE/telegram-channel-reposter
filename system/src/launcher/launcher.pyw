@@ -653,6 +653,17 @@ class ModernLauncher(ctk.CTk):
         card = ctk.CTkFrame(parent, **default_kwargs)
         return card
     
+    def add_focus_style(self, widget):
+        """Добавляет стили фокуса для полей ввода (border меняется на accent при фокусе)"""
+        def on_focus_in(event):
+            widget.configure(border_color=COLORS.get('border_focus', COLORS['primary']))
+        
+        def on_focus_out(event):
+            widget.configure(border_color=COLORS['border'])
+        
+        widget.bind("<FocusIn>", on_focus_in)
+        widget.bind("<FocusOut>", on_focus_out)
+    
     def create_sidebar(self):
         """Создает боковую панель с glassmorphism дизайном"""
         sidebar = ctk.CTkFrame(self, width=280, corner_radius=0, fg_color=COLORS['sidebar'])
@@ -949,32 +960,11 @@ class ModernLauncher(ctk.CTk):
         if not self.pages_created[idx]:
             try:
                 if idx == 1:
-                    # Создаем страницу настроек в фоне для плавности
-                    self.pages[1] = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
-                    loading_label = ctk.CTkLabel(
-                        self.pages[1],
-                        text=t("ui.launcher.loading", default="Загрузка..."),
-                        font=("Segoe UI", 16),
-                        text_color=COLORS['text_muted']
-                    )
-                    loading_label.pack(expand=True)
-                    self.pages[1].grid(row=0, column=0, sticky="nsew")
-                    self.pages_created[idx] = True
-                    
-                    # Создаем реальную страницу в фоне
-                    def create_settings_async():
-                        try:
-                            settings_page = self.create_settings_page()
-                            # Заменяем placeholder на реальную страницу
-                            self.pages[1].destroy()
-                            self.pages[1] = settings_page
-                            self.pages[1].grid(row=0, column=0, sticky="nsew")
-                        except Exception as e:
-                            self.log(f"❌ [SYSTEM] Ошибка создания страницы настроек: {e}", "SYSTEM")
-                    
-                    # Запускаем создание в отдельном потоке
-                    threading.Thread(target=create_settings_async, daemon=True).start()
-                elif idx == 2:
+                # Создаем страницу настроек
+                # Optimization: Create directly on main thread, but content is lazy loaded
+                self.pages[1] = self.create_settings_page()
+                self.pages_created[idx] = True
+            elif idx == 2:
                     self.pages[2] = self.create_channels_page()
                     self.pages_created[idx] = True
                 elif idx == 3:
@@ -1389,6 +1379,36 @@ class ModernLauncher(ctk.CTk):
         self.service_buttons = getattr(self, 'service_buttons', {})
         self.service_buttons[key] = service_btn
         
+        # Add Debug Console button for bot service
+        if key == 'bot':
+            def open_debug_console():
+                try:
+                    # Try to read port from file
+                    port = 8080
+                    port_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "core", "debug_port.txt")
+                    if os.path.exists(port_file):
+                        with open(port_file, 'r') as f:
+                            port = int(f.read().strip())
+                    
+                    url = f"http://127.0.0.1:{port}"
+                    import webbrowser
+                    webbrowser.open(url)
+                except Exception as e:
+                    self.log(f"Failed to open debug console: {e}", "SYSTEM")
+
+            debug_btn = ctk.CTkButton(
+                card,
+                text="Debug Console",
+                command=open_debug_console,
+                fg_color=COLORS['surface_light'],
+                hover_color=COLORS['surface'],
+                text_color=COLORS['text'],
+                font=("Segoe UI", 12),
+                height=32,
+                corner_radius=8
+            )
+            debug_btn.pack(fill="x", padx=20, pady=(0, 20))
+            
         return card
     
     def create_settings_page(self):
@@ -1496,26 +1516,6 @@ class ModernLauncher(ctk.CTk):
             btn.grid(row=0, column=idx, sticky="ew", padx=3, pady=4)
             self.settings_tab_buttons.append((key, btn))
             
-            # Create content frame
-            tab_frame = ctk.CTkFrame(content_area, fg_color=COLORS['bg'])
-            tab_frame.grid(row=0, column=0, sticky="nsew")
-            tab_frame.grid_columnconfigure(0, weight=1)
-            tab_frame.grid_rowconfigure(0, weight=1)
-            
-            # Create content
-            try:
-                create_func(tab_frame)
-            except Exception as e:
-                self.log(f"❌ [SETTINGS] Ошибка создания вкладки {key}: {e}", "SYSTEM")
-                # Create error label
-                error_label = ctk.CTkLabel(
-                    tab_frame,
-                    text=t("ui.launcher.error.tab_load_failed", default="Ошибка загрузки вкладки"),
-                    text_color=COLORS['danger']
-                )
-                error_label.pack(expand=True)
-            
-            # Hide all except first
             if idx > 0:
                 tab_frame.grid_remove()
             
@@ -1524,23 +1524,23 @@ class ModernLauncher(ctk.CTk):
         # Set first tab as active
         self.current_settings_tab = "general"
         
-        # Кнопка сброса всех настроек внизу
+        # Кнопка сброса всех настроек внизу (компактная, справа)
         reset_all_frame = ctk.CTkFrame(frame, fg_color="transparent")
-        reset_all_frame.grid(row=2, column=0, sticky="ew", padx=16, pady=(0, 16))
-        reset_all_frame.grid_columnconfigure(0, weight=1)
+        reset_all_frame.grid(row=2, column=0, sticky="e", padx=16, pady=(0, 16))
         
         reset_all_btn = ctk.CTkButton(
             reset_all_frame,
-            text="🔄 " + t("ui.launcher.settings.reset_all", default="Сбросить все настройки к исходным"),
-            font=("Segoe UI", 12, "bold"),
-            fg_color=COLORS['danger'],
-            hover_color="#dc2626",
-            text_color="white",
-            height=40,
-            corner_radius=8,
+            text="🗑️ " + t("ui.launcher.settings.reset_all", default="Сбросить настройки"),
+            font=("Segoe UI", 11),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['danger'],
+            text_color=COLORS['text_secondary'],
+            height=32,
+            width=160,
+            corner_radius=6,
             command=self._reset_all_settings
         )
-        reset_all_btn.grid(row=0, column=0, sticky="ew")
+        reset_all_btn.pack(side="right")
         
         return frame
     
@@ -1578,42 +1578,276 @@ class ModernLauncher(ctk.CTk):
         self.current_settings_tab = tab_key
     
     def _create_main_settings_tab(self, parent):
-        """Создает вкладку основных настроек"""
+        """Создает улучшенную вкладку основных настроек с двухколоночной сеткой"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
         scroll.pack(fill="both", expand=True, padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
         
-        # Telegram Bot settings
-        bot_card = self.create_setting_card(scroll, t("ui.launcher.service.telegram_bot"), [
-            ("BOT_TOKEN", t("ui.launcher.settings.bot_token"), t("ui.launcher.settings.bot_token.placeholder", default="Bot token from @BotFather")),
-            ("TARGET_CHANNEL_ID", t("ui.launcher.settings.target_channel"), t("ui.launcher.settings.target_channel.placeholder", default="Target channel ID"))
-        ])
-        bot_card.pack(fill="x", pady=(0, 10))
+        # Контейнер для двухколоночной сетки
+        grid_container = ctk.CTkFrame(scroll, fg_color="transparent")
+        grid_container.pack(fill="both", expand=True)
+        grid_container.grid_columnconfigure(0, weight=1)
+        grid_container.grid_columnconfigure(1, weight=1)
         
-        # Debug режим
-        debug_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
-        debug_card.pack(fill="x", pady=(0, 10))
+        # ========== КАРТОЧКА 1: Учетные данные бота ==========
+        bot_card = self.create_glass_card(grid_container, fg_color=COLORS['card_bg'], corner_radius=12)
+        bot_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 12))
+        bot_card.grid_columnconfigure(0, weight=1)
+        
+        # Заголовок карточки
+        bot_header = ctk.CTkFrame(bot_card, fg_color="transparent")
+        bot_header.pack(fill="x", padx=16, pady=(16, 12))
         
         ctk.CTkLabel(
-            debug_card,
-            text=t("ui.launcher.settings.debug", default="Debug"),
-            font=("Segoe UI", 13, "bold"),
+            bot_header,
+            text="🤖 " + t("ui.launcher.service.telegram_bot", default="Учетные данные бота"),
+            font=("Segoe UI", 14, "bold"),
             text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 10))
+        ).pack(side="left")
         
-        debug_frame = ctk.CTkFrame(debug_card, fg_color="transparent")
-        debug_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=14, pady=(0, 12))
+        bot_content = ctk.CTkFrame(bot_card, fg_color="transparent")
+        bot_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        bot_content.grid_columnconfigure((0, 1), weight=1)
+        
+        # Token с кнопкой копирования
+        token_label = ctk.CTkLabel(
+            bot_content,
+            text=t("ui.launcher.settings.bot_token", default="Bot Token"),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        )
+        token_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        
+        token_frame = ctk.CTkFrame(bot_content, fg_color="transparent")
+        token_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        token_frame.grid_columnconfigure(0, weight=1)
+        
+        token_entry = ctk.CTkEntry(
+            token_frame,
+            placeholder_text=t("ui.launcher.settings.bot_token.placeholder", default="Bot token from @BotFather"),
+            font=("Segoe UI", 11),
+            height=32,
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1,
+            corner_radius=6
+        )
+        token_value = get_key(FILE_ENV, "BOT_TOKEN") or ""
+        if token_value:
+            token_entry.insert(0, token_value)
+        token_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.add_focus_style(token_entry)  # Добавляем focus-стили
+        self.entries["BOT_TOKEN"] = token_entry
+        token_entry.bind("<KeyRelease>", lambda e: self._auto_save_settings())
+        token_entry.bind("<FocusOut>", lambda e: self._auto_save_settings())
+        
+        def copy_token():
+            token_val = token_entry.get()
+            if token_val:
+                self.clipboard_clear()
+                self.clipboard_append(token_val)
+                # Визуальная обратная связь
+                copy_btn.configure(text="✓", fg_color=COLORS['success'])
+                self.after(1000, lambda: copy_btn.configure(text="📋", fg_color=COLORS['surface_light']))
+        
+        copy_btn = ctk.CTkButton(
+            token_frame,
+            text="📋",
+            width=40,
+            height=32,
+            command=copy_token,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            font=("Segoe UI", 12)
+        )
+        copy_btn.grid(row=0, column=1)
+        
+        # Channel ID с кнопкой копирования
+        channel_label = ctk.CTkLabel(
+            bot_content,
+            text=t("ui.launcher.settings.target_channel", default="Channel ID"),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        )
+        channel_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        
+        channel_frame = ctk.CTkFrame(bot_content, fg_color="transparent")
+        channel_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        channel_frame.grid_columnconfigure(0, weight=1)
+        
+        channel_entry = ctk.CTkEntry(
+            channel_frame,
+            placeholder_text=t("ui.launcher.settings.target_channel.placeholder", default="Target channel ID"),
+            font=("Segoe UI", 11),
+            height=32,
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1,
+            corner_radius=6
+        )
+        channel_value = get_key(FILE_ENV, "TARGET_CHANNEL_ID") or ""
+        if channel_value:
+            channel_entry.insert(0, channel_value)
+        channel_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.add_focus_style(channel_entry)  # Добавляем focus-стили
+        self.entries["TARGET_CHANNEL_ID"] = channel_entry
+        channel_entry.bind("<KeyRelease>", lambda e: self._auto_save_settings())
+        channel_entry.bind("<FocusOut>", lambda e: self._auto_save_settings())
+        
+        def copy_channel():
+            channel_val = channel_entry.get()
+            if channel_val:
+                self.clipboard_clear()
+                self.clipboard_append(channel_val)
+                copy_channel_btn.configure(text="✓", fg_color=COLORS['success'])
+                self.after(1000, lambda: copy_channel_btn.configure(text="📋", fg_color=COLORS['surface_light']))
+        
+        copy_channel_btn = ctk.CTkButton(
+            channel_frame,
+            text="📋",
+            width=40,
+            height=32,
+            command=copy_channel,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            font=("Segoe UI", 12)
+        )
+        copy_channel_btn.grid(row=0, column=1)
+        
+        # Дополнительные настройки в две колонки
+        # Имя бота (если есть в настройках)
+        bot_name_label = ctk.CTkLabel(
+            bot_content,
+            text="Имя бота",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        )
+        bot_name_label.grid(row=4, column=0, sticky="w", pady=(0, 6), padx=(0, 8))
+        
+        bot_name_entry = ctk.CTkEntry(
+            bot_content,
+            placeholder_text="Опционально",
+            font=("Segoe UI", 11),
+            height=32,
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1,
+            corner_radius=6
+        )
+        bot_name_entry.grid(row=5, column=0, sticky="ew", pady=(0, 12), padx=(0, 8))
+        self.add_focus_style(bot_name_entry)  # Добавляем focus-стили
+        
+        # Язык интерфейса
+        lang_label = ctk.CTkLabel(
+            bot_content,
+            text="Язык",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        )
+        lang_label.grid(row=4, column=1, sticky="w", pady=(0, 6))
+        
+        lang_options = ["🇷🇺 Русский", "🇬🇧 English"]
+        lang_var = tk.StringVar(value=lang_options[0] if self.current_language == "ru" else lang_options[1])
+        lang_menu = ctk.CTkOptionMenu(
+            bot_content,
+            values=lang_options,
+            variable=lang_var,
+            font=("Segoe UI", 11),
+            height=32,
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
+        )
+        lang_menu.grid(row=5, column=1, sticky="ew", pady=(0, 12))
+        
+        # ========== КАРТОЧКА 2: Диагностика ==========
+        debug_card = self.create_glass_card(grid_container, fg_color=COLORS['card_bg'], corner_radius=12)
+        debug_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=(0, 12))
+        debug_card.grid_columnconfigure(0, weight=1)
+        
+        debug_header = ctk.CTkFrame(debug_card, fg_color="transparent")
+        debug_header.pack(fill="x", padx=16, pady=(16, 12))
+        
+        ctk.CTkLabel(
+            debug_header,
+            text="🔧 " + t("ui.launcher.settings.debug", default="Диагностика"),
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        debug_content = ctk.CTkFrame(debug_card, fg_color="transparent")
+        debug_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        debug_content.grid_columnconfigure((0, 1, 2), weight=1)
+        
+        # Мини-плитки статуса
+        status_tile = ctk.CTkFrame(debug_content, fg_color=COLORS['surface_light'], corner_radius=8)
+        status_tile.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 12))
+        
+        ctk.CTkLabel(
+            status_tile,
+            text="Статус",
+            font=("Segoe UI", 10),
+            text_color=COLORS['text_muted']
+        ).pack(pady=(8, 4))
+        
+        status_value = ctk.CTkLabel(
+            status_tile,
+            text="✅ OK",
+            font=("Segoe UI", 12, "bold"),
+            text_color=COLORS['success']
+        )
+        status_value.pack(pady=(0, 8))
+        
+        ping_tile = ctk.CTkFrame(debug_content, fg_color=COLORS['surface_light'], corner_radius=8)
+        ping_tile.grid(row=0, column=1, sticky="ew", padx=3, pady=(0, 12))
+        
+        ctk.CTkLabel(
+            ping_tile,
+            text="Пинг",
+            font=("Segoe UI", 10),
+            text_color=COLORS['text_muted']
+        ).pack(pady=(8, 4))
+        
+        ping_value = ctk.CTkLabel(
+            ping_tile,
+            text="—",
+            font=("Segoe UI", 12, "bold"),
+            text_color=COLORS['text_secondary']
+        )
+        ping_value.pack(pady=(0, 8))
+        
+        queue_tile = ctk.CTkFrame(debug_content, fg_color=COLORS['surface_light'], corner_radius=8)
+        queue_tile.grid(row=0, column=2, sticky="ew", padx=(6, 0), pady=(0, 12))
+        
+        ctk.CTkLabel(
+            queue_tile,
+            text="Очередь",
+            font=("Segoe UI", 10),
+            text_color=COLORS['text_muted']
+        ).pack(pady=(0, 4))
+        
+        queue_value = ctk.CTkLabel(
+            queue_tile,
+            text="0",
+            font=("Segoe UI", 12, "bold"),
+            text_color=COLORS['text_secondary']
+        )
+        queue_value.pack(pady=(0, 8))
+        
+        # Debug режим
+        debug_frame = ctk.CTkFrame(debug_content, fg_color="transparent")
+        debug_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 12))
         
         ctk.CTkLabel(
             debug_frame,
-            text=t("ui.launcher.settings.debug_mode", default="Debug mode"),
+            text=t("ui.launcher.settings.debug_mode", default="Режим отладки"),
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
         ).pack(side="left", padx=(0, 8))
         
         debug_switch = ctk.CTkSwitch(
             debug_frame,
-            text=t("ui.launcher.settings.show_debug", default="Show debug messages"),
+            text=t("ui.launcher.settings.show_debug", default="Показывать отладочные сообщения"),
             variable=self.debug_mode,
             font=("Segoe UI", 11),
             onvalue=True,
@@ -1629,6 +1863,13 @@ class ModernLauncher(ctk.CTk):
                 self.debug_mode.set(True)
         except:
             pass
+        
+        # Сохраняем ссылки для обновления
+        if not hasattr(self, 'diagnostics_labels'):
+            self.diagnostics_labels = {}
+        self.diagnostics_labels['status'] = status_value
+        self.diagnostics_labels['ping'] = ping_value
+        self.diagnostics_labels['queue'] = queue_value
     
     def _create_text_settings_tab(self, parent):
         """Создает компактную вкладку настроек генерации текста"""
@@ -1644,118 +1885,177 @@ class ModernLauncher(ctk.CTk):
             except:
                 pass
         
-        # LLM Generation Settings - Compact
-        llm_gen_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
-        llm_gen_card.pack(fill="x", pady=(0, 10))
-        llm_gen_card.grid_columnconfigure(1, weight=1)
+        # ========== КАРТОЧКА: Редактор промптов с вкладками ==========
+        instructions_card = self.create_glass_card(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
+        instructions_card.pack(fill="x", pady=(0, 12))
+        instructions_card.grid_columnconfigure(0, weight=1)
         
-        ctk.CTkLabel(
-            llm_gen_card,
-            text=t("ui.launcher.settings.text_generation", default="Генерация текста"),
-            font=("Segoe UI", 12, "bold"),
-            text_color=COLORS['text']
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=12, pady=(10, 8))
-        
-        # Temperature
-        ctk.CTkLabel(
-            llm_gen_card,
-            text=t("ui.launcher.settings.llm_temp", default="Температура"),
-            font=("Segoe UI", 11),
-            text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=12, pady=4)
-        
-        temp_var = tk.DoubleVar(value=float(gen_config.get("llm_temp", 0.7)))
-        temp_slider = ctk.CTkSlider(
-            llm_gen_card,
-            from_=0.0,
-            to=2.0,
-            number_of_steps=200,
-            variable=temp_var,
-            width=250
-        )
-        temp_slider.grid(row=1, column=1, sticky="ew", padx=6, pady=4)
-        
-        temp_label = ctk.CTkLabel(
-            llm_gen_card,
-            textvariable=temp_var,
-            font=("Segoe UI", 11, "bold"),
-            text_color=COLORS['text'],
-            width=45
-        )
-        temp_label.grid(row=1, column=2, padx=(0, 12), pady=4)
-        self.llm_temp_var = temp_var
-        temp_var.trace_add("write", lambda *args: self._save_generation_config())
-        
-        # Context Window
-        ctk.CTkLabel(
-            llm_gen_card,
-            text=t("ui.launcher.settings.llm_ctx", default="Контекст"),
-            font=("Segoe UI", 11),
-            text_color=COLORS['text_secondary']
-        ).grid(row=2, column=0, sticky="w", padx=12, pady=4)
-        
-        ctx_var = tk.IntVar(value=int(gen_config.get("llm_ctx", 4096)))
-        ctx_entry = ctk.CTkEntry(
-            llm_gen_card,
-            textvariable=ctx_var,
-            font=("Segoe UI", 11),
-            width=110,
-            height=28
-        )
-        ctx_entry.grid(row=2, column=1, sticky="w", padx=6, pady=4)
-        self.llm_ctx_var = ctx_var
-        ctx_var.trace_add("write", lambda *args: self._save_generation_config())
-        
-        ctk.CTkLabel(
-            llm_gen_card,
-            text="токенов",
-            font=("Segoe UI", 10),
-            text_color=COLORS['text_muted']
-        ).grid(row=2, column=2, sticky="w", padx=(0, 12), pady=4)
-        
-        # Кнопка сброса настроек LLM
-        reset_llm_frame = ctk.CTkFrame(llm_gen_card, fg_color="transparent")
-        reset_llm_frame.grid(row=3, column=0, columnspan=3, sticky="e", padx=12, pady=(6, 10))
-        
-        reset_llm_btn = ctk.CTkButton(
-            reset_llm_frame,
-            text=t("ui.launcher.settings.reset_llm", default="🔄 Сбросить на дефолтные"),
-            font=("Segoe UI", 10),
-            fg_color=COLORS['surface_light'],
-            hover_color=COLORS['surface'],
-            text_color=COLORS['text_secondary'],
-            height=28,
-            corner_radius=6,
-            command=self._reset_llm_settings
-        )
-        reset_llm_btn.pack(side="right")
-        
-        # Card 2: Инструкции для переписывания текста
-        instructions_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        instructions_card.pack(fill="x", pady=(0, 10))
-        instructions_card.grid_columnconfigure(1, weight=1)
-        
+        # Заголовок с вкладками
         instructions_header = ctk.CTkFrame(instructions_card, fg_color="transparent")
-        instructions_header.pack(fill="x", padx=14, pady=(12, 10))
+        instructions_header.pack(fill="x", padx=16, pady=(16, 12))
+        
+        header_left = ctk.CTkFrame(instructions_header, fg_color="transparent")
+        header_left.pack(side="left", fill="x", expand=True)
         
         ctk.CTkLabel(
-            instructions_header,
-            text="📋 " + t("ui.launcher.settings.llm_instructions", default="Инструкции для переписывания"),
-            font=("Segoe UI", 13, "bold"),
+            header_left,
+            text="📋 " + t("ui.launcher.settings.llm_instructions", default="Редактор промптов"),
+            font=("Segoe UI", 14, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
-        instructions_content = ctk.CTkFrame(instructions_card, fg_color="transparent")
-        instructions_content.pack(fill="x", padx=14, pady=(0, 12))
-        instructions_content.grid_columnconfigure(1, weight=1)
+        # Вкладки для переключения между промптами
+        tabs_frame = ctk.CTkFrame(instructions_header, fg_color="transparent")
+        tabs_frame.pack(side="right")
         
-        # System prompt для переписывания
+        self.prompt_tab_var = tk.StringVar(value="system")
+        
+        def switch_prompt_tab(tab_name):
+            self.prompt_tab_var.set(tab_name)
+            # Скрываем все фреймы
+            system_prompt_frame.pack_forget()
+            user_prompt_frame.pack_forget()
+            positive_prompt_frame.pack_forget()
+            negative_prompt_frame.pack_forget()
+            cliches_frame.pack_forget()
+            
+            # Сбрасываем стили всех кнопок
+            system_btn.configure(fg_color=COLORS['surface_light'], text_color=COLORS['text_secondary'], font=("Segoe UI", 12))
+            user_btn.configure(fg_color=COLORS['surface_light'], text_color=COLORS['text_secondary'], font=("Segoe UI", 12))
+            positive_btn.configure(fg_color=COLORS['surface_light'], text_color=COLORS['text_secondary'], font=("Segoe UI", 12))
+            negative_btn.configure(fg_color=COLORS['surface_light'], text_color=COLORS['text_secondary'], font=("Segoe UI", 12))
+            cliches_btn.configure(fg_color=COLORS['surface_light'], text_color=COLORS['text_secondary'], font=("Segoe UI", 12))
+            
+            # Показываем нужный фрейм и активируем кнопку
+            if tab_name == "system":
+                system_prompt_frame.pack(fill="both", expand=True)
+                system_btn.configure(fg_color=COLORS['primary'], text_color="white", font=("Segoe UI", 12, "bold"))
+            elif tab_name == "user":
+                user_prompt_frame.pack(fill="both", expand=True)
+                user_btn.configure(fg_color=COLORS['primary'], text_color="white", font=("Segoe UI", 12, "bold"))
+            elif tab_name == "positive":
+                positive_prompt_frame.pack(fill="both", expand=True)
+                positive_btn.configure(fg_color=COLORS['primary'], text_color="white", font=("Segoe UI", 12, "bold"))
+            elif tab_name == "negative":
+                negative_prompt_frame.pack(fill="both", expand=True)
+                negative_btn.configure(fg_color=COLORS['primary'], text_color="white", font=("Segoe UI", 12, "bold"))
+            else:  # cliches
+                cliches_frame.pack(fill="both", expand=True)
+                cliches_btn.configure(fg_color=COLORS['primary'], text_color="white", font=("Segoe UI", 12, "bold"))
+        
+        system_btn = ctk.CTkButton(
+            tabs_frame,
+            text="System",
+            width=80,
+            height=32,
+            command=lambda: switch_prompt_tab("system"),
+            fg_color=COLORS['primary'],
+            hover_color=COLORS['primary_hover'],
+            text_color="white",
+            font=("Segoe UI", 12, "bold"),  # 12px для кнопок вкладок
+            corner_radius=6
+        )
+        system_btn.pack(side="left", padx=(0, 6))
+        
+        user_btn = ctk.CTkButton(
+            tabs_frame,
+            text="User",
+            width=80,
+            height=32,
+            command=lambda: switch_prompt_tab("user"),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 12),  # 12px для кнопок вкладок
+            corner_radius=6
+        )
+        user_btn.pack(side="left", padx=(0, 6))
+        
+        positive_btn = ctk.CTkButton(
+            tabs_frame,
+            text="+ Позитивный",
+            width=110,
+            height=32,
+            command=lambda: switch_prompt_tab("positive"),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 12),  # 12px для кнопок вкладок
+            corner_radius=6
+        )
+        positive_btn.pack(side="left", padx=(0, 6))
+        
+        negative_btn = ctk.CTkButton(
+            tabs_frame,
+            text="− Негативный",
+            width=110,
+            height=32,
+            command=lambda: switch_prompt_tab("negative"),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 12),  # 12px для кнопок вкладок
+            corner_radius=6
+        )
+        negative_btn.pack(side="left", padx=(0, 6))
+        
+        cliches_btn = ctk.CTkButton(
+            tabs_frame,
+            text="Клише",
+            width=80,
+            height=32,
+            command=lambda: switch_prompt_tab("cliches"),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 12),  # 12px для кнопок вкладок
+            corner_radius=6
+        )
+        cliches_btn.pack(side="left")
+        
+        # Контейнер для контента вкладок
+        instructions_content = ctk.CTkFrame(instructions_card, fg_color="transparent")
+        instructions_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        instructions_content.grid_columnconfigure(0, weight=1)
+        
+        # System prompt frame
+        system_prompt_frame = ctk.CTkFrame(instructions_content, fg_color="transparent")
+        system_prompt_frame.grid_columnconfigure(0, weight=1)
+        
+        system_label_frame = ctk.CTkFrame(system_prompt_frame, fg_color="transparent")
+        system_label_frame.pack(fill="x", pady=(0, 8))
+        
         ctk.CTkLabel(
-            instructions_content,
+            system_label_frame,
             text=t("ui.launcher.settings.llm_system_prompt", default="Системный промпт"),
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 14, "normal"),  # 14px, medium weight для лейблов
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="nw", padx=(0, 12), pady=(8, 0))
+        ).pack(side="left")
+        
+        # Кнопка вставки переменных
+        def insert_variable(var_name):
+            current_text = system_prompt_entry.get("1.0", "end-1c")
+            cursor_pos = system_prompt_entry.index("insert")
+            new_text = current_text[:len(current_text)] + f"{{{{{var_name}}}}}"
+            system_prompt_entry.delete("1.0", "end")
+            system_prompt_entry.insert("1.0", new_text)
+            system_prompt_entry.focus()
+        
+        vars_menu_frame = ctk.CTkFrame(system_label_frame, fg_color="transparent")
+        vars_menu_frame.pack(side="right")
+        
+        vars_btn = ctk.CTkButton(
+            vars_menu_frame,
+            text="Вставить переменную ▼",
+            width=150,
+            height=28,
+            font=("Segoe UI", 12),  # 12px для мелких кнопок
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            corner_radius=4
+        )
+        vars_btn.pack(side="left")
         
         default_system_prompt = gen_config.get("llm_rewrite_system_prompt", 
             "Ты — талантливый редактор Telegram-канала. Твоя задача — переписать текст, сделав его живым, "
@@ -1764,16 +2064,18 @@ class ModernLauncher(ctk.CTk):
             "Кликбейтный Заголовок ||| Основной текст поста")
         
         system_prompt_entry = ctk.CTkTextbox(
-            instructions_content,
-            font=("Segoe UI", 11),
-            height=100,
-            fg_color=COLORS['bg'],
+            system_prompt_frame,
+            font=("Consolas", 16),  # 16px моноширинный для редактора промптов
+            height=160,  # Увеличена высота для лучшей читаемости
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
+            border_width=1,
             corner_radius=6,
             wrap="word"
         )
         system_prompt_entry.insert("1.0", default_system_prompt)
-        system_prompt_entry.grid(row=0, column=1, sticky="ew", pady=8)
+        system_prompt_entry.pack(fill="both", expand=True)
+        self.add_focus_style(system_prompt_entry)  # Добавляем focus-стили
         self.llm_rewrite_system_prompt_entry = system_prompt_entry
         
         def save_system_prompt(*args):
@@ -1781,27 +2083,58 @@ class ModernLauncher(ctk.CTk):
         system_prompt_entry.bind("<KeyRelease>", save_system_prompt)
         system_prompt_entry.bind("<FocusOut>", save_system_prompt)
         
-        # User prompt для переписывания
+        # Нижняя панель с информацией
+        system_footer = ctk.CTkFrame(system_prompt_frame, fg_color="transparent")
+        system_footer.pack(fill="x", pady=(8, 0))
+        
+        def count_tokens():
+            text = system_prompt_entry.get("1.0", "end-1c")
+            # Простой подсчет: примерно 1 токен = 4 символа
+            approx_tokens = len(text) // 4
+            return approx_tokens
+        
+        token_count_label = ctk.CTkLabel(
+            system_footer,
+            text=f"Токены: ~{count_tokens()}",
+            font=("Segoe UI", 12),  # 12px для мелких элементов
+            text_color=COLORS['text_muted']
+        )
+        token_count_label.pack(side="left")
+        
+        def update_token_count(*args):
+            token_count_label.configure(text=f"Токены: ~{count_tokens()}")
+        
+        system_prompt_entry.bind("<KeyRelease>", update_token_count)
+        
+        # User prompt frame
+        user_prompt_frame = ctk.CTkFrame(instructions_content, fg_color="transparent")
+        user_prompt_frame.grid_columnconfigure(0, weight=1)
+        
+        user_label_frame = ctk.CTkFrame(user_prompt_frame, fg_color="transparent")
+        user_label_frame.pack(fill="x", pady=(0, 8))
+        
         ctk.CTkLabel(
-            instructions_content,
+            user_label_frame,
             text=t("ui.launcher.settings.llm_user_prompt", default="Пользовательский промпт"),
-            font=("Segoe UI", 11),
+            font=("Segoe UI", 14, "normal"),  # 14px для лейблов
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="nw", padx=(0, 12), pady=(8, 0))
+        ).pack(side="left")
         
         default_user_prompt = gen_config.get("llm_rewrite_user_prompt", "Перепиши этот текст:\n\n{text}")
         
         user_prompt_entry = ctk.CTkTextbox(
-            instructions_content,
-            font=("Segoe UI", 11),
-            height=60,
-            fg_color=COLORS['bg'],
+            user_prompt_frame,
+            font=("Consolas", 16),  # 16px моноширинный
+            height=120,  # Увеличена высота
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
+            border_width=1,
             corner_radius=6,
             wrap="word"
         )
         user_prompt_entry.insert("1.0", default_user_prompt)
-        user_prompt_entry.grid(row=1, column=1, sticky="ew", pady=8)
+        user_prompt_entry.pack(fill="both", expand=True)
+        self.add_focus_style(user_prompt_entry)  # Добавляем focus-стили
         self.llm_rewrite_user_prompt_entry = user_prompt_entry
         
         def save_user_prompt(*args):
@@ -1809,32 +2142,117 @@ class ModernLauncher(ctk.CTk):
         user_prompt_entry.bind("<KeyRelease>", save_user_prompt)
         user_prompt_entry.bind("<FocusOut>", save_user_prompt)
         
-        # Клише для удаления
+        # Positive prompt frame (применяется к сгенерированному тексту)
+        positive_prompt_frame = ctk.CTkFrame(instructions_content, fg_color="transparent")
+        positive_prompt_frame.grid_columnconfigure(0, weight=1)
+        
+        positive_label_frame = ctk.CTkFrame(positive_prompt_frame, fg_color="transparent")
+        positive_label_frame.pack(fill="x", pady=(0, 8))
+        
         ctk.CTkLabel(
-            instructions_content,
-            text=t("ui.launcher.settings.llm_cliches", default="Клише для удаления (через запятую)"),
-            font=("Segoe UI", 11),
+            positive_label_frame,
+            text="Позитивный промпт (добавляется к сгенерированному тексту)",
+            font=("Segoe UI", 14, "normal"),  # 14px для лейблов
             text_color=COLORS['text_secondary']
-        ).grid(row=2, column=0, sticky="nw", padx=(0, 12), pady=(8, 0))
+        ).pack(side="left")
+        
+        default_positive_prompt = gen_config.get("llm_positive_prompt", "")
+        
+        positive_prompt_entry = ctk.CTkTextbox(
+            positive_prompt_frame,
+            font=("Consolas", 16),  # 16px моноширинный
+            height=120,  # Увеличена высота
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1,
+            corner_radius=6,
+            wrap="word"
+        )
+        if default_positive_prompt:
+            positive_prompt_entry.insert("1.0", default_positive_prompt)
+        positive_prompt_entry.pack(fill="both", expand=True)
+        self.add_focus_style(positive_prompt_entry)  # Добавляем focus-стили
+        self.llm_positive_prompt_entry = positive_prompt_entry
+        
+        def save_positive_prompt(*args):
+            self._save_generation_config()
+        positive_prompt_entry.bind("<KeyRelease>", save_positive_prompt)
+        positive_prompt_entry.bind("<FocusOut>", save_positive_prompt)
+        
+        # Negative prompt frame (применяется к сгенерированному тексту)
+        negative_prompt_frame = ctk.CTkFrame(instructions_content, fg_color="transparent")
+        negative_prompt_frame.grid_columnconfigure(0, weight=1)
+        
+        negative_label_frame = ctk.CTkFrame(negative_prompt_frame, fg_color="transparent")
+        negative_label_frame.pack(fill="x", pady=(0, 8))
+        
+        ctk.CTkLabel(
+            negative_label_frame,
+            text="Негативный промпт (добавляется к сгенерированному тексту)",
+            font=("Segoe UI", 14, "normal"),  # 14px для лейблов
+            text_color=COLORS['text_secondary']
+        ).pack(side="left")
+        
+        default_negative_prompt = gen_config.get("llm_negative_prompt", "")
+        
+        negative_prompt_entry = ctk.CTkTextbox(
+            negative_prompt_frame,
+            font=("Consolas", 16),  # 16px моноширинный
+            height=120,  # Увеличена высота
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1,
+            corner_radius=6,
+            wrap="word"
+        )
+        if default_negative_prompt:
+            negative_prompt_entry.insert("1.0", default_negative_prompt)
+        negative_prompt_entry.pack(fill="both", expand=True)
+        self.add_focus_style(negative_prompt_entry)  # Добавляем focus-стили
+        self.llm_negative_prompt_entry = negative_prompt_entry
+        
+        def save_negative_prompt(*args):
+            self._save_generation_config()
+        negative_prompt_entry.bind("<KeyRelease>", save_negative_prompt)
+        negative_prompt_entry.bind("<FocusOut>", save_negative_prompt)
+        
+        # Клише frame
+        cliches_frame = ctk.CTkFrame(instructions_content, fg_color="transparent")
+        cliches_frame.grid_columnconfigure(0, weight=1)
+        
+        cliches_label_frame = ctk.CTkFrame(cliches_frame, fg_color="transparent")
+        cliches_label_frame.pack(fill="x", pady=(0, 8))
+        
+        ctk.CTkLabel(
+            cliches_label_frame,
+            text=t("ui.launcher.settings.llm_cliches", default="Клише для удаления (через запятую)"),
+            font=("Segoe UI", 14, "normal"),  # 14px для лейблов
+            text_color=COLORS['text_secondary']
+        ).pack(side="left")
         
         default_cliches = gen_config.get("llm_rewrite_cliches", "а вы знали, не может быть, ого, да ну, и такие виды")
         
         cliches_entry = ctk.CTkEntry(
-            instructions_content,
-            font=("Segoe UI", 11),
-            height=28,
-            fg_color=COLORS['bg'],
+            cliches_frame,
+            font=("Segoe UI", 14),  # 14px для полей ввода
+            height=40,  # Увеличена высота для лучшей читаемости
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
+            border_width=1,
             corner_radius=6
         )
         cliches_entry.insert(0, default_cliches)
-        cliches_entry.grid(row=2, column=1, sticky="ew", pady=8)
+        cliches_entry.pack(fill="x")
+        self.add_focus_style(cliches_entry)  # Добавляем focus-стили
         self.llm_rewrite_cliches_entry = cliches_entry
         
         def save_cliches(*args):
             self._save_generation_config()
         cliches_entry.bind("<KeyRelease>", save_cliches)
         cliches_entry.bind("<FocusOut>", save_cliches)
+        
+        # Показываем System по умолчанию
+        switch_prompt_tab("system")
         
         # LLM Model Management - Unified
         llm_card = ctk.CTkFrame(scroll, fg_color=COLORS['card_bg'], corner_radius=10)
@@ -1873,12 +2291,14 @@ class ModernLauncher(ctk.CTk):
         models_dir_entry = ctk.CTkEntry(
             models_dir_card,
             font=("Segoe UI", 11),
-            fg_color=COLORS['bg'],
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
+            border_width=1,
             height=32
         )
         models_dir_entry.insert(0, current_path)
         models_dir_entry.grid(row=0, column=1, sticky="ew", padx=(8, 8), pady=8)
+        self.add_focus_style(models_dir_entry)  # Добавляем focus-стили
         self.models_dir_entry = models_dir_entry
         # Автосохранение при изменении
         models_dir_entry.bind("<KeyRelease>", lambda e: self._auto_save_settings())
@@ -1896,7 +2316,7 @@ class ModernLauncher(ctk.CTk):
         ).grid(row=0, column=2, padx=(0, 15), pady=8)
     
     def _create_image_settings_tab(self, parent):
-        """Создает вкладку настроек генерации изображений с Discord-стилем"""
+        """Создает улучшенную вкладку настроек генерации изображений с сеточной структурой"""
         scroll = ctk.CTkScrollableFrame(parent, fg_color=COLORS['bg'])
         scroll.pack(fill="both", expand=True, padx=12, pady=12)
         scroll.grid_columnconfigure(0, weight=1)
@@ -1909,36 +2329,113 @@ class ModernLauncher(ctk.CTk):
             except:
                 pass
         
-        # Card 1: Параметры генерации
-        gen_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        gen_card.pack(fill="x", pady=(0, 10))
-        gen_card.grid_columnconfigure(1, weight=1)
-        
-        card_header = ctk.CTkFrame(gen_card, fg_color="transparent")
-        card_header.pack(fill="x", padx=14, pady=(12, 10))
+        # Строка пресетов
+        presets_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        presets_frame.pack(fill="x", pady=(0, 12))
         
         ctk.CTkLabel(
-            card_header,
+            presets_frame,
+            text="Пресеты:",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).pack(side="left", padx=(0, 8))
+        
+        def apply_preset(preset_name):
+            if preset_name == "portrait":
+                width_var.set(896)
+                height_var.set(1152)
+                steps_var.set(30)
+                cfg_var.set(7.0)
+            elif preset_name == "landscape":
+                width_var.set(1152)
+                height_var.set(896)
+                steps_var.set(30)
+                cfg_var.set(7.0)
+            elif preset_name == "telegram":
+                width_var.set(1024)
+                height_var.set(1024)
+                steps_var.set(25)
+                cfg_var.set(6.5)
+        
+        preset_btn1 = ctk.CTkButton(
+            presets_frame,
+            text="Портрет",
+            width=100,
+            height=28,
+            command=lambda: apply_preset("portrait"),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 10),
+            corner_radius=6
+        )
+        preset_btn1.pack(side="left", padx=(0, 6))
+        
+        preset_btn2 = ctk.CTkButton(
+            presets_frame,
+            text="Пейзаж",
+            width=100,
+            height=28,
+            command=lambda: apply_preset("landscape"),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 10),
+            corner_radius=6
+        )
+        preset_btn2.pack(side="left", padx=(0, 6))
+        
+        preset_btn3 = ctk.CTkButton(
+            presets_frame,
+            text="Telegram",
+            width=100,
+            height=28,
+            command=lambda: apply_preset("telegram"),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 10),
+            corner_radius=6
+        )
+        preset_btn3.pack(side="left")
+        
+        # Контейнер для двухколоночной сетки
+        grid_container = ctk.CTkFrame(scroll, fg_color="transparent")
+        grid_container.pack(fill="both", expand=True)
+        grid_container.grid_columnconfigure(0, weight=1)
+        grid_container.grid_columnconfigure(1, weight=1)
+        
+        # ========== КАРТОЧКА 1: Параметры генерации (левая колонка) ==========
+        gen_card = self.create_glass_card(grid_container, fg_color=COLORS['card_bg'], corner_radius=12)
+        gen_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 12))
+        gen_card.grid_columnconfigure(0, weight=1)
+        
+        gen_header = ctk.CTkFrame(gen_card, fg_color="transparent")
+        gen_header.pack(fill="x", padx=16, pady=(16, 12))
+        
+        ctk.CTkLabel(
+            gen_header,
             text="🎨 " + t("ui.launcher.settings.image_generation", default="Параметры генерации"),
-            font=("Segoe UI", 13, "bold"),
+            font=("Segoe UI", 14, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
-        card_content = ctk.CTkFrame(gen_card, fg_color="transparent")
-        card_content.pack(fill="x", padx=14, pady=(0, 12))
-        card_content.grid_columnconfigure(1, weight=1)
+        gen_content = ctk.CTkFrame(gen_card, fg_color="transparent")
+        gen_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        gen_content.grid_columnconfigure(1, weight=1)
         
-        # Steps with live value
+        # Steps - в две колонки
+        steps_var = tk.IntVar(value=int(gen_config.get("sd_steps", 30)))
+        
         ctk.CTkLabel(
-            card_content,
-            text=t("ui.launcher.settings.sd_steps", default="Количество шагов"),
+            gen_content,
+            text=t("ui.launcher.settings.sd_steps", default="Шаги"),
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="w", padx=(0, 12), pady=8)
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6))
         
-        steps_var = tk.IntVar(value=int(gen_config.get("sd_steps", 30)))
-        steps_frame = ctk.CTkFrame(card_content, fg_color="transparent")
-        steps_frame.grid(row=0, column=1, sticky="ew", pady=8)
+        steps_frame = ctk.CTkFrame(gen_content, fg_color="transparent")
+        steps_frame.grid(row=0, column=1, sticky="ew", pady=(0, 12))
         steps_frame.grid_columnconfigure(0, weight=1)
         
         steps_slider = ctk.CTkSlider(
@@ -1958,7 +2455,7 @@ class ModernLauncher(ctk.CTk):
             textvariable=steps_var,
             font=("Segoe UI", 11, "bold"),
             text_color=COLORS['primary'],
-            width=50,
+            width=45,
             fg_color=COLORS['surface_light'],
             corner_radius=6
         )
@@ -1966,17 +2463,18 @@ class ModernLauncher(ctk.CTk):
         self.sd_steps_var = steps_var
         steps_var.trace_add("write", lambda *args: self._save_generation_config())
         
-        # CFG Scale with live value
+        # CFG Scale - в две колонки
+        cfg_var = tk.DoubleVar(value=float(gen_config.get("sd_cfg", 6.0)))
+        
         ctk.CTkLabel(
-            card_content,
+            gen_content,
             text=t("ui.launcher.settings.sd_cfg", default="CFG Scale"),
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=(0, 12), pady=8)
+        ).grid(row=1, column=0, sticky="w", pady=(0, 6))
         
-        cfg_var = tk.DoubleVar(value=float(gen_config.get("sd_cfg", 6.0)))
-        cfg_frame = ctk.CTkFrame(card_content, fg_color="transparent")
-        cfg_frame.grid(row=1, column=1, sticky="ew", pady=8)
+        cfg_frame = ctk.CTkFrame(gen_content, fg_color="transparent")
+        cfg_frame.grid(row=1, column=1, sticky="ew", pady=(0, 12))
         cfg_frame.grid_columnconfigure(0, weight=1)
         
         cfg_slider = ctk.CTkSlider(
@@ -1996,7 +2494,7 @@ class ModernLauncher(ctk.CTk):
             textvariable=cfg_var,
             font=("Segoe UI", 11, "bold"),
             text_color=COLORS['primary'],
-            width=50,
+            width=45,
             fg_color=COLORS['surface_light'],
             corner_radius=6
         )
@@ -2004,204 +2502,276 @@ class ModernLauncher(ctk.CTk):
         self.sd_cfg_var = cfg_var
         cfg_var.trace_add("write", lambda *args: self._save_generation_config())
         
-        # Card 2: Размер изображения
-        size_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        size_card.pack(fill="x", pady=(0, 10))
-        size_card.grid_columnconfigure(1, weight=1)
+        # Sampler
+        ctk.CTkLabel(
+            gen_content,
+            text=t("ui.launcher.settings.sd_sampler", default="Семплер"),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).grid(row=2, column=0, sticky="w", pady=(0, 6))
+        
+        sampler_options = ["DPM++ 2M", "DPM++ 2M Karras", "DPM++ SDE", "DPM++ SDE Karras", "Euler", "Euler a", "LMS", "LMS Karras", "DDIM", "PLMS"]
+        sampler_var = tk.StringVar(value=gen_config.get("sd_sampler", "DPM++ 2M"))
+        sampler_menu = ctk.CTkOptionMenu(
+            gen_content,
+            values=sampler_options,
+            variable=sampler_var,
+            width=180,
+            height=32,
+            font=("Segoe UI", 11),
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
+        )
+        sampler_menu.grid(row=2, column=1, sticky="ew", pady=(0, 12))
+        self.sd_sampler_var = sampler_var
+        sampler_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        # Seed
+        ctk.CTkLabel(
+            gen_content,
+            text="Seed",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).grid(row=3, column=0, sticky="w", pady=(0, 6))
+        
+        seed_frame = ctk.CTkFrame(gen_content, fg_color="transparent")
+        seed_frame.grid(row=3, column=1, sticky="ew")
+        seed_frame.grid_columnconfigure(0, weight=1)
+        
+        seed_var = tk.StringVar(value=gen_config.get("sd_seed", ""))
+        seed_entry = ctk.CTkEntry(
+            seed_frame,
+            textvariable=seed_var,
+            font=("Segoe UI", 11),
+            height=32,
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1,
+            corner_radius=6
+        )
+        seed_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        self.add_focus_style(seed_entry)  # Добавляем focus-стили
+        self.sd_seed_var = seed_var
+        seed_var.trace_add("write", lambda *args: self._save_generation_config())
+        
+        def random_seed():
+            import random
+            seed_var.set(str(random.randint(1, 999999999)))
+        
+        random_seed_btn = ctk.CTkButton(
+            seed_frame,
+            text="🎲",
+            width=40,
+            height=32,
+            command=random_seed,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            font=("Segoe UI", 12)
+        )
+        random_seed_btn.grid(row=0, column=1)
+        
+        # ========== КАРТОЧКА 2: Размер и вывод (правая колонка) ==========
+        size_card = self.create_glass_card(grid_container, fg_color=COLORS['card_bg'], corner_radius=12)
+        size_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=(0, 12))
+        size_card.grid_columnconfigure(0, weight=1)
         
         size_header = ctk.CTkFrame(size_card, fg_color="transparent")
-        size_header.pack(fill="x", padx=14, pady=(12, 10))
+        size_header.pack(fill="x", padx=16, pady=(16, 12))
         
         ctk.CTkLabel(
             size_header,
-            text="📐 " + t("ui.launcher.settings.image_size", default="Размер изображения"),
-            font=("Segoe UI", 13, "bold"),
+            text="📐 " + t("ui.launcher.settings.image_size", default="Размер и вывод"),
+            font=("Segoe UI", 14, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
         size_content = ctk.CTkFrame(size_card, fg_color="transparent")
-        size_content.pack(fill="x", padx=14, pady=(0, 12))
-        size_content.grid_columnconfigure((1, 3), weight=1)
+        size_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        size_content.grid_columnconfigure((0, 1), weight=1)
         
-        # Width
+        # Width и Height в две колонки
+        width_var = tk.IntVar(value=int(gen_config.get("sd_width", 896)))
+        height_var = tk.IntVar(value=int(gen_config.get("sd_height", 1152)))
+        
         ctk.CTkLabel(
             size_content,
             text=t("ui.launcher.settings.sd_width", default="Ширина"),
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="w", padx=(0, 10), pady=8)
+        ).grid(row=0, column=0, sticky="w", pady=(0, 6), padx=(0, 8))
         
-        width_var = tk.IntVar(value=int(gen_config.get("sd_width", 896)))
-        width_entry = ctk.CTkEntry(
-            size_content,
-            textvariable=width_var,
-            font=("Segoe UI", 11),
-            width=120,
-            height=28,
-            fg_color=COLORS['bg'],
-            border_color=COLORS['border'],
-            corner_radius=6
-        )
-        width_entry.grid(row=0, column=1, sticky="w", padx=(0, 16), pady=8)
-        self.sd_width_var = width_var
-        width_var.trace_add("write", lambda *args: self._save_generation_config())
-        
-        # Height
         ctk.CTkLabel(
             size_content,
             text=t("ui.launcher.settings.sd_height", default="Высота"),
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=2, sticky="w", padx=(0, 10), pady=8)
+        ).grid(row=0, column=1, sticky="w", pady=(0, 6))
         
-        height_var = tk.IntVar(value=int(gen_config.get("sd_height", 1152)))
+        width_entry = ctk.CTkEntry(
+            size_content,
+            textvariable=width_var,
+            font=("Segoe UI", 11),
+            height=32,
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1,
+            corner_radius=6
+        )
+        width_entry.grid(row=1, column=0, sticky="ew", pady=(0, 12), padx=(0, 8))
+        self.add_focus_style(width_entry)  # Добавляем focus-стили
+        self.sd_width_var = width_var
+        width_var.trace_add("write", lambda *args: self._save_generation_config())
+        
         height_entry = ctk.CTkEntry(
             size_content,
             textvariable=height_var,
             font=("Segoe UI", 11),
-            width=120,
-            height=28,
-            fg_color=COLORS['bg'],
+            height=32,
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
+            border_width=1,
             corner_radius=6
         )
-        height_entry.grid(row=0, column=3, sticky="w", pady=8)
+        height_entry.grid(row=1, column=1, sticky="ew", pady=(0, 12))
+        self.add_focus_style(height_entry)  # Добавляем focus-стили
         self.sd_height_var = height_var
         height_var.trace_add("write", lambda *args: self._save_generation_config())
         
-        # Card 3: Параметры сэмплинга
-        sampling_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        sampling_card.pack(fill="x", pady=(0, 10))
-        sampling_card.grid_columnconfigure(1, weight=1)
-        
-        sampling_header = ctk.CTkFrame(sampling_card, fg_color="transparent")
-        sampling_header.pack(fill="x", padx=14, pady=(12, 10))
-        
-        ctk.CTkLabel(
-            sampling_header,
-            text="⚙️ " + t("ui.launcher.settings.sampling", default="Параметры сэмплинга"),
-            font=("Segoe UI", 13, "bold"),
-            text_color=COLORS['text']
-        ).pack(side="left")
-        
-        sampling_content = ctk.CTkFrame(sampling_card, fg_color="transparent")
-        sampling_content.pack(fill="x", padx=14, pady=(0, 12))
-        sampling_content.grid_columnconfigure(1, weight=1)
-        
-        # Sampler
-        ctk.CTkLabel(
-            sampling_content,
-            text=t("ui.launcher.settings.sd_sampler", default="Семплер"),
+        # Соотношения сторон (чипы)
+        aspect_label = ctk.CTkLabel(
+            size_content,
+            text="Соотношение:",
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="w", padx=(0, 12), pady=8)
-        
-        sampler_options = ["DPM++ 2M", "DPM++ 2M Karras", "DPM++ SDE", "DPM++ SDE Karras", "Euler", "Euler a", "LMS", "LMS Karras", "DDIM", "PLMS"]
-        sampler_var = tk.StringVar(value=gen_config.get("sd_sampler", "DPM++ 2M"))
-        sampler_menu = ctk.CTkOptionMenu(
-            sampling_content,
-            values=sampler_options,
-            variable=sampler_var,
-            width=200,
-            height=28,
-            font=("Segoe UI", 11),
-            fg_color=COLORS['surface_light'],
-            button_color=COLORS['primary'],
-            button_hover_color=COLORS['primary_hover']
         )
-        sampler_menu.grid(row=0, column=1, sticky="w", pady=8)
-        self.sd_sampler_var = sampler_var
-        sampler_var.trace_add("write", lambda *args: self._save_generation_config())
+        aspect_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 6))
         
-        # Scheduler
-        ctk.CTkLabel(
-            sampling_content,
-            text=t("ui.launcher.settings.sd_scheduler", default="Планировщик"),
-            font=("Segoe UI", 11),
-            text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="w", padx=(0, 12), pady=8)
+        aspect_frame = ctk.CTkFrame(size_content, fg_color="transparent")
+        aspect_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 12))
         
-        scheduler_options = ["Karras", "Exponential", "SGM Uniform", "Simple", "DDIM Uniform"]
-        scheduler_var = tk.StringVar(value=gen_config.get("sd_scheduler", "Karras"))
-        scheduler_menu = ctk.CTkOptionMenu(
-            sampling_content,
-            values=scheduler_options,
-            variable=scheduler_var,
-            width=200,
+        def set_aspect(w, h):
+            width_var.set(w)
+            height_var.set(h)
+        
+        aspect_1_1 = ctk.CTkButton(
+            aspect_frame,
+            text="1:1",
+            width=60,
             height=28,
-            font=("Segoe UI", 11),
+            command=lambda: set_aspect(1024, 1024),
             fg_color=COLORS['surface_light'],
-            button_color=COLORS['primary'],
-            button_hover_color=COLORS['primary_hover']
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 10),
+            corner_radius=6
         )
-        scheduler_menu.grid(row=1, column=1, sticky="w", pady=8)
-        self.sd_scheduler_var = scheduler_var
-        scheduler_var.trace_add("write", lambda *args: self._save_generation_config())
+        aspect_1_1.pack(side="left", padx=(0, 6))
         
-        # Card 4: Промпты
-        prompts_card = self.create_glass_card(scroll, fg_color=COLORS['surface'])
-        prompts_card.pack(fill="x", pady=(0, 10))
-        prompts_card.grid_columnconfigure(1, weight=1)
+        aspect_16_9 = ctk.CTkButton(
+            aspect_frame,
+            text="16:9",
+            width=60,
+            height=28,
+            command=lambda: set_aspect(1152, 896),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 10),
+            corner_radius=6
+        )
+        aspect_16_9.pack(side="left", padx=(0, 6))
+        
+        aspect_9_16 = ctk.CTkButton(
+            aspect_frame,
+            text="9:16",
+            width=60,
+            height=28,
+            command=lambda: set_aspect(896, 1152),
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 10),
+            corner_radius=6
+        )
+        aspect_9_16.pack(side="left")
+        
+        # ========== КАРТОЧКА 3: Промпты (полная ширина, две колонки) ==========
+        prompts_card = self.create_glass_card(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
+        prompts_card.pack(fill="x", pady=(0, 12))
+        prompts_card.grid_columnconfigure(0, weight=1)
         
         prompts_header = ctk.CTkFrame(prompts_card, fg_color="transparent")
-        prompts_header.pack(fill="x", padx=14, pady=(12, 10))
+        prompts_header.pack(fill="x", padx=16, pady=(16, 12))
         
         ctk.CTkLabel(
             prompts_header,
             text="✍️ " + t("ui.launcher.settings.prompts", default="Промпты"),
-            font=("Segoe UI", 13, "bold"),
+            font=("Segoe UI", 14, "bold"),
             text_color=COLORS['text']
         ).pack(side="left")
         
         prompts_content = ctk.CTkFrame(prompts_card, fg_color="transparent")
-        prompts_content.pack(fill="x", padx=14, pady=(0, 12))
-        prompts_content.grid_columnconfigure(1, weight=1)
+        prompts_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        prompts_content.grid_columnconfigure((0, 1), weight=1)
         
-        # Positive Prompt Prefix
+        # Положительный промпт (левая колонка)
+        positive_frame = ctk.CTkFrame(prompts_content, fg_color="transparent")
+        positive_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        positive_frame.grid_columnconfigure(0, weight=1)
+        
         ctk.CTkLabel(
-            prompts_content,
-            text=t("ui.launcher.settings.sd_positive_prefix", default="Префикс позитивного промпта"),
+            positive_frame,
+            text=t("ui.launcher.settings.sd_positive_prefix", default="Положительный промпт"),
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=0, column=0, sticky="nw", padx=(0, 12), pady=8)
+        ).pack(anchor="w", pady=(0, 8))
         
         positive_prefix_var = tk.StringVar(value=gen_config.get("sd_positive_prefix", "score_9, score_8_up, score_7_up, source_anime, "))
         positive_prefix_entry = ctk.CTkTextbox(
-            prompts_content,
-            height=60,
-            font=("Segoe UI", 11),
+            positive_frame,
+            height=120,
+            font=("Consolas", 10),
             wrap="word",
-            fg_color=COLORS['bg'],
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
+            border_width=1,
             corner_radius=6
         )
         positive_prefix_entry.insert("1.0", positive_prefix_var.get())
-        positive_prefix_entry.grid(row=0, column=1, sticky="ew", pady=8)
+        positive_prefix_entry.pack(fill="both", expand=True)
+        self.add_focus_style(positive_prefix_entry)  # Добавляем focus-стили
         self.sd_positive_prefix_entry = positive_prefix_entry
         def save_positive_prefix(*args):
             self.after(500, self._save_generation_config())
         positive_prefix_entry.bind("<KeyRelease>", save_positive_prefix)
         
-        # Negative Prompt
+        # Отрицательный промпт (правая колонка)
+        negative_frame = ctk.CTkFrame(prompts_content, fg_color="transparent")
+        negative_frame.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        negative_frame.grid_columnconfigure(0, weight=1)
+        
         ctk.CTkLabel(
-            prompts_content,
+            negative_frame,
             text=t("ui.launcher.settings.sd_negative_prompt", default="Негативный промпт"),
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
-        ).grid(row=1, column=0, sticky="nw", padx=(0, 12), pady=8)
+        ).pack(anchor="w", pady=(0, 8))
         
         negative_prompt_default = gen_config.get("sd_negative_prompt", "score_6, score_5, score_4, (worst quality:1.2), (low quality:1.2), (normal quality:1.2), lowres, bad anatomy, bad hands, signature, watermarks, ugly, imperfect eyes, skewed eyes, unnatural face, unnatural body, error, extra limb, missing limbs, text, username, artist name")
         negative_prompt_entry = ctk.CTkTextbox(
-            prompts_content,
-            height=75,
-            font=("Segoe UI", 11),
+            negative_frame,
+            height=120,
+            font=("Consolas", 10),
             wrap="word",
-            fg_color=COLORS['bg'],
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
+            border_width=1,
             corner_radius=6
         )
         negative_prompt_entry.insert("1.0", negative_prompt_default)
-        negative_prompt_entry.grid(row=1, column=1, sticky="ew", pady=8)
+        negative_prompt_entry.pack(fill="both", expand=True)
+        self.add_focus_style(negative_prompt_entry)  # Добавляем focus-стили
         self.sd_negative_prompt_entry = negative_prompt_entry
         def save_negative_prompt(*args):
             self.after(500, self._save_generation_config())
@@ -2209,7 +2779,7 @@ class ModernLauncher(ctk.CTk):
         
         # Кнопка сброса настроек SD
         reset_sd_frame = ctk.CTkFrame(prompts_content, fg_color="transparent")
-        reset_sd_frame.grid(row=2, column=0, columnspan=2, sticky="e", padx=(0, 14), pady=(6, 0))
+        reset_sd_frame.grid(row=1, column=0, columnspan=2, sticky="e", pady=(12, 0))
         
         reset_sd_btn = ctk.CTkButton(
             reset_sd_frame,
@@ -2828,7 +3398,10 @@ class ModernLauncher(ctk.CTk):
         download_controls.grid_columnconfigure(1, weight=1)
         
         model_names = list(POPULAR_MODELS.keys())
-        self.selected_model_var = tk.StringVar(value=model_names[0] if model_names else "")
+        # Устанавливаем gemma3:4b как модель по умолчанию
+        default_model = "gemma3"
+        default_size = "4b"
+        self.selected_model_var = tk.StringVar(value=default_model if default_model in model_names else (model_names[0] if model_names else ""))
         model_menu = ctk.CTkOptionMenu(
             download_controls,
             values=model_names,
@@ -2842,8 +3415,9 @@ class ModernLauncher(ctk.CTk):
         )
         model_menu.grid(row=0, column=0, sticky="w", padx=(0, 8))
         
-        initial_sizes = POPULAR_MODELS[model_names[0]]['sizes'] if model_names else []
-        self.selected_size_var = tk.StringVar(value=initial_sizes[0] if initial_sizes else "")
+        # Устанавливаем размер 4b по умолчанию для gemma3
+        initial_sizes = POPULAR_MODELS[default_model]['sizes'] if default_model in POPULAR_MODELS else (POPULAR_MODELS[model_names[0]]['sizes'] if model_names else [])
+        self.selected_size_var = tk.StringVar(value=default_size if default_size in initial_sizes else (initial_sizes[0] if initial_sizes else ""))
         self.size_menu = ctk.CTkOptionMenu(
             download_controls,
             values=initial_sizes,
@@ -2894,27 +3468,7 @@ class ModernLauncher(ctk.CTk):
         self.ollama_models_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
         
         # GGUF files
-        gguf_label = ctk.CTkLabel(
-            parent,
-            text=t("ui.launcher.model.gguf_files", default="GGUF файлы"),
-            font=("Segoe UI", 16, "bold"),
-            text_color=COLORS['text']
-        )
-        gguf_label.grid(row=3, column=0, sticky="w", pady=(0, 12))
-        
-        gguf_list_card = self.create_glass_card(parent, fg_color=COLORS['bg'])
-        gguf_list_card.grid(row=4, column=0, sticky="nsew")
-        parent.grid_rowconfigure(4, weight=1)
-        gguf_list_card.grid_columnconfigure(0, weight=1)
-        gguf_list_card.grid_rowconfigure(0, weight=1)
-        
-        self.gguf_models_frame = ctk.CTkScrollableFrame(
-            gguf_list_card,
-            fg_color="transparent",
-            height=180,
-            corner_radius=12
-        )
-        self.gguf_models_frame.grid(row=0, column=0, sticky="nsew", padx=12, pady=12)
+        # GGUF модели удалены - используем только Ollama модели
         
         self.after(500, self.scan_llm_models)
     
@@ -4852,59 +5406,50 @@ class ModernLauncher(ctk.CTk):
     # SETTINGS
     
     def scan_llm_models(self):
-        """Сканирует и обновляет списки моделей с glassmorphism дизайном"""
+        """Сканирует и обновляет списки моделей с glassmorphism дизайном (в фоне)"""
         if self.model_manager is None:
             self._init_managers()
-        
-        if hasattr(self, 'ollama_models_frame'):
-            for widget in self.ollama_models_frame.winfo_children():
-                widget.destroy()
             
-            ollama_models = self.model_manager.get_ollama_models()
-            if ollama_models:
-                for model in ollama_models:
-                    model_row = self.create_model_row(
-                        self.ollama_models_frame,
-                        model,
-                        "🧠",
-                        lambda m=model: self._select_model_for_use({'name': m, 'type': 'ollama'}),
-                        lambda m=model: self._delete_ollama_model(m)
-                    )
-                    model_row.pack(fill="x", pady=6, padx=4)
-            else:
-                empty_frame = ctk.CTkFrame(self.ollama_models_frame, fg_color="transparent")
-                empty_frame.pack(fill="x", pady=40)
-                ctk.CTkLabel(
-                    empty_frame,
-                    text=t("ui.launcher.model.ollama_not_found", default="Модели не найдены"),
-                    font=("Segoe UI", 13),
-                    text_color=COLORS['text_muted']
-                ).pack()
-        
-        if hasattr(self, 'gguf_models_frame'):
-            for widget in self.gguf_models_frame.winfo_children():
-                widget.destroy()
+        def scan_thread():
+            try:
+                ollama_models = self.model_manager.get_ollama_models()
+                
+                # Update UI on main thread
+                self.after(0, lambda: self._update_models_ui(ollama_models))
+            except Exception as e:
+                self.log(f"Error scanning models: {e}", "LLM")
+
+        threading.Thread(target=scan_thread, daemon=True).start()
+
+    def _update_models_ui(self, ollama_models):
+        """Обновляет UI моделей (вызывается из scan_thread)"""
+        if not hasattr(self, 'ollama_models_frame'):
+            return
             
-            gguf_models = self.model_manager.get_gguf_models()
-            if gguf_models:
-                for model_info in gguf_models:
-                    model_row = self.create_model_row(
-                        self.gguf_models_frame,
-                        model_info['name'],
-                        "📄",
-                        lambda m=model_info: self._select_model_for_use(m),
-                        lambda m=model_info: self._delete_gguf_model(m)
-                    )
-                    model_row.pack(fill="x", pady=6, padx=4)
-            else:
-                empty_frame = ctk.CTkFrame(self.gguf_models_frame, fg_color="transparent")
-                empty_frame.pack(fill="x", pady=40)
-                ctk.CTkLabel(
-                    empty_frame,
-                    text=t("ui.launcher.model.gguf_not_found", default="GGUF файлы не найдены"),
-                    font=("Segoe UI", 13),
-                    text_color=COLORS['text_muted']
-                ).pack()
+        for widget in self.ollama_models_frame.winfo_children():
+            widget.destroy()
+        
+        if ollama_models:
+            for model in ollama_models:
+                model_row = self.create_model_row(
+                    self.ollama_models_frame,
+                    model,
+                    "🧠",
+                    lambda m=model: self._select_model_for_use({'name': m, 'type': 'ollama'}),
+                    lambda m=model: self._delete_ollama_model(m)
+                )
+                model_row.pack(fill="x", pady=6, padx=4)
+        else:
+            empty_frame = ctk.CTkFrame(self.ollama_models_frame, fg_color="transparent")
+            empty_frame.pack(fill="x", pady=40)
+            ctk.CTkLabel(
+                empty_frame,
+                text=t("ui.launcher.model.ollama_not_found", default="Модели не найдены"),
+                font=("Segoe UI", 13),
+                text_color=COLORS['text_muted']
+            ).pack()
+        
+        # GGUF модели больше не поддерживаются
     
     def create_model_row(self, parent, model_name, icon, select_callback, delete_callback):
         """Создает красивую строку модели с glassmorphism эффектом"""
@@ -5037,14 +5582,7 @@ class ModernLauncher(ctk.CTk):
         try:
             gen_config = {}
             
-            # LLM settings
-            if hasattr(self, 'llm_temp_var'):
-                gen_config['llm_temp'] = float(self.llm_temp_var.get())
-            if hasattr(self, 'llm_ctx_var'):
-                try:
-                    gen_config['llm_ctx'] = int(self.llm_ctx_var.get())
-                except:
-                    gen_config['llm_ctx'] = 4096
+            # Температура и контекст больше не настраиваются - Ollama сам управляет
             
             # Сохраняем инструкции для переписывания
             if hasattr(self, 'llm_rewrite_system_prompt_entry'):
@@ -5054,6 +5592,15 @@ class ModernLauncher(ctk.CTk):
             if hasattr(self, 'llm_rewrite_user_prompt_entry'):
                 user_prompt = self.llm_rewrite_user_prompt_entry.get("1.0", "end-1c").strip()
                 gen_config['llm_rewrite_user_prompt'] = user_prompt
+            
+            # Сохраняем позитивный и негативный промпты для LLM
+            if hasattr(self, 'llm_positive_prompt_entry'):
+                positive_prompt = self.llm_positive_prompt_entry.get("1.0", "end-1c").strip()
+                gen_config['llm_positive_prompt'] = positive_prompt
+            
+            if hasattr(self, 'llm_negative_prompt_entry'):
+                negative_prompt = self.llm_negative_prompt_entry.get("1.0", "end-1c").strip()
+                gen_config['llm_negative_prompt'] = negative_prompt
             
             if hasattr(self, 'llm_rewrite_cliches_entry'):
                 cliches = self.llm_rewrite_cliches_entry.get().strip()
@@ -5456,15 +6003,7 @@ class ModernLauncher(ctk.CTk):
     def _reset_llm_settings(self):
         """Сбрасывает настройки LLM на дефолтные значения"""
         try:
-            # Дефолтные значения
-            default_temp = 0.7
-            default_ctx = 4096
-            
-            # Обновляем переменные
-            if hasattr(self, 'llm_temp_var'):
-                self.llm_temp_var.set(default_temp)
-            if hasattr(self, 'llm_ctx_var'):
-                self.llm_ctx_var.set(default_ctx)
+            # Температура и контекст больше не настраиваются
             
             # Сбрасываем инструкции для переписывания
             default_system_prompt = (
@@ -5588,13 +6127,8 @@ class ModernLauncher(ctk.CTk):
                 set_key(FILE_ENV, "MODELS_LLM_DIR", default_models_dir)
             
             # Сбрасываем LLM настройки
-            default_llm_temp = 0.7
-            default_llm_ctx = 4096
             default_llm_model = "ollama:gemma3:4b"  # Модель по умолчанию
-            if hasattr(self, 'llm_temp_var'):
-                self.llm_temp_var.set(default_llm_temp)
-            if hasattr(self, 'llm_ctx_var'):
-                self.llm_ctx_var.set(default_llm_ctx)
+            # Температура и контекст больше не настраиваются
             
             # Устанавливаем модель по умолчанию
             set_key(FILE_ENV, "SELECTED_LLM_MODEL", default_llm_model)

@@ -1,3 +1,4 @@
+"""LLM module for text rewriting and prompt generation"""
 import logging
 import re
 import asyncio
@@ -18,6 +19,15 @@ from config.settings import (
     LLM_REWRITE_CLICHES,
     GEN_CONFIG_PATH
 )
+from core.constants import (
+    LLM_REQUEST_TIMEOUT,
+    LLM_MAX_RETRIES,
+    LLM_MAX_TEXT_LENGTH,
+    DEFAULT_RETRY_INITIAL_DELAY,
+    DEFAULT_RETRY_MAX_DELAY
+)
+from core.exceptions import LLMError, ValidationError
+from core.validators import sanitize_text, validate_temperature
 
 # Кэш для настроек переписывания
 _cached_rewrite_settings = None
@@ -93,9 +103,10 @@ logger = logging.getLogger(__name__)
 # 1. HELPERS
 # ==========================================
 
-def _build_payload(prompt: str, system: Optional[str] = None, temp: float = 0.7) -> Dict[str, Any]:
+def _build_payload(prompt: str, system: Optional[str] = None) -> Dict[str, Any]:
     """
-    Constructs the JSON payload for OpenAI-compatible API (Ollama/Llama.cpp).
+    Constructs the JSON payload for OpenAI-compatible API (Ollama).
+    Ollama сам управляет температурой и контекстом - не передаем эти параметры.
     """
     messages = []
     if system:
@@ -107,14 +118,14 @@ def _build_payload(prompt: str, system: Optional[str] = None, temp: float = 0.7)
     if not model_name or model_name == "gemma3:4b":
         logger.debug(f"ℹ️ Using default model name 'gemma3:4b'")
     
+    # Ollama сам управляет температурой и контекстом - не передаем эти параметры
     return {
         "model": model_name,
         "messages": messages,
-        "temperature": temp,
-        "max_tokens": LLM_CTX, # Context window limit
+        # temperature и max_tokens не передаем - Ollama использует оптимальные значения по умолчанию
     }
 
-async def _safe_request(payload: Dict[str, Any], max_retries: int = 3) -> Optional[str]:
+async def _safe_request(payload: Dict[str, Any], max_retries: int = LLM_MAX_RETRIES) -> Optional[str]:
     """
     Sends async request to LLM server with retry mechanism and rate limiting.
     
@@ -124,6 +135,9 @@ async def _safe_request(payload: Dict[str, Any], max_retries: int = 3) -> Option
         
     Returns:
         Response content string or None on error
+        
+    Raises:
+        LLMError: If request fails after retries
     """
     from core.error_handler import retry_with_backoff, RetryConfig, ErrorHandler
     from launcher.core.rate_limiter import llm_rate_limiter
@@ -139,14 +153,16 @@ async def _safe_request(payload: Dict[str, Any], max_retries: int = 3) -> Option
     
     retry_config = RetryConfig(
         max_attempts=max_retries,
-        initial_delay=1.0,
-        max_delay=10.0,
+        initial_delay=DEFAULT_RETRY_INITIAL_DELAY,
+        max_delay=DEFAULT_RETRY_MAX_DELAY,
         retryable_exceptions=(aiohttp.ClientError, asyncio.TimeoutError)
     )
     
     @retry_with_backoff(config=retry_config)
     async def _make_request():
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=120)) as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=LLM_REQUEST_TIMEOUT)
+        ) as session:
             # Use ssl=False for local connections (127.0.0.1)
             async with session.post(url, json=payload, headers=headers, ssl=False) as response:
                 if response.status != 200:
@@ -169,17 +185,23 @@ async def _safe_request(payload: Dict[str, Any], max_retries: int = 3) -> Option
     
     try:
         return await _make_request()
-    except aiohttp.ClientConnectorError:
+    except aiohttp.ClientConnectorError as e:
         error_msg = ErrorHandler.handle_api_error(
-            Exception("Connection failed"),
+            e,
             "Не удалось подключиться к LLM. Проверьте, запущен ли сервер (порт 11434)."
         )
         logger.error(error_msg)
-        return None
+        raise LLMError(
+            "Failed to connect to LLM server",
+            context=error_msg
+        ) from e
     except Exception as e:
         error_msg = ErrorHandler.handle_api_error(e, "Ошибка запроса к LLM")
         logger.error(error_msg)
-        return None
+        raise LLMError(
+            "LLM request failed",
+            context=error_msg
+        ) from e
 
 # ==========================================
 # 2. REWRITE LOGIC
@@ -187,16 +209,26 @@ async def _safe_request(payload: Dict[str, Any], max_retries: int = 3) -> Option
 
 async def rewrite_text(post_text: str) -> Optional[str]:
     """
-    Rewrites text to make it engaging.
+    Rewrites text to make it engaging using LLM.
     Expected format: "Title ||| Body"
-    Matches old working version.
     
     Args:
-        post_text: Original text to rewrite
+        post_text: Original text to rewrite (will be sanitized)
         
     Returns:
         Rewritten text with title and body separated by newlines, or original text on error
+        
+    Raises:
+        ValidationError: If input text is invalid
+        LLMError: If LLM API call fails
     """
+    # Validate and sanitize input
+    if not post_text or not isinstance(post_text, str):
+        raise ValidationError("Post text must be a non-empty string")
+    
+    post_text = sanitize_text(post_text, max_length=LLM_MAX_TEXT_LENGTH)
+    if not post_text:
+        raise ValidationError("Post text is empty after sanitization")
     # Перезагружаем настройки перед каждым запросом (на случай изменения в лаунчере)
     settings = _reload_rewrite_settings()
     
@@ -223,28 +255,33 @@ async def rewrite_text(post_text: str) -> Optional[str]:
     else:
         prompt = user_prompt_template.replace("{text}", post_text.strip())
     
-    # Use temperature from settings, but default to 0.85 (old working value)
-    temp = LLM_TEMP if LLM_TEMP > 0 else 0.85
-    
+    # Ollama сам управляет температурой - не передаем её
     logger.info(f"📝 Переписывание текста (длина: {len(post_text)} символов)")
     logger.debug(f"📝 Системный промпт: {system[:200]}...")
     logger.debug(f"📝 Пользовательский промпт: {prompt[:200]}...")
-    logger.debug(f"📝 Температура: {temp}")
     
-    payload = _build_payload(prompt, system, temp=temp)
+    payload = _build_payload(prompt, system)
     
     from core.monitoring import record_api_call, record_error
     import time
     
     start_time = time.time()
-    res = await _safe_request(payload)
-    duration = time.time() - start_time
-    
-    if not res:
-        logger.error("❌ LLM вернул пустой ответ")
+    try:
+        res = await _safe_request(payload)
+        duration = time.time() - start_time
+        
+        if not res:
+            logger.error("❌ LLM вернул пустой ответ")
+            record_api_call("llm", False, duration)
+            record_error("llm_rewrite", "empty_response")
+            return post_text  # Fallback to original
+    except LLMError as e:
+        duration = time.time() - start_time
         record_api_call("llm", False, duration)
-        record_error("llm_rewrite", "empty_response")
-        return post_text # Fallback to original
+        record_error("llm_rewrite", str(e))
+        logger.error(f"❌ LLM error: {e}")
+        # Return original text on error (graceful degradation)
+        return post_text
     
     logger.info(f"✅ LLM ответ получен за {duration:.2f}с, длина ответа: {len(res)} символов")
     logger.debug(f"📥 Ответ LLM: {res[:300]}...")
@@ -306,7 +343,7 @@ async def create_image_prompt(post_text: str, raw_text: Optional[str] = None) ->
     import time
     
     instruction = f"Text:\n{text[:1000]}\n\nCreate a single-line image prompt."
-    payload = _build_payload(instruction, system, temp=0.85)
+    payload = _build_payload(instruction, system)
     
     logger.debug(f"📤 Отправка запроса на генерацию промпта: {instruction[:200]}...")
     
@@ -357,7 +394,7 @@ async def translate_prompt_to_english(text: str) -> Optional[str]:
     from core.monitoring import record_api_call
     import time
     
-    payload = _build_payload(f"Input:\n{text.strip()}", system, temp=0.3)
+    payload = _build_payload(f"Input:\n{text.strip()}", system)
     
     start_time = time.time()
     res = await _safe_request(payload)

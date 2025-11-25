@@ -1,3 +1,4 @@
+"""Stable Diffusion image generation module"""
 import asyncio
 import base64
 import logging
@@ -23,10 +24,22 @@ from config.settings import (
     ADETAILER_PERSON_CONFIG,
     ADETAILER_CLOTHING_CONFIG
 )
+from core.constants import (
+    SD_GENERATION_TIMEOUT,
+    SD_MAX_RETRIES,
+    DEFAULT_RETRY_INITIAL_DELAY,
+    DEFAULT_RETRY_MAX_DELAY
+)
+from core.exceptions import SDError, ValidationError
+from core.validators import sanitize_text
 
 logger = logging.getLogger(__name__)
 
-async def _async_sd_api_request(payload: Dict[str, Any], timeout: int, max_retries: int = 2) -> Dict[str, Any]:
+async def _async_sd_api_request(
+    payload: Dict[str, Any], 
+    timeout: int = SD_GENERATION_TIMEOUT, 
+    max_retries: int = SD_MAX_RETRIES
+) -> Dict[str, Any]:
     """
     Sends a POST request to the SD WebUI API with retry mechanism and rate limiting.
     
@@ -39,10 +52,19 @@ async def _async_sd_api_request(payload: Dict[str, Any], timeout: int, max_retri
         Response JSON dictionary
         
     Raises:
-        RuntimeError: On API errors or connection failures
+        SDError: On API errors or connection failures
+        ValidationError: If payload is invalid
     """
     from core.error_handler import retry_with_backoff, RetryConfig, ErrorHandler
     from launcher.core.rate_limiter import sd_rate_limiter
+    
+    # Validate payload
+    if not payload or not isinstance(payload, dict):
+        raise ValidationError("Invalid payload: must be a dictionary")
+    
+    required_keys = ['width', 'height', 'steps', 'prompt']
+    if not all(key in payload for key in required_keys):
+        raise ValidationError(f"Missing required keys in payload: {required_keys}")
     
     # Apply rate limiting
     await sd_rate_limiter.acquire("sd_api")
@@ -51,14 +73,16 @@ async def _async_sd_api_request(payload: Dict[str, Any], timeout: int, max_retri
     
     retry_config = RetryConfig(
         max_attempts=max_retries,
-        initial_delay=2.0,
-        max_delay=30.0,
+        initial_delay=DEFAULT_RETRY_INITIAL_DELAY * 2,  # Longer delay for SD
+        max_delay=DEFAULT_RETRY_MAX_DELAY,
         retryable_exceptions=(aiohttp.ClientError, asyncio.TimeoutError, RuntimeError)
     )
     
     @retry_with_backoff(config=retry_config)
     async def _make_request():
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=timeout)) as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=timeout)
+        ) as session:
             # Use ssl=False for local connections (127.0.0.1)
             async with session.post(SD_API_URL, json=payload, ssl=False) as resp:
                 if resp.status != 200:
@@ -75,10 +99,16 @@ async def _async_sd_api_request(payload: Dict[str, Any], timeout: int, max_retri
             e,
             "Не удалось подключиться к Stable Diffusion. Проверьте, запущен ли он в Лаунчере (порт 7860)."
         )
-        raise RuntimeError(error_msg)
+        raise SDError(
+            "Failed to connect to Stable Diffusion API",
+            context=error_msg
+        ) from e
     except Exception as e:
         error_msg = ErrorHandler.handle_api_error(e, "Ошибка запроса к Stable Diffusion API")
-        raise RuntimeError(error_msg)
+        raise SDError(
+            "Stable Diffusion API request failed",
+            context=error_msg
+        ) from e
 
 async def async_generate_stable_diffusion_image(
     bot: Bot,
@@ -145,25 +175,43 @@ async def async_generate_stable_diffusion_image(
     error_message = "Неизвестная ошибка."
     
     try:
+        # Validate prompt
+        if not prompt or not isinstance(prompt, str):
+            raise ValidationError("Prompt must be a non-empty string")
+        
+        prompt = sanitize_text(prompt, max_length=1000)
+        if not prompt:
+            raise ValidationError("Prompt is empty after sanitization")
+        
         # Call API
         result = await _async_sd_api_request(payload, IMAGE_GENERATION_TIMEOUT)
 
         if not result or "images" not in result or not result["images"]:
-            raise RuntimeError("API вернул пустой результат.")
+            raise SDError("API вернул пустой результат", context="No images in response")
 
         # Decode Image
-        img_data = base64.b64decode(result["images"][0])
+        try:
+            img_data = base64.b64decode(result["images"][0])
+        except Exception as e:
+            raise SDError("Failed to decode image from base64", context=str(e)) from e
+        
         duration = time.time() - start_time
         record_api_call("sd", True, duration)
         logger.info("Generation success.")
         return img_data, prompt
 
-    except Exception as e:
+    except (SDError, ValidationError) as e:
         duration = time.time() - start_time
         record_api_call("sd", False, duration)
         record_error("sd_generation", str(e))
         error_message = str(e)
         logger.error(f"Gen Fail: {e}")
+    except Exception as e:
+        duration = time.time() - start_time
+        record_api_call("sd", False, duration)
+        record_error("sd_generation", str(e))
+        error_message = f"Unexpected error: {e}"
+        logger.error(f"Gen Fail (unexpected): {e}", exc_info=True)
     
     finally:
         # Stop animation
