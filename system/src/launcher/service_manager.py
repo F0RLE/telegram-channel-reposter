@@ -409,6 +409,7 @@ class ServiceManager:
             threading.Thread(target=reader, daemon=True).start()
 
         except Exception as e:
-            self.log(t("ui.launcher.log.service_start_error", default="❌ Error: {error}", error=str(e)), name.upper())
+            service_name = self._get_service_name(name)
+            self.log(t("ui.launcher.log.service_start_error", default=f"❌ [{name.upper()}] Error starting service: {{error}}", service=service_name, error=str(e)), name.upper())
             self.update_status(name, "error", "red")
 
