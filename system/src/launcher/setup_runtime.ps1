@@ -23,11 +23,25 @@ if (Test-Path $TempDir) { Remove-Item -Path $TempDir -Recurse -Force }
 New-Item -ItemType Directory -Path $PythonDir -Force | Out-Null
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
+# Helper function for fast download
+function Download-File {
+    param([string]$Url, [string]$Dest)
+    Write-Host "Downloading: $Url" -ForegroundColor Gray
+    try {
+        # Try BITS first (usually faster)
+        Start-BitsTransfer -Source $Url -Destination $Dest -ErrorAction Stop
+    } catch {
+        Write-Host "BITS failed, falling back to WebClient..." -ForegroundColor Gray
+        # Fallback to WebClient (faster than Invoke-WebRequest with progress)
+        $WebClient = New-Object System.Net.WebClient
+        $WebClient.DownloadFile($Url, $Dest)
+    }
+}
+
 # 2. Download & Extract Embeddable Python
 Write-Host "[SETUP] Downloading Python Embeddable..." -ForegroundColor Yellow
 $ZipFile = "$TempDir\python.zip"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Invoke-WebRequest -Uri $PyEmbedUrl -OutFile $ZipFile
+Download-File -Url $PyEmbedUrl -Dest $ZipFile
 
 Write-Host "[SETUP] Extracting Embeddable Python..." -ForegroundColor Yellow
 Expand-Archive -Path $ZipFile -DestinationPath $PythonDir -Force
@@ -40,7 +54,7 @@ $PthFile = "$PythonDir\python311._pth"
 # 4. Harvest Tkinter from Full Installer
 Write-Host "[SETUP] Downloading Python Installer (for Tkinter)..." -ForegroundColor Yellow
 $Installer = "$TempDir\python_installer.exe"
-Invoke-WebRequest -Uri $PyInstallUrl -OutFile $Installer
+Download-File -Url $PyInstallUrl -Dest $Installer
 
 Write-Host "[SETUP] Extracting Tkinter components..." -ForegroundColor Yellow
 $TempPython = "$TempDir\python_full"
@@ -115,7 +129,7 @@ if (-not (Test-Path "$PythonDir\tcl")) {
 # 6. Install Pip
 Write-Host "[SETUP] Installing Pip..." -ForegroundColor Yellow
 $GetPip = "$TempDir\get-pip.py"
-Invoke-WebRequest -Uri $GetPipUrl -OutFile $GetPip
+Download-File -Url $GetPipUrl -Dest $GetPip
 & "$PythonDir\python.exe" $GetPip --no-warn-script-location
 
 # 7. Cleanup
