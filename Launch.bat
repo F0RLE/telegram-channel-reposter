@@ -23,11 +23,7 @@ if not exist "%PYTHON_EXE%" (
     echo [BOOT] Runtime ready.
 )
 
-:: 2. Configure Environment for Portable Tkinter
-set "TCL_LIBRARY=%PYTHON_DIR%\tcl\tcl8.6"
-set "TK_LIBRARY=%PYTHON_DIR%\tcl\tk8.6"
-
-:: 3. Launch Bootstrapper (Installs modules & starts Launcher)
+:: 2. Launch Bootstrapper (Installs modules & starts Launcher)
 "%PYTHON_EXE%" "%BOOTSTRAPPER%"
 if errorlevel 1 (
     echo [ERROR] Bootstrapper failed.
