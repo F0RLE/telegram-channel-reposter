@@ -50,14 +50,33 @@ New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 function Download-File {
     param([string]$Url, [string]$Dest)
     Write-Host "Downloading: $Url" -ForegroundColor Gray
+    
+    # Method 1: BITS (Foreground Priority)
     try {
-        # Try BITS first (usually faster)
-        Start-BitsTransfer -Source $Url -Destination $Dest -ErrorAction Stop
+        Start-BitsTransfer -Source $Url -Destination $Dest -Priority Foreground -ErrorAction Stop
+        return
     } catch {
-        Write-Host "BITS failed, falling back to WebClient..." -ForegroundColor Gray
-        # Fallback to WebClient (faster than Invoke-WebRequest with progress)
+        Write-Host "BITS failed, trying curl..." -ForegroundColor Gray
+    }
+
+    # Method 2: curl (Windows native)
+    try {
+        $CurlArgs = "-L", "-o", "`"$Dest`"", "$Url"
+        $Process = Start-Process -FilePath "curl.exe" -ArgumentList $CurlArgs -Wait -PassThru -NoNewWindow
+        if ($Process.ExitCode -eq 0 -and (Test-Path $Dest)) {
+            return
+        }
+    } catch {
+        Write-Host "curl failed, falling back to WebClient..." -ForegroundColor Gray
+    }
+
+    # Method 3: WebClient (Last resort)
+    try {
         $WebClient = New-Object System.Net.WebClient
         $WebClient.DownloadFile($Url, $Dest)
+    } catch {
+        Write-Host "[ERROR] All download methods failed for $Url" -ForegroundColor Red
+        throw $_
     }
 }
 
