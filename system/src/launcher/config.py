@@ -16,8 +16,11 @@ DIR_LOGS = os.path.join(DATA_ROOT, "logs")
 DIR_TEMP = os.path.join(DATA_ROOT, "temp")
 
 # Executables
-PYTHON_EXE = os.path.join(ENV_DIR, "python", "python.exe")
-GIT_CMD = os.path.join(ENV_DIR, "git", "cmd", "git.exe")
+import sys
+PYTHON_EXE = sys.executable
+# Try to find git in env dir, otherwise assume it's in PATH
+GIT_CMD_ENV = os.path.join(ENV_DIR, "git", "cmd", "git.exe")
+GIT_CMD = GIT_CMD_ENV if os.path.exists(GIT_CMD_ENV) else "git"
 
 # Ollama paths
 OLLAMA_DIR = os.path.join(DIR_ENGINE, "ollama")
