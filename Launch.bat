@@ -19,9 +19,9 @@ if not exist "%PYTHON_EXE%" (
     set "PYTHON_URL=https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
     set "INSTALLER=%RUNTIME_DIR%\python_installer.exe"
     
-    powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%PYTHON_URL%' -OutFile '%INSTALLER%'}"
+    powershell -Command "& {[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '!PYTHON_URL!' -OutFile '!INSTALLER!'}"
     
-    if not exist "%INSTALLER%" (
+    if not exist "!INSTALLER!" (
         echo [ERROR] Failed to download Python. Check internet connection.
         pause
         exit /b 1
@@ -29,9 +29,9 @@ if not exist "%PYTHON_EXE%" (
     
     :: Install Python locally
     echo [BOOT] Extracting Runtime...
-    "%INSTALLER%" /quiet InstallAllUsers=0 PrependPath=0 TargetDir="%PYTHON_DIR%" Include_test=0
+    "!INSTALLER!" /quiet InstallAllUsers=0 PrependPath=0 TargetDir="%PYTHON_DIR%" Include_test=0
     
-    del "%INSTALLER%"
+    del "!INSTALLER!"
     
     if not exist "%PYTHON_EXE%" (
         echo [ERROR] Runtime installation failed.
