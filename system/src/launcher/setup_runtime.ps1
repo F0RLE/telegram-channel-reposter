@@ -6,7 +6,8 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
 $RootDir = "$ScriptDir\..\..\.."
 $RuntimeDir = "$RootDir\system\runtime"
-$TempDir = "$RootDir\system\temp"
+$AppDataDir = "$env:APPDATA\TelegramBotData"
+$TempDir = "$AppDataDir\data\temp"
 $PythonDir = "$RuntimeDir\python"
 
 # URLs
