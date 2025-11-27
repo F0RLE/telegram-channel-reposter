@@ -46,23 +46,41 @@ Write-Host "[SETUP] Extracting Tkinter components..." -ForegroundColor Yellow
 $TempPython = "$TempDir\python_full"
 New-Item -ItemType Directory -Path $TempPython -Force | Out-Null
 
-# Install to temp dir to get files
-# Note: /layout is for creating an offline layout, but /quiet install is better for getting binaries
-$InstallArgs = "/quiet", "InstallAllUsers=0", "TargetDir=$TempPython", "Include_tcltk=1", "Include_pip=0", "Include_test=0", "PrependPath=0", "Include_launcher=0"
+# Use /layout to extract files without installing (avoids error 1603)
+# This downloads the MSI/CAB files to the target directory
+$InstallArgs = "/layout", "$TempPython", "/quiet"
 $Process = Start-Process -FilePath $Installer -ArgumentList $InstallArgs -Wait -PassThru
 
 if ($Process.ExitCode -ne 0) {
     Write-Host "[ERROR] Installer failed with exit code $($Process.ExitCode)" -ForegroundColor Red
-    # Try to list temp dir to see what happened
-    Get-ChildItem $TempPython -Recurse | Select-Object Name
     exit 1
 }
 
-# Verify source files exist
-if (-not (Test-Path "$TempPython\tcl")) {
-    Write-Host "[ERROR] 'tcl' directory not found in extracted files!" -ForegroundColor Red
-    Write-Host "Contents of $TempPython :"
-    Get-ChildItem $TempPython
+# In layout mode, we need to extract the MSIs to get the files
+# We need 'tcltk.msi' or similar
+Write-Host "[SETUP] Extracting MSIs..." -ForegroundColor Yellow
+$MsiFile = Get-ChildItem "$TempPython" -Filter "*tcltk*.msi" | Select-Object -First 1 -ExpandProperty FullName
+
+if (-not $MsiFile) {
+    Write-Host "[ERROR] Tcl/Tk MSI not found in layout!" -ForegroundColor Red
+    exit 1
+}
+
+# Extract MSI using msiexec /a (administrative install - extracts files)
+$ExtractDir = "$TempPython\extracted"
+New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
+$LogFile = "$TempPython\msi_log.txt"
+Start-Process "msiexec.exe" -ArgumentList "/a `"$MsiFile`" /qn TARGETDIR=`"$ExtractDir`" /l*v `"$LogFile`"" -Wait
+
+# Locate the actual files inside the extracted structure
+# Usually in extracted/Lib/tkinter and extracted/tcl or similar
+# We need to find where they are
+$SourceLib = Get-ChildItem "$ExtractDir" -Recurse -Filter "tkinter" -Directory | Select-Object -First 1 -ExpandProperty FullName
+$SourceTcl = Get-ChildItem "$ExtractDir" -Recurse -Filter "tcl" -Directory | Select-Object -First 1 -ExpandProperty FullName
+$SourceDlls = Get-ChildItem "$ExtractDir" -Recurse -Filter "DLLs" -Directory | Select-Object -First 1 -ExpandProperty FullName
+
+if (-not $SourceLib -or -not $SourceTcl) {
+    Write-Host "[ERROR] Could not locate extracted Tkinter files!" -ForegroundColor Red
     exit 1
 }
 
@@ -70,18 +88,23 @@ if (-not (Test-Path "$TempPython\tcl")) {
 Write-Host "[SETUP] Transplanting Tkinter files..." -ForegroundColor Yellow
 
 # Copy tcl folder
-Copy-Item -Path "$TempPython\tcl" -Destination "$PythonDir\tcl" -Recurse -Force
+Copy-Item -Path "$SourceTcl" -Destination "$PythonDir\tcl" -Recurse -Force
 
 # Copy tkinter module
 if (-not (Test-Path "$PythonDir\Lib")) {
     New-Item -ItemType Directory -Path "$PythonDir\Lib" -Force | Out-Null
 }
-Copy-Item -Path "$TempPython\Lib\tkinter" -Destination "$PythonDir\Lib\tkinter" -Recurse -Force
+Copy-Item -Path "$SourceLib" -Destination "$PythonDir\Lib\tkinter" -Recurse -Force
 
-# Copy DLLs
-Copy-Item -Path "$TempPython\DLLs\_tkinter.pyd" -Destination "$PythonDir\_tkinter.pyd" -Force
-Copy-Item -Path "$TempPython\DLLs\tcl86t.dll" -Destination "$PythonDir\tcl86t.dll" -Force
-Copy-Item -Path "$TempPython\DLLs\tk86t.dll" -Destination "$PythonDir\tk86t.dll" -Force
+# Copy DLLs (need to find them in the extracted DLLs folder)
+if ($SourceDlls) {
+    Copy-Item -Path "$SourceDlls\_tkinter.pyd" -Destination "$PythonDir\_tkinter.pyd" -Force
+    Copy-Item -Path "$SourceDlls\tcl86t.dll" -Destination "$PythonDir\tcl86t.dll" -Force
+    Copy-Item -Path "$SourceDlls\tk86t.dll" -Destination "$PythonDir\tk86t.dll" -Force
+} else {
+    # Fallback search if DLLs folder structure is different
+    Get-ChildItem "$ExtractDir" -Recurse -Include "_tkinter.pyd","tcl86t.dll","tk86t.dll" | Copy-Item -Destination "$PythonDir" -Force
+}
 
 # Verify destination
 if (-not (Test-Path "$PythonDir\tcl")) {
