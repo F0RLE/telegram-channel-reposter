@@ -22,12 +22,14 @@ except (ImportError, ValueError):
 try:
     from .config import (
         BASE_DIR, PYTHON_EXE, GIT_CMD, OLLAMA_EXE, OLLAMA_DIR, OLLAMA_MODELS_DIR,
-        OLLAMA_DATA_DIR, SD_DIR, MODELS_SD_DIR, MODELS_LLM_DIR, FILE_ENV, DIR_CONFIGS, DIR_TEMP
+        OLLAMA_DATA_DIR, SD_DIR, MODELS_SD_DIR, MODELS_LLM_DIR, FILE_ENV, DIR_CONFIGS, DIR_TEMP,
+        USE_GPU
     )
 except (ImportError, ValueError):
     from config import (
         BASE_DIR, PYTHON_EXE, GIT_CMD, OLLAMA_EXE, OLLAMA_DIR, OLLAMA_MODELS_DIR,
-        OLLAMA_DATA_DIR, SD_DIR, MODELS_SD_DIR, MODELS_LLM_DIR, FILE_ENV, DIR_CONFIGS, DIR_TEMP
+        OLLAMA_DATA_DIR, SD_DIR, MODELS_SD_DIR, MODELS_LLM_DIR, FILE_ENV, DIR_CONFIGS, DIR_TEMP,
+        USE_GPU
     )
 
 # Import other modules with fallback
@@ -62,28 +64,89 @@ class ServiceManager:
         return names.get(key, key.upper())
 
     def kill_tree(self, pid):
-        """Kill process and all its children recursively"""
+        """Kill process and all its children recursively with extreme prejudice"""
         try:
             parent = psutil.Process(pid)
-            # Terminate all children first
-            for child in parent.children(recursive=True):
+            children = parent.children(recursive=True)
+            
+            # Add parent to the list
+            children.append(parent)
+            
+            # First try graceful termination
+            for p in children:
                 try:
-                    child.terminate()
+                    p.terminate()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
-            # Wait a bit for graceful termination
-            try:
-                parent.terminate()
-                parent.wait(timeout=3)
-            except (psutil.TimeoutExpired, psutil.NoSuchProcess):
-                # Force kill if still running
+            
+            # Wait for them to die
+            gone, alive = psutil.wait_procs(children, timeout=3)
+            
+            # Force kill the survivors
+            for p in alive:
                 try:
-                    parent.kill()
+                    p.kill()
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
+                    
         except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
             pass
-    
+
+    def stop_all_services(self):
+        """Stops all running services"""
+        self.log(t("ui.launcher.log.stopping_all", default="🛑 Stopping all services..."), "SYSTEM")
+        
+        # Stop in reverse order of dependency (Bot -> SD -> LLM)
+        threads = []
+        for service in ["bot", "sd", "llm"]:
+            if self.procs.get(service):
+                t = threading.Thread(target=self.stop_service, args=(service,))
+                t.start()
+                threads.append(t)
+        
+        for t in threads:
+            t.join()
+            
+        self.log(t("ui.launcher.log.all_stopped", default="✅ All services stopped"), "SYSTEM")
+
+    def start_all_services(self):
+        """Starts all services sequentially"""
+        def run():
+            self.log(t("ui.launcher.log.starting_all", default="🚀 Starting all services..."), "SYSTEM")
+            
+            # Check for model selection for LLM
+            # We need to pick a default model if none selected
+            llm_model = None
+            if self.selected_llm_model:
+                 llm_model = self.selected_llm_model
+            else:
+                # Try to find a default model
+                models = self.model_manager.get_ollama_models()
+                if models:
+                    # Prefer a model with '7b' or 'mistral' or 'llama'
+                    for m in models:
+                        if 'mistral' in m.lower() or 'llama' in m.lower():
+                            llm_model = {'name': m, 'type': 'ollama'}
+                            break
+                    if not llm_model:
+                        llm_model = {'name': models[0], 'type': 'ollama'}
+            
+            # Start LLM
+            if llm_model:
+                self.start_service("llm", llm_model)
+                time.sleep(2) # Wait a bit
+            else:
+                self.log(t("ui.launcher.log.no_llm_model", default="⚠️ No LLM model found, skipping LLM start"), "LLM")
+            
+            # Start SD
+            self.start_service("sd")
+            time.sleep(5) # Give SD a head start
+            
+            # Start Bot
+            self.start_service("bot")
+            
+        threading.Thread(target=run, daemon=True).start()
+
     def _kill_process_on_port(self, port: int):
         """Убивает процесс, занимающий указанный порт"""
         try:
@@ -257,7 +320,7 @@ class ServiceManager:
                         temp_env["OLLAMA_MODELS"] = MODELS_LLM_DIR
                         temp_env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
                         # Force GPU
-                        temp_env["CUDA_VISIBLE_DEVICES"] = "0"
+                        # temp_env["CUDA_VISIBLE_DEVICES"] = "0" # Removed to allow auto-discovery
                         temp_env["OLLAMA_DEBUG"] = "1"
                         
                         temp_ollama = None
@@ -295,9 +358,9 @@ class ServiceManager:
                             # Загружаем модель через ollama pull
                             self.log(f"⬇️ [LLM] Загрузка модели {model_name}...", "LLM")
                             
-                            startupinfo = subprocess.STARTUPINFO()
-                            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                            startupinfo.wShowWindow = subprocess.SW_HIDE
+                            pull_startupinfo = subprocess.STARTUPINFO()
+                            pull_startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                            pull_startupinfo.wShowWindow = subprocess.SW_HIDE
                             
                             # Используем Popen для отслеживания прогресса
                             pull_process = subprocess.Popen(
@@ -308,7 +371,7 @@ class ServiceManager:
                                 stderr=subprocess.STDOUT,
                                 text=True,
                                 creationflags=subprocess.CREATE_NO_WINDOW,
-                                startupinfo=startupinfo
+                                startupinfo=pull_startupinfo
                             )
                             
                             # Отслеживаем прогресс, показываем каждые 5%
@@ -375,7 +438,7 @@ class ServiceManager:
                         temp_env["OLLAMA_MODELS"] = MODELS_LLM_DIR  # Use unified models directory
                         temp_env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
                         # Force GPU
-                        temp_env["CUDA_VISIBLE_DEVICES"] = "0"
+                        # temp_env["CUDA_VISIBLE_DEVICES"] = "0" # Removed
                         temp_env["OLLAMA_DEBUG"] = "1"
                         
                         temp_ollama = None
@@ -424,9 +487,14 @@ class ServiceManager:
                 env["OLLAMA_MODELS"] = MODELS_LLM_DIR  # Use unified models directory
                 env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
                 
-                # Force GPU usage
-                env["CUDA_VISIBLE_DEVICES"] = "0"  # Use first GPU
-                env["OLLAMA_DEBUG"] = "1"  # Enable debug for GPU info
+                # Force GPU usage if enabled
+                if USE_GPU:
+                    # env["CUDA_VISIBLE_DEVICES"] = "0"  # Removed to allow auto-discovery
+                    env["OLLAMA_DEBUG"] = "1"  # Enable debug for GPU info
+                else:
+                    env["CUDA_VISIBLE_DEVICES"] = "" # Disable GPU
+                    env["OLLAMA_LLM_LIBRARY"] = "cpu" # Force CPU
+                
                 # Remove CPU-only flag if present
                 if "OLLAMA_VULKAN" in env:
                     del env["OLLAMA_VULKAN"]
@@ -454,22 +522,29 @@ class ServiceManager:
                 
                 # Check for CUDA support
                 cuda_supported = False
-                try:
-                    check_result = subprocess.run(
-                        ["nvidia-smi"],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
-                    if check_result.returncode == 0:
-                        cuda_supported = True
-                except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-                    pass
+                if USE_GPU:
+                    try:
+                        check_result = subprocess.run(
+                            ["nvidia-smi"],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                        if check_result.returncode == 0:
+                            cuda_supported = True
+                    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+                        pass
                 
                 cmd = [venv_py, "launch.py", "--api", "--nowebui", "--port", "7860", "--skip-python-version-check"]
-                if cuda_supported:
+                if cuda_supported and USE_GPU:
                     cmd.extend(["--xformers", "--cuda-stream"])
+                else:
+                    cmd.extend(["--use-cpu", "all", "--no-half", "--skip-torch-cuda-test"])
+                
+                # Suppress git errors
+                env["GIT_PYTHON_REFRESH"] = "quiet"
+                    
                 cwd = SD_DIR
 
             # Launch process

@@ -22,12 +22,12 @@ except (ImportError, ValueError):
 # Import config with fallback
 try:
     from .config import (
-        DIR_TEMP, OLLAMA_EXE, OLLAMA_DIR, SD_DIR, GIT_CMD, 
+        BASE_DIR, DIR_TEMP, OLLAMA_EXE, OLLAMA_DIR, SD_DIR, GIT_CMD, 
         SD_REPO, MODELS_SD_DIR, ADETAILER_REPO, PYTHON_EXE
     )
 except (ImportError, ValueError):
     from config import (
-        DIR_TEMP, OLLAMA_EXE, OLLAMA_DIR, SD_DIR, GIT_CMD, 
+        BASE_DIR, DIR_TEMP, OLLAMA_EXE, OLLAMA_DIR, SD_DIR, GIT_CMD, 
         SD_REPO, MODELS_SD_DIR, ADETAILER_REPO, PYTHON_EXE
     )
 
@@ -343,3 +343,118 @@ class Installer:
             self.log(t("ui.launcher.log.sd_venv_error", default="❌ [SD] Venv error: {error}", error=str(e)), "SD")
             return False
 
+
+    def install_bot_dependencies(self):
+        """Installs dependencies for the bot"""
+        try:
+            self.log(t("ui.launcher.log.bot_installing_deps", default="📦 [BOT] Installing dependencies..."), "BOT")
+            
+            requirements_file = os.path.join(BASE_DIR, "requirements.txt")
+            if not os.path.exists(requirements_file):
+                # Create default requirements if missing
+                with open(requirements_file, "w") as f:
+                    f.write("python-telegram-bot==20.7\n")
+                    f.write("requests==2.31.0\n")
+                    f.write("aiohttp==3.9.1\n")
+                    f.write("python-dotenv==1.0.0\n")
+                    f.write("Pillow==10.2.0\n")
+                    f.write("psutil==5.9.8\n")
+                    f.write("huggingface_hub>=0.23.0\n")
+            
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = subprocess.SW_HIDE
+            
+            process = subprocess.Popen(
+                [PYTHON_EXE, "-m", "pip", "install", "-r", requirements_file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                startupinfo=startupinfo
+            )
+            
+            # Read output to prevent blocking
+            stdout, stderr = process.communicate()
+            
+            if process.returncode == 0:
+                self.log(t("ui.launcher.log.bot_deps_success", default="✅ [BOT] Dependencies installed"), "BOT")
+                return True
+            else:
+                self.log(t("ui.launcher.log.bot_deps_error", default="❌ [BOT] Dependencies error: {error}", error=stderr), "BOT")
+                return False
+                
+        except Exception as e:
+            self.log(t("ui.launcher.log.bot_deps_critical", default="❌ [BOT] Critical error: {error}", error=str(e)), "BOT")
+            return False
+
+class OneClickInstaller:
+    def __init__(self, installer: Installer, log_callback: Callable[[str, str], None]):
+        self.installer = installer
+        self.log = log_callback
+        self.steps = [
+            ("check_python", t("ui.launcher.setup.step.python", default="Checking Python environment...")),
+            ("check_git", t("ui.launcher.setup.step.git", default="Checking Git...")),
+            ("install_ollama", t("ui.launcher.setup.step.ollama", default="Installing LLM Engine (Ollama)...")),
+            ("install_sd", t("ui.launcher.setup.step.sd", default="Installing Image Generator (Stable Diffusion)...")),
+            ("install_bot", t("ui.launcher.setup.step.bot", default="Installing Bot Dependencies..."))
+        ]
+        
+    def run_installation(self, progress_callback: Callable[[int, str], None]) -> bool:
+        """Runs the full installation process"""
+        total_steps = len(self.steps)
+        
+        for i, (step_id, step_desc) in enumerate(self.steps):
+            progress = int((i / total_steps) * 100)
+            progress_callback(progress, step_desc)
+            
+            success = False
+            try:
+                if step_id == "check_python":
+                    # Python is assumed to be present as launcher runs on it, 
+                    # but we verify paths
+                    if os.path.exists(PYTHON_EXE):
+                        success = True
+                    else:
+                        # Should not happen if launcher is running
+                        self.log("⚠️ Python path issue detected", "SYSTEM")
+                        success = True # Proceed anyway
+                        
+                elif step_id == "check_git":
+                    # Check if git is available
+                    try:
+                        subprocess.run([GIT_CMD, "--version"], capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                        success = True
+                    except:
+                        self.log("⚠️ Git not found, some features may fail", "SYSTEM")
+                        # We might want to install git here if missing
+                        success = True # Proceed for now
+                        
+                elif step_id == "install_ollama":
+                    if os.path.exists(OLLAMA_EXE):
+                        success = True
+                    else:
+                        success = self.installer.download_ollama()
+                        
+                elif step_id == "install_sd":
+                    if os.path.exists(os.path.join(SD_DIR, "venv")):
+                        success = True
+                    else:
+                        if self.installer.install_sd():
+                            success = self.installer.create_sd_venv()
+                        else:
+                            success = False
+                            
+                elif step_id == "install_bot":
+                    success = self.installer.install_bot_dependencies()
+                    
+            except Exception as e:
+                self.log(f"❌ Error in step {step_id}: {e}", "SYSTEM")
+                success = False
+            
+            if not success:
+                self.log(f"❌ Installation failed at step: {step_desc}", "SYSTEM")
+                return False
+                
+        progress_callback(100, t("ui.launcher.setup.complete", default="Installation Complete!"))
+        return True

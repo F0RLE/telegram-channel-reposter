@@ -56,6 +56,32 @@ FILE_GEN_CONFIG = os.path.join(DIR_CONFIGS, "generation_config.json")
 FILE_PID = os.path.join(DIR_TEMP, "launcher.pid")
 FILE_SD_CACHE = os.path.join(DIR_CONFIGS, "sd_compatibility_cache.json")
 
+def get_use_gpu():
+    """Get GPU usage preference"""
+    try:
+        # Ensure config directory exists
+        os.makedirs(DIR_CONFIGS, exist_ok=True)
+        
+        # Create .env if it doesn't exist
+        if not os.path.exists(FILE_ENV):
+            with open(FILE_ENV, 'w', encoding='utf-8') as f:
+                f.write("USE_GPU=true\n")
+            return True
+        
+        from dotenv import get_key
+        val = get_key(FILE_ENV, "USE_GPU")
+        if val is None:
+            # Set default if key doesn't exist
+            from dotenv import set_key
+            set_key(FILE_ENV, "USE_GPU", "true")
+            return True
+        return val.lower() == "true"
+    except Exception as e:
+        # Default to GPU if any error
+        return True
+
+USE_GPU = get_use_gpu()
+
 # URLs
 SD_REPO = "https://github.com/lllyasviel/stable-diffusion-webui-forge.git"
 ADETAILER_REPO = "https://github.com/Bing-su/adetailer.git"

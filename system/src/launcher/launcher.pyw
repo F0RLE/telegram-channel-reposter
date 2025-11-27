@@ -28,7 +28,7 @@ if _launcher_dir not in sys.path:
     sys.path.insert(0, _launcher_dir)
 
 try:
-    from .installer import Installer
+    from .installer import Installer, OneClickInstaller
     from .service_manager import ServiceManager
     from .model_manager import ModelManager
     from .animations import (
@@ -39,7 +39,7 @@ try:
     from .security import get_security, Security
 except (ImportError, ValueError):
     try:
-        from installer import Installer
+        from installer import Installer, OneClickInstaller
         from service_manager import ServiceManager
         from model_manager import ModelManager
         from animations import (
@@ -305,6 +305,96 @@ except (ImportError, ValueError):
             except:
                 print(f"[ERROR] {title}: {msg}", flush=True)
 
+class LoadingScreen(ctk.CTkToplevel):
+    def __init__(self, parent, installer, on_complete):
+        super().__init__(parent)
+        self.installer = installer
+        self.on_complete = on_complete
+        self.title(t("ui.launcher.setup.title", default="Initial Setup"))
+        self.geometry("600x400")
+        self.resizable(False, False)
+        
+        # Center window
+        self.update_idletasks()
+        width = self.winfo_width()
+        height = self.winfo_height()
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f"+{x}+{y}")
+        
+        self.protocol("WM_DELETE_WINDOW", lambda: None) # Disable close
+        self.attributes("-topmost", True)
+        
+        # UI
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        
+        self.main_frame = ctk.CTkFrame(self, fg_color=COLORS['bg'], corner_radius=0)
+        self.main_frame.grid(row=0, column=0, sticky="nsew")
+        
+        # Icon/Logo
+        ctk.CTkLabel(
+            self.main_frame, 
+            text="⚙️", 
+            font=("Segoe UI", 64)
+        ).pack(pady=(40, 20))
+        
+        ctk.CTkLabel(
+            self.main_frame,
+            text=t("ui.launcher.setup.welcome", default="Welcome to Launcher"),
+            font=("Segoe UI", 24, "bold"),
+            text_color=COLORS['text']
+        ).pack(pady=(0, 10))
+        
+        self.status_label = ctk.CTkLabel(
+            self.main_frame,
+            text=t("ui.launcher.setup.preparing", default="Preparing installation..."),
+            font=("Segoe UI", 14),
+            text_color=COLORS['text_secondary']
+        )
+        self.status_label.pack(pady=(0, 20))
+        
+        self.progress = ctk.CTkProgressBar(self.main_frame, width=400, height=10)
+        self.progress.pack(pady=(0, 20))
+        self.progress.set(0)
+        
+        # Debug toggle
+        self.debug_var = tk.BooleanVar(value=False)
+        self.debug_check = ctk.CTkCheckBox(
+            self.main_frame,
+            text=t("ui.launcher.setup.show_details", default="Show Details"),
+            variable=self.debug_var,
+            command=self._toggle_debug,
+            font=("Segoe UI", 12),
+            text_color=COLORS['text_muted']
+        )
+        self.debug_check.pack(pady=(0, 20))
+        
+        self.log_box = ctk.CTkTextbox(self.main_frame, width=500, height=100, font=("Consolas", 10))
+        # Hidden by default
+        
+        self.after(500, self.start_installation)
+
+    def _toggle_debug(self):
+        if self.debug_var.get():
+            self.log_box.pack(pady=10, padx=20, fill="both", expand=True)
+        else:
+            self.log_box.pack_forget()
+
+    def update_progress(self, percent, status):
+        self.progress.set(percent / 100)
+        self.status_label.configure(text=status)
+        self.log_box.insert("end", f"[{percent}%] {status}\n")
+        self.log_box.see("end")
+        self.update()
+
+    def start_installation(self):
+        def run():
+            success = self.installer.run_installation(self.update_progress)
+            self.after(0, lambda: self.on_complete(success))
+        
+        threading.Thread(target=run, daemon=True).start()
+
 class ModernLauncher(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -338,7 +428,10 @@ class ModernLauncher(ctk.CTk):
         self.title(t("ui.launcher.title"))
         self.geometry("1400x900")
         self.minsize(1200, 800)
-        self.after(100, lambda: load_app_icon(self))
+        def init_icons():
+            load_app_icon(self)
+            self.setup_tray()
+        self.after(100, init_icons)
         self.log_queue = queue.Queue()
         self.consoles = {}
         self.entries = {} 
@@ -416,7 +509,31 @@ class ModernLauncher(ctk.CTk):
         # Set up window close handler to cleanup services
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        if self.check_running(): 
+        # Check installation
+        is_installed = get_key(FILE_ENV, "IS_INSTALLED") == "true"
+        
+        if not is_installed:
+            self.withdraw()
+            def on_install_complete(success):
+                if success:
+                    set_key(FILE_ENV, "IS_INSTALLED", "true")
+                    self.loading_screen.destroy()
+                    self.deiconify()
+                    self.register_pid()
+                    self.build_ui()
+                    self.after(100, self.start_monitor)
+                    # Auto-start services after fresh install
+                    if hasattr(self.service_manager, 'start_all_services'):
+                        self.service_manager.start_all_services()
+                else:
+                    def show_install_error():
+                        show_error(t("ui.launcher.error.install_failed", default="Installation Failed"), 
+                                 t("ui.launcher.error.install_failed_msg", default="Setup could not be completed. Check logs for details."))
+                        sys.exit(1)
+                    self.after(0, show_install_error)
+            
+            self.loading_screen = LoadingScreen(self, OneClickInstaller(self.installer, self.log), on_install_complete)
+        elif self.check_running(): 
             self.show_lock_screen()
         else: 
             self.register_pid()
@@ -644,6 +761,28 @@ class ModernLauncher(ctk.CTk):
             self.title(t("ui.launcher.title"))
             self.build_ui()
     
+    def toggle_system(self):
+        """Toggles all services"""
+        # Check if any service is running
+        any_running = False
+        if hasattr(self, 'service_manager') and hasattr(self.service_manager, 'procs'):
+            any_running = any(self.service_manager.procs.values())
+        
+        if any_running:
+            self.service_manager.stop_all_services()
+            self.btn_system_control.configure(
+                text=t("ui.launcher.button.start_all", default="🚀 Start System"),
+                fg_color=COLORS['success'],
+                hover_color="#059669"
+            )
+        else:
+            self.service_manager.start_all_services()
+            self.btn_system_control.configure(
+                text=t("ui.launcher.button.stop_all", default="⏹ Stop System"),
+                fg_color=COLORS['danger'],
+                hover_color="#dc2626"
+            )
+
     def create_glass_card(self, parent, **kwargs):
         """Создает карточку с glassmorphism эффектом"""
         default_kwargs = {
@@ -743,6 +882,24 @@ class ModernLauncher(ctk.CTk):
                 except:
                     pass
         
+        # System Control
+        control_card = self.create_glass_card(sidebar, fg_color=COLORS['surface'])
+        control_card.pack(fill="x", padx=16, pady=(0, 16))
+        
+        control_content = ctk.CTkFrame(control_card, fg_color="transparent")
+        control_content.pack(fill="x", padx=12, pady=12)
+        
+        self.btn_system_control = ctk.CTkButton(
+            control_content,
+            text=t("ui.launcher.button.start_all", default="🚀 Start System"),
+            command=self.toggle_system,
+            fg_color=COLORS['success'],
+            hover_color="#059669",
+            height=40,
+            font=("Segoe UI", 14, "bold")
+        )
+        self.btn_system_control.pack(fill="x")
+
         # Сохраняем текущую активную страницу для правильного выделения
         self.current_page_index = 0
         
@@ -1600,6 +1757,66 @@ class ModernLauncher(ctk.CTk):
         bot_card.grid(row=0, column=0, sticky="nsew", padx=(0, 8), pady=(0, 12))
         bot_card.grid_columnconfigure(0, weight=1)
         
+        # ========== КАРТОЧКА 2: Настройки оборудования ==========
+        hardware_card = self.create_glass_card(grid_container, fg_color=COLORS['card_bg'], corner_radius=12)
+        hardware_card.grid(row=0, column=1, sticky="nsew", padx=(8, 0), pady=(0, 12))
+        hardware_card.grid_columnconfigure(0, weight=1)
+        
+        # Заголовок карточки
+        hw_header = ctk.CTkFrame(hardware_card, fg_color="transparent")
+        hw_header.pack(fill="x", padx=16, pady=(16, 12))
+        
+        ctk.CTkLabel(
+            hw_header,
+            text="⚡ " + t("ui.launcher.settings.hardware", default="Hardware"),
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        hw_content = ctk.CTkFrame(hardware_card, fg_color="transparent")
+        hw_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        
+        # GPU Toggle
+        gpu_frame = ctk.CTkFrame(hw_content, fg_color="transparent")
+        gpu_frame.pack(fill="x", pady=(0, 10))
+        
+        ctk.CTkLabel(
+            gpu_frame,
+            text=t("ui.launcher.settings.use_gpu", default="Use GPU Acceleration"),
+            font=("Segoe UI", 13),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        def toggle_gpu():
+            val = self.gpu_var.get()
+            try:
+                from dotenv import set_key
+                set_key(FILE_ENV, "USE_GPU", str(val).lower())
+                
+                # Show warning
+                msg = t("ui.launcher.settings.restart_required", default="Please restart the launcher for changes to take effect.")
+                messagebox.showinfo(t("ui.launcher.settings.restart_title", default="Restart Required"), msg)
+            except Exception as e:
+                self.log(f"Error saving GPU setting: {e}", "SYSTEM")
+
+        self.gpu_var = tk.BooleanVar(value=get_key(FILE_ENV, "USE_GPU") != "false")
+        ctk.CTkSwitch(
+            gpu_frame,
+            text="",
+            variable=self.gpu_var,
+            command=toggle_gpu,
+            width=40
+        ).pack(side="right")
+        
+        ctk.CTkLabel(
+            hw_content,
+            text=t("ui.launcher.settings.gpu_desc", default="Enable for faster generation. Disable if you have issues or no GPU."),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_muted'],
+            wraplength=300,
+            justify="left"
+        ).pack(fill="x", pady=(0, 10))
+
         # Заголовок карточки
         bot_header = ctk.CTkFrame(bot_card, fg_color="transparent")
         bot_header.pack(fill="x", padx=16, pady=(16, 12))
@@ -3359,6 +3576,15 @@ class ModernLauncher(ctk.CTk):
     def _create_unified_llm_models_tab(self, parent):
         """Создает объединенное меню управления моделями LLM"""
         # Popular models from Ollama
+        # Для некоторых моделей (например, Qwen3) добавляем прямые ссылки на HuggingFace
+        # на основе официальной страницы загрузки Qwen3: https://qwen-3.com/en/download
+        # Примеры:
+        # - Qwen3-8B: https://huggingface.co/Qwen/Qwen3-8B
+        # - Qwen3-4B: https://huggingface.co/Qwen/Qwen3-4B
+        # - Qwen3-14B: https://huggingface.co/Qwen/Qwen3-14B
+        # - Qwen3-32B: https://huggingface.co/Qwen/Qwen3-32B
+        # - Qwen3-30B-A3B (MoE): https://huggingface.co/Qwen/Qwen3-30B-A3B
+        # - Qwen3-235B-A22B (MoE): https://huggingface.co/Qwen/Qwen3-235B-A22B
         POPULAR_MODELS = {
             "gemma3": {
                 "name": "gemma3",
@@ -3367,28 +3593,27 @@ class ModernLauncher(ctk.CTk):
             },
             "qwen3": {
                 "name": "qwen3",
-                "sizes": ["0.6b", "1.7b", "4b", "8b", "14b", "30b", "32b", "235b"],
-                "description": "Latest Qwen generation"
+                "sizes": ["4b", "8b", "14b", "30b", "32b", "235b"],
+                "description": "Latest Qwen generation",
+                "links": {
+                    "4b": "https://huggingface.co/Qwen/Qwen3-4B",
+                    "8b": "https://huggingface.co/Qwen/Qwen3-8B",
+                    "14b": "https://huggingface.co/Qwen/Qwen3-14B",
+                    "30b": "https://huggingface.co/Qwen/Qwen3-30B-A3B",
+                    "32b": "https://huggingface.co/Qwen/Qwen3-32B",
+                    "235b": "https://huggingface.co/Qwen/Qwen3-235B-A22B",
+                    "_collection": "https://qwen-3.com/en/download"
+                }
             },
             "gpt-oss": {
                 "name": "gpt-oss",
                 "sizes": ["20b", "120b"],
                 "description": "OpenAI's open-weight models"
             },
-            "llama3.1": {
-                "name": "llama3.1",
-                "sizes": ["8b", "70b", "405b"],
-                "description": "Meta's state-of-the-art model"
-            },
             "deepseek-r1": {
                 "name": "deepseek-r1",
                 "sizes": ["1.5b", "7b", "8b", "14b", "32b", "70b", "671b"],
                 "description": "Open reasoning models"
-            },
-            "qwen2.5": {
-                "name": "qwen2.5",
-                "sizes": ["0.5b", "1.5b", "3b", "7b", "14b", "32b", "72b"],
-                "description": "Qwen 2.5 models"
             }
         }
         
@@ -3442,6 +3667,40 @@ class ModernLauncher(ctk.CTk):
         )
         self.size_menu.grid(row=0, column=1, sticky="w", padx=(0, 8))
         self.popular_models = POPULAR_MODELS
+
+        # Кнопка для открытия страницы модели (HuggingFace / Qwen3)
+        self.model_link_btn = ctk.CTkButton(
+            download_controls,
+            text=t("ui.launcher.model.open_hf", default="Открыть страницу модели"),
+            width=220,
+            height=32,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['primary_hover'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 11),
+            corner_radius=6,
+            command=self._open_selected_model_link
+        )
+        self.model_link_btn.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self.current_model_url = None
+        self._update_model_link()
+
+        # Кнопка для открытия страницы модели (HuggingFace / Qwen3)
+        self.model_link_btn = ctk.CTkButton(
+            download_controls,
+            text=t("ui.launcher.model.open_hf", default="Открыть страницу модели"),
+            width=220,
+            height=32,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['primary_hover'],
+            text_color=COLORS['text_secondary'],
+            font=("Segoe UI", 11),
+            corner_radius=6,
+            command=self._open_selected_model_link
+        )
+        self.model_link_btn.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self.current_model_url = None
+        self._update_model_link()  # инициализируем ссылку для дефолтной модели
         
         download_btn = ctk.CTkButton(
             download_controls,
@@ -3489,6 +3748,54 @@ class ModernLauncher(ctk.CTk):
         self.size_menu.configure(values=sizes)
         if sizes:
             self.selected_size_var.set(sizes[0])
+        # Обновляем ссылку при смене размеров/модели
+        self._update_model_link()
+
+    def _update_model_link(self):
+        """Обновляет ссылку на страницу модели (HuggingFace/Qwen) для выбранной модели"""
+        try:
+            model_key = self.selected_model_var.get() if hasattr(self, "selected_model_var") else None
+            size = self.selected_size_var.get() if hasattr(self, "selected_size_var") else None
+        except Exception:
+            model_key, size = None, None
+
+        self.current_model_url = None
+        if not model_key or not size:
+            if hasattr(self, "model_link_btn"):
+                self.model_link_btn.configure(state="disabled", text=t("ui.launcher.model.open_hf", default="Открыть страницу модели"))
+            return
+
+        model_info = getattr(self, "popular_models", {}).get(model_key)
+        link = None
+        if model_info and isinstance(model_info, dict):
+            links = model_info.get("links") or {}
+            # Пытаемся найти ссылку по размеру
+            link = links.get(size)
+            # Фоллбек: коллекция моделей Qwen3
+            if not link:
+                link = links.get("_collection")
+
+        self.current_model_url = link
+        if hasattr(self, "model_link_btn"):
+            if link:
+                self.model_link_btn.configure(
+                    state="normal",
+                    text=t("ui.launcher.model.open_hf", default="Открыть страницу модели (HuggingFace)")
+                )
+            else:
+                self.model_link_btn.configure(
+                    state="disabled",
+                    text=t("ui.launcher.model.open_hf", default="Открыть страницу модели")
+                )
+
+    def _open_selected_model_link(self):
+        """Открывает страницу выбранной модели в браузере"""
+        if not getattr(self, "current_model_url", None):
+            return
+        try:
+            webbrowser.open(self.current_model_url)
+        except Exception as e:
+            self.log(f"[LLM] Не удалось открыть ссылку на модель: {e}", "LLM")
     
     def _download_selected_model(self):
         """Скачивает выбранную модель"""
@@ -6716,12 +7023,52 @@ class ModernLauncher(ctk.CTk):
         except Exception as e:
             label.configure(text=t("ui.launcher.model.info_error", default="Ошибка при получении информации: {error}", error=str(e)))
     
+    def setup_tray(self):
+        """Sets up system tray icon"""
+        try:
+            import pystray
+            from PIL import Image
+            
+            icon_path = os.path.join(BASE_DIR, "modules", "Images", "Launcher.ico")
+            if not os.path.exists(icon_path):
+                return
+
+            def on_open(icon, item):
+                self.deiconify()
+                self.lift()
+                self.focus_force()
+
+            def on_exit(icon, item):
+                icon.stop()
+                self.on_closing()
+
+            image = Image.open(icon_path)
+            menu = pystray.Menu(
+                pystray.MenuItem("Open", on_open, default=True),
+                pystray.MenuItem("Exit", on_exit)
+            )
+            self.tray_icon = pystray.Icon("Launcher", image, "Launcher", menu)
+            threading.Thread(target=self.tray_icon.run, daemon=True).start()
+            
+        except ImportError:
+            pass
+        except Exception as e:
+            self.log(f"Error setting up tray: {e}", "SYSTEM")
+
     def on_closing(self):
         """Handle window close event"""
         try:
             self.log(t("ui.launcher.log.closing", default="🔄 [SYSTEM] Closing launcher and stopping services..."), "SYSTEM")
             # Stop all running services
             self.service_manager.stop_all_services()
+            
+            # Stop tray icon
+            if hasattr(self, 'tray_icon') and self.tray_icon:
+                try:
+                    self.tray_icon.stop()
+                except:
+                    pass
+            
             # Give services time to stop gracefully
             time.sleep(1)
         except Exception as e:
@@ -6733,8 +7080,12 @@ class ModernLauncher(ctk.CTk):
                     os.remove(FILE_PID)
             except:
                 pass
-            # Destroy window
-            self.destroy()
+            # Destroy window and exit process
+            try:
+                self.destroy()
+            except:
+                pass
+            sys.exit(0)
     
     def on_close(self):
         """Alias for on_closing"""

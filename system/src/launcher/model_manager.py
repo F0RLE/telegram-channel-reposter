@@ -161,5 +161,48 @@ class ModelManager:
             self.log(t("ui.launcher.log.import_exception", default="❌ [LLM] Ошибка при импорте модели: {error}", error=str(e)), "LLM")
             return False
 
+    def download_from_hf(self, repo_id: str, filename: Optional[str] = None, local_dir: Optional[str] = None) -> Optional[str]:
+        """
+        Download model from Hugging Face Hub
+        
+        Args:
+            repo_id: Hugging Face repository ID (e.g. 'Qwen/Qwen3-8B')
+            filename: Optional filename to download. If None, downloads entire repo (snapshot)
+            local_dir: Directory to save files. If None, uses default cache or MODELS_LLM_DIR
+            
+        Returns:
+            Path to downloaded file or directory, or None if failed
+        """
+        try:
+            from huggingface_hub import snapshot_download, hf_hub_download
+        except ImportError:
+            self.log(t("ui.launcher.log.hf_hub_missing", default="❌ Hugging Face Hub library not found. Please install requirements."), "MODEL")
+            return None
+
+        try:
+            self.log(t("ui.launcher.log.hf_download_start", default="⬇️ [HF] Starting download for {repo}...", repo=repo_id), "MODEL")
+            
+            # Use provided local_dir or default to MODELS_LLM_DIR if not specified
+            # Note: snapshot_download defaults to ~/.cache/huggingface if local_dir is None
+            # If we want to force it to our models dir, we should specify it.
+            # But the user said "Default to local cache", so maybe we leave it as None unless specified?
+            # However, for our system, we probably want it in our managed directory if it's a GGUF file.
+            # For now, I'll respect the argument.
+            
+            if filename:
+                # Download single file
+                result_path = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=local_dir)
+                self.log(t("ui.launcher.log.hf_download_file_success", default="✅ [HF] File downloaded: {path}", path=result_path), "MODEL")
+                return result_path
+            else:
+                # Download entire repo
+                result_path = snapshot_download(repo_id=repo_id, local_dir=local_dir)
+                self.log(t("ui.launcher.log.hf_download_repo_success", default="✅ [HF] Model downloaded to: {path}", path=result_path), "MODEL")
+                return result_path
+                
+        except Exception as e:
+            self.log(t("ui.launcher.log.hf_download_error", default="❌ [HF] Download error: {error}", error=str(e)), "MODEL")
+            return None
+
 
 
