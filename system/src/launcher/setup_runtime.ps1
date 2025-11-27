@@ -84,30 +84,63 @@ $TempPython = "$TempDir\python_full"
 New-Item -ItemType Directory -Path $TempPython -Force | Out-Null
 
 # Use /layout to extract files without installing (avoids error 1603)
-# This downloads the MSI/CAB files to the target directory
 $InstallArgs = "/layout", "$TempPython", "/quiet"
-$Process = Start-Process -FilePath $Installer -ArgumentList $InstallArgs -Wait -PassThru
+Write-Host "[SETUP] Starting extraction (monitoring for tcltk.msi)..." -ForegroundColor Yellow
+$Process = Start-Process -FilePath $Installer -ArgumentList $InstallArgs -PassThru
 
-if ($Process.ExitCode -ne 0) {
-    Write-Host "[ERROR] Installer failed with exit code $($Process.ExitCode)" -ForegroundColor Red
-    exit 1
+# Monitor loop to grab tcltk.msi early
+$Timeout = 180 # 3 minutes max
+$Timer = [System.Diagnostics.Stopwatch]::StartNew()
+$MsiFound = $false
+
+while ($Timer.Elapsed.TotalSeconds -lt $Timeout) {
+    if ($Process.HasExited) {
+        break
+    }
+
+    $Msi = Get-ChildItem "$TempPython" -Filter "*tcltk*.msi" | Select-Object -First 1
+    if ($Msi) {
+        # Check if file is stable (not being written to)
+        $Size1 = $Msi.Length
+        Start-Sleep -Milliseconds 500
+        $Msi.Refresh()
+        $Size2 = $Msi.Length
+
+        if ($Size1 -eq $Size2 -and $Size1 -gt 0) {
+            Write-Host "[SETUP] Found tcltk.msi ($($Msi.Length) bytes). Grabbing it..." -ForegroundColor Green
+            $MsiFound = $true
+            
+            # Copy to safe location immediately
+            $SafeMsi = "$TempDir\tcltk.msi"
+            Copy-Item $Msi.FullName -Destination $SafeMsi -Force
+            
+            # Kill the installer to save time
+            Write-Host "[SETUP] Terminating installer to skip other components..." -ForegroundColor Yellow
+            Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+            break
+        }
+    }
+    Start-Sleep -Milliseconds 500
 }
 
-# In layout mode, we need to extract the MSIs to get the files
-# We need 'tcltk.msi' or similar
-Write-Host "[SETUP] Extracting MSIs..." -ForegroundColor Yellow
-$MsiFile = Get-ChildItem "$TempPython" -Filter "*tcltk*.msi" | Select-Object -First 1 -ExpandProperty FullName
-
-if (-not $MsiFile) {
-    Write-Host "[ERROR] Tcl/Tk MSI not found in layout!" -ForegroundColor Red
-    exit 1
+if (-not $MsiFound) {
+    # If we exited loop without finding MSI, maybe it finished?
+    $Msi = Get-ChildItem "$TempPython" -Filter "*tcltk*.msi" | Select-Object -First 1
+    if ($Msi) {
+        $SafeMsi = "$TempDir\tcltk.msi"
+        Copy-Item $Msi.FullName -Destination $SafeMsi -Force
+    } else {
+        Write-Host "[ERROR] Tcl/Tk MSI not found after waiting!" -ForegroundColor Red
+        exit 1
+    }
 }
 
-# Extract MSI using msiexec /a (administrative install - extracts files)
+# Extract MSI using msiexec /a
+Write-Host "[SETUP] Extracting files from MSI..." -ForegroundColor Yellow
 $ExtractDir = "$TempPython\extracted"
 New-Item -ItemType Directory -Path $ExtractDir -Force | Out-Null
 $LogFile = "$TempPython\msi_log.txt"
-Start-Process "msiexec.exe" -ArgumentList "/a `"$MsiFile`" /qn TARGETDIR=`"$ExtractDir`" /l*v `"$LogFile`"" -Wait
+Start-Process "msiexec.exe" -ArgumentList "/a `"$SafeMsi`" /qn TARGETDIR=`"$ExtractDir`" /l*v `"$LogFile`"" -Wait
 
 # Locate the actual files inside the extracted structure
 # Usually in extracted/Lib/tkinter and extracted/tcl or similar
