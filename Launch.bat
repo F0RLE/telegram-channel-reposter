@@ -29,6 +29,10 @@ set "TK_LIBRARY=%PYTHON_DIR%\tcl\tk8.6"
 
 :: 3. Launch Bootstrapper (Installs modules & starts Launcher)
 "%PYTHON_EXE%" "%BOOTSTRAPPER%"
+if errorlevel 1 (
+    echo [ERROR] Bootstrapper failed.
+    pause
+)
 
 exit /b 0
 

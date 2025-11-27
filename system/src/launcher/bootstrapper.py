@@ -2,9 +2,20 @@ import os
 import sys
 import subprocess
 import threading
-import tkinter as tk
-from tkinter import ttk
 import time
+
+try:
+    import tkinter as tk
+    from tkinter import ttk
+    GUI_AVAILABLE = True
+except ImportError as e:
+    print(f"[ERROR] Failed to import Tkinter: {e}")
+    print("This usually means the runtime setup failed to copy Tkinter files.")
+    print("Please try deleting the 'system/runtime' folder and running Launch.bat again.")
+    GUI_AVAILABLE = False
+    # We will try to continue in console mode or just exit
+    input("Press Enter to exit...")
+    sys.exit(1)
 
 class Bootstrapper(tk.Tk):
     def __init__(self):
