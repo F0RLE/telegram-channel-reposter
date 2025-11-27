@@ -18,8 +18,31 @@ $GetPipUrl = "https://bootstrap.pypa.io/get-pip.py"
 Write-Host "[SETUP] Starting Portable Python Setup..." -ForegroundColor Cyan
 
 # 1. Prepare Directories
-if (Test-Path $PythonDir) { Remove-Item -Path $PythonDir -Recurse -Force }
-if (Test-Path $TempDir) { Remove-Item -Path $TempDir -Recurse -Force }
+Write-Host "[SETUP] Cleaning up previous run..." -ForegroundColor Yellow
+
+# Kill potential lingering processes
+Get-Process "python_installer" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process "msiexec" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+
+if (Test-Path $PythonDir) { 
+    try {
+        Remove-Item -Path $PythonDir -Recurse -Force -ErrorAction Stop
+    } catch {
+        Write-Host "[WARNING] Could not clean Python dir: $_" -ForegroundColor Red
+        # Try to continue anyway, maybe it's empty enough
+    }
+}
+
+if (Test-Path $TempDir) { 
+    try {
+        Remove-Item -Path $TempDir -Recurse -Force -ErrorAction Stop
+    } catch {
+        Write-Host "[WARNING] Could not clean Temp dir: $_" -ForegroundColor Red
+        Write-Host "Please manually close any setup programs and try again."
+        exit 1
+    }
+}
 New-Item -ItemType Directory -Path $PythonDir -Force | Out-Null
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 
