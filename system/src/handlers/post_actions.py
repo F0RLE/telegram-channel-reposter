@@ -267,8 +267,32 @@ async def _render_preview_post_unsafe(
     new_ids = []
     content_edited = False
     
+    # Check if previous post was a media group (multiple messages)
+    was_media_group = len(last_ids) > 1
+    
     try:
-        if editing_content_id:
+        # IMPORTANT: Cannot edit media groups in Telegram
+        # If new content is an album, we must delete old messages and send fresh
+        if content_type == "album" and media_group:
+            # Delete ALL previous content messages
+            await _safe_delete(bot, chat_id, last_ids)
+            # Send new media group
+            media_group[0].caption = safe_text
+            media_group[0].parse_mode = "HTML"
+            msgs = await bot.send_media_group(chat_id, media=media_group)
+            new_ids = [m.message_id for m in msgs]
+            content_edited = False  # Signal that we recreated content
+        # If switching FROM media group TO single photo/video, delete all and recreate
+        elif was_media_group and content_type in ("photo", "video"):
+            await _safe_delete(bot, chat_id, last_ids)
+            if content_type == "photo":
+                m = await bot.send_photo(chat_id, media_obj, caption=safe_text, parse_mode="HTML")
+                new_ids = [m.message_id]
+            else:
+                m = await bot.send_video(chat_id, media_obj, caption=safe_text, parse_mode="HTML")
+                new_ids = [m.message_id]
+            content_edited = False  # Signal that we recreated content
+        elif editing_content_id and not was_media_group:
             try:
                 if content_type == "text":
                     await bot.edit_message_text(
@@ -318,17 +342,11 @@ async def _render_preview_post_unsafe(
             except TelegramAPIError:
                 content_edited = False
         
-        if not content_edited:
+        if not content_edited and content_type != "album" and not (was_media_group and content_type in ("photo", "video")):
             # Delete old content and send new
-            ids_to_delete = [mid for mid in last_ids if mid != editing_content_id]
-            await _safe_delete(bot, chat_id, ids_to_delete)
+            await _safe_delete(bot, chat_id, last_ids)
             
-            if content_type == "album" and media_group:
-                media_group[0].caption = safe_text
-                media_group[0].parse_mode = "HTML"
-                msgs = await bot.send_media_group(chat_id, media=media_group)
-                new_ids = [m.message_id for m in msgs]
-            elif content_type == "photo":
+            if content_type == "photo":
                 m = await bot.send_photo(chat_id, media_obj, caption=safe_text, parse_mode="HTML")
                 new_ids = [m.message_id]
             elif content_type == "video":

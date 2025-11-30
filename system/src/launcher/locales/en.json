@@ -493,6 +493,9 @@
   "ui.launcher.model.models_info": "Models installed: {count}\\nTotal size: {size}\\n\\n{list}",
   "ui.launcher.model.info_error": "Error getting information: {error}",
   "ui.launcher.delete.error": "Deletion Error",
-  "ui.launcher.delete.sd_error": "An error occurred while deleting Stable Diffusion:\\n{error}"
+  "ui.launcher.delete.sd_error": "An error occurred while deleting Stable Diffusion:\\n{error}",
+  "ui.launcher.log.service_launching": "🚀 [{service}] Launching {service}...",
+  "ui.launcher.log.tab_loaded": "✅ [SYSTEM] Tab '{tab}' loaded successfully",
+  "ui.launcher.log.tab_load_error": "❌ [SYSTEM] Error loading tab '{tab}': {error}",
+  "ui.launcher.settings.loading": "⏳ Loading settings..."
 }
-

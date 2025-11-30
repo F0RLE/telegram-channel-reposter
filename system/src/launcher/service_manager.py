@@ -256,6 +256,74 @@ class ServiceManager:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
 
+    def _check_and_fix_torch(self, venv_py):
+        """Checks if torch has CUDA support and reinstalls if needed"""
+        self.log(f"🔍 [SD] Checking PyTorch CUDA support (USE_GPU={USE_GPU})...", "SD")
+        
+        if not USE_GPU:
+            self.log("⚠️ [SD] GPU usage disabled in settings, skipping CUDA check", "SD")
+            return
+
+        check_script = (
+            "import torch; "
+            "print(f'CUDA_AVAILABLE={torch.cuda.is_available()}'); "
+            "print(f'TORCH_VERSION={torch.__version__}'); "
+            "print(f'CUDA_VERSION={torch.version.cuda}')"
+        )
+        
+        try:
+            result = subprocess.run(
+                [venv_py, "-c", check_script],
+                capture_output=True,
+                text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            
+            output = result.stdout.strip()
+            self.log(f"📋 [SD] PyTorch check output: {output}", "SD")
+            
+            # More robust check for CPU version or missing CUDA
+            is_cpu = "+cpu" in output or "CUDA_AVAILABLE=False" in output or "CUDA_VERSION=None" in output
+            
+            if is_cpu:
+                self.log(t("ui.launcher.log.sd_reinstalling_pytorch_cuda", default="🔄 [SD] Reinstalling PyTorch with CUDA support..."), "SD")
+                
+                # Uninstall current torch
+                subprocess.run(
+                    [venv_py, "-m", "pip", "uninstall", "-y", "torch", "torchvision", "torchaudio"],
+                    capture_output=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                
+                # Install torch with CUDA 12.1
+                install_cmd = [
+                    venv_py, "-m", "pip", "install",
+                    "torch", "torchvision", "torchaudio",
+                    "--index-url", "https://download.pytorch.org/whl/cu121"
+                ]
+                
+                process = subprocess.Popen(
+                    install_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    creationflags=subprocess.CREATE_NO_WINDOW
+                )
+                
+                # Stream output
+                for line in iter(process.stdout.readline, ''):
+                    if line:
+                        self.log(f"📦 [SD] {line.strip()}", "SD")
+                process.wait()
+                
+                if process.returncode == 0:
+                     self.log(t("ui.launcher.log.sd_pytorch_cuda_installed", default="✅ [SD] PyTorch with CUDA installed"), "SD")
+                else:
+                     self.log(t("ui.launcher.log.sd_pytorch_cuda_install_failed", default="❌ [SD] Failed to install PyTorch with CUDA"), "SD")
+
+        except Exception as e:
+            self.log(f"⚠️ [SD] Error checking/fixing torch: {e}", "SD")
+
     def start_service(self, name: str, llm_model_info=None):
         self.stop_events[name].clear()
         self.update_status(name, "starting", "orange")
@@ -484,18 +552,17 @@ class ServiceManager:
 
                 env["OLLAMA_HOST"] = "127.0.0.1:11434"
                 env["OLLAMA_ORIGINS"] = "*"
-                env["OLLAMA_MODELS"] = MODELS_LLM_DIR  # Use unified models directory
+                # env["OLLAMA_MODELS"] = MODELS_LLM_DIR  # Removed to use default system path
                 env["OLLAMA_DATA"] = OLLAMA_DATA_DIR
                 
-                # Force GPU usage if enabled
+                # Ollama automatically detects and uses GPU by default
+                # Only enable debug mode to monitor GPU usage
                 if USE_GPU:
-                    # env["CUDA_VISIBLE_DEVICES"] = "0"  # Removed to allow auto-discovery
                     env["OLLAMA_DEBUG"] = "1"  # Enable debug for GPU info
-                else:
-                    env["CUDA_VISIBLE_DEVICES"] = "" # Disable GPU
-                    env["OLLAMA_LLM_LIBRARY"] = "cpu" # Force CPU
+                # Note: DO NOT set CUDA_VISIBLE_DEVICES="" or OLLAMA_LLM_LIBRARY="cpu"
+                # This prevents GPU usage. Ollama's default behavior is to use GPU when available.
                 
-                # Remove CPU-only flag if present
+                # Remove CPU-only flag if present (legacy cleanup)
                 if "OLLAMA_VULKAN" in env:
                     del env["OLLAMA_VULKAN"]
                 
@@ -517,6 +584,21 @@ class ServiceManager:
                 if not os.path.exists(venv_py):
                     raise FileNotFoundError("SD venv Python not found")
                 
+                # Check and fix torch if needed
+                self._check_and_fix_torch(venv_py)
+                
+                # Pre-install build dependencies to fix 'invalid command bdist_wheel'
+                try:
+                    self.log(t("ui.launcher.log.updating_deps", default="🔧 [SD] Updating build dependencies..."), "SD")
+                    subprocess.run(
+                        [venv_py, "-m", "pip", "install", "--upgrade", "pip", "setuptools", "wheel"],
+                        check=True,
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                except Exception as e:
+                    self.log(f"⚠️ [SD] Failed to update build deps: {e}", "SD")
+
                 # Проверяем и освобождаем порт 7860
                 self._kill_process_on_port(7860)
                 
@@ -536,14 +618,39 @@ class ServiceManager:
                     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
                         pass
                 
-                cmd = [venv_py, "launch.py", "--api", "--nowebui", "--port", "7860", "--skip-python-version-check"]
+                # Use python -c to bootstrap execution and force sys.path setup
+                # This fixes ModuleNotFoundError by ensuring SD_DIR is in sys.path
+                sd_dir_forward = SD_DIR.replace(os.sep, '/')
+                launch_script_forward = os.path.join(SD_DIR, "launch.py").replace(os.sep, '/')
+                
+                python_code = (
+                    f"import sys; "
+                    f"sys.path.insert(0, '{sd_dir_forward}'); "
+                    f"sys.argv[0] = '{launch_script_forward}'; "
+                    f"import runpy; "
+                    f"runpy.run_path('{launch_script_forward}', run_name='__main__')"
+                )
+                
+                cmd = [venv_py, "-c", python_code, "--api", "--nowebui", "--port", "7860", "--skip-python-version-check"]
+                
                 if cuda_supported and USE_GPU:
-                    cmd.extend(["--xformers", "--cuda-stream"])
+                    # Add skip-torch-cuda-test to bypass strict startup checks
+                    # Removed --cuda-stream as it is risky (can cause black images/OOM)
+                    cmd.extend(["--xformers", "--skip-torch-cuda-test"])
                 else:
-                    cmd.extend(["--use-cpu", "all", "--no-half", "--skip-torch-cuda-test"])
+                    # Removed --no-half as it is obsolete in Forge
+                    cmd.extend(["--use-cpu", "all", "--skip-torch-cuda-test"])
                 
                 # Suppress git errors
                 env["GIT_PYTHON_REFRESH"] = "quiet"
+                
+                # Add SD directory to PYTHONPATH to fix ModuleNotFoundError
+                # Add SD directory AND current directory to PYTHONPATH
+                # Also ensure it's exported to the environment for subprocesses
+                env["PYTHONPATH"] = SD_DIR + os.pathsep + "." + os.pathsep + env.get("PYTHONPATH", "")
+                
+                # Explicitly set PYTHONPATH for the process environment too
+                os.environ["PYTHONPATH"] = env["PYTHONPATH"]
                     
                 cwd = SD_DIR
 

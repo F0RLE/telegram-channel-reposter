@@ -114,9 +114,53 @@ def _build_payload(prompt: str, system: Optional[str] = None) -> Dict[str, Any]:
     messages.append({"role": "user", "content": prompt})
     
     # Validate model name
-    model_name = OLLAMA_MODEL if OLLAMA_MODEL and OLLAMA_MODEL.strip() else "gemma3:4b"
-    if not model_name or model_name == "gemma3:4b":
-        logger.debug(f"ℹ️ Using default model name 'gemma3:4b'")
+    # Dynamic model detection:
+    # 1. Try to use OLLAMA_MODEL from settings
+    # 2. If not set or not found in Ollama, fetch available models
+    # 3. Use the first available model
+    
+    target_model = OLLAMA_MODEL
+    
+    # Check if we need to validate/discover models
+    # We do this check if model is default/empty OR if we want to be robust
+    try:
+        # Quick check to see what's actually available
+        # Use short timeout to not block
+        import requests
+        try:
+            resp = requests.get(f"{OLLAMA_API_BASE.replace('/v1', '')}/api/tags", timeout=1.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = [m['name'] for m in data.get('models', [])]
+                
+                if models:
+                    # If configured model is not in list (fuzzy check)
+                    # e.g. configured "qwen2.5", available "qwen2.5:3b"
+                    
+                    # Exact match
+                    if target_model in models:
+                        logger.debug(f"✅ Model '{target_model}' found in Ollama")
+                    else:
+                        # Fuzzy match
+                        found = False
+                        for m in models:
+                            if target_model in m or m in target_model:
+                                logger.info(f"🔄 Model '{target_model}' not exact match, using '{m}'")
+                                target_model = m
+                                found = True
+                                break
+                        
+                        if not found:
+                            # Fallback to first available
+                            logger.warning(f"⚠️ Model '{target_model}' not found. Using first available: '{models[0]}'")
+                            target_model = models[0]
+        except Exception as e:
+            logger.debug(f"⚠️ Could not fetch Ollama models: {e}")
+            pass
+    except:
+        pass
+
+    model_name = target_model if target_model and target_model.strip() else "gemma3:4b"
     
     # Ollama сам управляет температурой и контекстом - не передаем эти параметры
     return {

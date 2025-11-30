@@ -130,13 +130,32 @@ try:
     selected_model = get_key(ENV_PATH, "SELECTED_LLM_MODEL")
     if selected_model and selected_model.strip():
         # Parse format: "ollama:model-name" or "gguf:model-name:path"
-        parts = selected_model.strip().split(":", 2)
-        if len(parts) >= 2 and parts[1]:
-            # Extract model name (second part)
-            OLLAMA_MODEL = parts[1].strip()
+        # Use split(":", 1) to handle model names with colons (e.g. qwen2.5:3b)
+        parts = selected_model.strip().split(":", 1)
+        if len(parts) >= 2:
+            model_type = parts[0].lower()
+            rest = parts[1]
+            
+            if model_type == 'ollama':
+                # For Ollama, the rest is the model name (e.g. "qwen2.5:3b")
+                OLLAMA_MODEL = rest.strip()
+            elif model_type == 'gguf':
+                # For GGUF: "name:path"
+                # Try to extract name (everything before the last part if path is involved?)
+                # Actually, _select_model_for_use saves as f"{model_type}:{model_name}:{path}"
+                # So rest is "name:path". Path might have colons (C:\...)
+                # Let's assume name doesn't have colons for GGUF
+                gguf_parts = rest.split(":", 1)
+                OLLAMA_MODEL = gguf_parts[0].strip()
+            else:
+                # Fallback for unknown types
+                OLLAMA_MODEL = rest.strip()
+                
             logging.info(f"✅ Loaded LLM model from .env: {OLLAMA_MODEL}")
         else:
-            logging.warning(f"⚠️ Invalid SELECTED_LLM_MODEL format: {selected_model}, using default")
+            # Legacy format or just model name?
+            OLLAMA_MODEL = selected_model.strip()
+            logging.info(f"ℹ️ Loaded raw LLM model from .env: {OLLAMA_MODEL}")
     else:
         logging.info("ℹ️ SELECTED_LLM_MODEL not set, using default: gemma3:4b")
 except Exception as e:

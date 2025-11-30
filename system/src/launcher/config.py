@@ -22,11 +22,20 @@ PYTHON_EXE = sys.executable
 GIT_CMD_ENV = os.path.join(ENV_DIR, "git", "cmd", "git.exe")
 GIT_CMD = GIT_CMD_ENV if os.path.exists(GIT_CMD_ENV) else "git"
 
-# Ollama paths
-OLLAMA_DIR = os.path.join(DIR_ENGINE, "ollama")
-OLLAMA_EXE = os.path.join(OLLAMA_DIR, "ollama.exe")
+# Ollama paths - using system installation for GPU support
+# Check if system Ollama exists, otherwise fallback to embedded version
+SYSTEM_OLLAMA_PATH = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama.exe")
+if os.path.exists(SYSTEM_OLLAMA_PATH):
+    OLLAMA_EXE = SYSTEM_OLLAMA_PATH
+    OLLAMA_DIR = os.path.dirname(SYSTEM_OLLAMA_PATH)
+else:
+    # Fallback to embedded version
+    OLLAMA_DIR = os.path.join(DIR_ENGINE, "ollama")
+    OLLAMA_EXE = os.path.join(OLLAMA_DIR, "ollama.exe")
+
+# Data directory still in launcher folder
+OLLAMA_DATA_DIR = os.path.join(DIR_ENGINE, "ollama", "data")
 OLLAMA_MODELS_DIR = os.path.join(OLLAMA_DIR, "models")
-OLLAMA_DATA_DIR = os.path.join(OLLAMA_DIR, "data")
 
 # Models directory
 def get_models_llm_dir():

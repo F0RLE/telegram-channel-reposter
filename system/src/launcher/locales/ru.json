@@ -493,6 +493,9 @@
   "ui.launcher.model.models_info": "Установлено моделей: {count}\\nОбщий размер: {size}\\n\\n{list}",
   "ui.launcher.model.info_error": "Ошибка при получении информации: {error}",
   "ui.launcher.delete.error": "Ошибка удаления",
-  "ui.launcher.delete.sd_error": "Произошла ошибка при удалении Stable Diffusion:\\n{error}"
+  "ui.launcher.delete.sd_error": "Произошла ошибка при удалении Stable Diffusion:\\n{error}",
+  "ui.launcher.log.service_launching": "🚀 [{service}] Запуск {service}...",
+  "ui.launcher.log.tab_loaded": "✅ [SYSTEM] Вкладка '{tab}' успешно загружена",
+  "ui.launcher.log.tab_load_error": "❌ [SYSTEM] Ошибка загрузки вкладки '{tab}': {error}",
+  "ui.launcher.settings.loading": "⏳ Загрузка настроек..."
 }
-
