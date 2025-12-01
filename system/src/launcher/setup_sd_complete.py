@@ -7,6 +7,10 @@ import sys
 import os
 from pathlib import Path
 
+# Fix encoding for Windows console
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+
 # Recommended versions (SD WebUI Reforge tested)
 PYTORCH_VERSION = "2.3.1"
 TORCHVISION_VERSION = "0.18.1"
@@ -63,7 +67,7 @@ def install_pytorch():
         print("ERROR: Failed to install PyTorch!")
         return False
     
-    print("✓ PyTorch installed successfully")
+    print("[OK] PyTorch installed successfully")
     return True
 
 def install_xformers():
@@ -81,10 +85,27 @@ def install_xformers():
         returncode = run_pip([f"install", f"xformers=={XFORMERS_VERSION}"], check=False)
         
     if returncode == 0:
-        print("✓ xformers installed successfully")
+        print("[OK] xformers installed successfully")
         return True
     else:
         print("WARNING: Could not install xformers, SD will work without it")
+        return False
+
+def install_triton():
+    """Install Triton (Windows unofficial build)"""
+    print_header("Installing Triton")
+    
+    # Try to install triton - on Windows this may not work officially
+    # but there are unofficial builds available
+    print("Attempting to install Triton (may not work on Windows)...")
+    returncode = run_pip(["install", "triton"], check=False)
+    
+    if returncode == 0:
+        print("[OK] Triton installed successfully")
+        return True
+    else:
+        print("[INFO] Triton not available for Windows (this is normal)")
+        print("  Some xformers optimizations will be disabled, but SD will work fine.")
         return False
 
 def install_joblib():
@@ -92,7 +113,7 @@ def install_joblib():
     print_header("Installing joblib")
     returncode = run_pip(["install", "joblib"])
     if returncode == 0:
-        print("✓ joblib installed successfully")
+        print("[OK] joblib installed successfully")
     return returncode == 0
 
 def create_sitecustomize():
@@ -113,7 +134,7 @@ if sd_dir not in sys.path:
     try:
         with open(sitecustomize_path, "w") as f:
             f.write(content.strip())
-        print(f"✓ Created sitecustomize.py at {sitecustomize_path}")
+        print(f"[OK] Created sitecustomize.py at {sitecustomize_path}")
         return True
     except Exception as e:
         print(f"ERROR: Failed to create sitecustomize.py: {e}")
@@ -138,6 +159,12 @@ try:
     print(f"xformers: {xformers.__version__}")
 except ImportError:
     print("xformers: Not installed")
+
+try:
+    import triton
+    print(f"Triton: {triton.__version__}")
+except ImportError:
+    print("Triton: Not installed (normal on Windows)")
 '''
     
     result = subprocess.run(
@@ -166,7 +193,7 @@ def main():
         print("Please install SD first or check the path.")
         return 1
     
-    print("✓ SD WebUI Reforge found")
+    print("[OK] SD WebUI Reforge found")
     
     # Check if venv exists
     if not check_venv_exists():
@@ -175,23 +202,24 @@ def main():
         print("Please create the venv first.")
         return 1
     
-    print("✓ Virtual environment found")
+    print("[OK] Virtual environment found")
     
     # Install components
     success = True
     success = install_pytorch() and success
     success = install_xformers() and success
+    install_triton()  # Optional, may not work on Windows
     success = install_joblib() and success
     success = create_sitecustomize() and success
     
     # Verify
     if success and verify_installation():
-        print_header("✓ Installation Complete!")
+        print_header("[OK] Installation Complete!")
         print("All components installed successfully.")
         print("\nYou can now start Stable Diffusion.")
         return 0
     else:
-        print_header("⚠ Installation Completed with Warnings")
+        print_header("[WARN] Installation Completed with Warnings")
         print("Some components may not have installed correctly.")
         print("SD should still work, but with reduced functionality.")
         return 1
