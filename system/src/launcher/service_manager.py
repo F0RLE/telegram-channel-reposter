@@ -283,7 +283,8 @@ class ServiceManager:
             self.log(f"📋 [SD] PyTorch check output: {output}", "SD")
             
             # More robust check for CPU version or missing CUDA
-            is_cpu = "+cpu" in output or "CUDA_AVAILABLE=False" in output or "CUDA_VERSION=None" in output
+            # If output is empty, something is wrong, assume we need to fix it
+            is_cpu = not output or "+cpu" in output or "CUDA_AVAILABLE=False" in output or "CUDA_VERSION=None" in output
             
             if is_cpu:
                 self.log(t("ui.launcher.log.sd_reinstalling_pytorch_cuda", default="🔄 [SD] Reinstalling PyTorch with CUDA support..."), "SD")
