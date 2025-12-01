@@ -742,6 +742,7 @@ async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
         force_no = d.get('force_no_media', False)
         media_group = await _build_media_group(d)
         
+        # Priority 1: Generated image
         if d.get('has_generated_image') and not force_no:
              b = d.get('generated_image_bytes')
              if not b:
@@ -750,15 +751,36 @@ async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
                      b = base64.b64decode(img_b64)
              if b:
                  await bot.send_photo(TARGET_CHANNEL_ID, BufferedInputFile(b, "p.png"), caption=text, parse_mode="HTML")
+        # Priority 2: Media group (album)
         elif media_group and not force_no and len(media_group) > 1:
              media_group[0].caption = text
              media_group[0].parse_mode = "HTML"
              await bot.send_media_group(TARGET_CHANNEL_ID, media=media_group)
+        # Priority 3: Single media from group (treated as single file)
+        elif media_group and not force_no and len(media_group) == 1:
+             # Send as single photo/video with caption
+             item = media_group[0]
+             if hasattr(item, 'media'):
+                 await bot.send_photo(TARGET_CHANNEL_ID, item.media, caption=text, parse_mode="HTML")
+             else:
+                 # Fallback to original file IDs
+                 pid = d.get('original_photo_file_id')
+                 vid = d.get('original_video_file_id')
+                 if pid: 
+                     await bot.send_photo(TARGET_CHANNEL_ID, pid, caption=text, parse_mode="HTML")
+                 elif vid: 
+                     await bot.send_video(TARGET_CHANNEL_ID, vid, caption=text, parse_mode="HTML")
+                 else:
+                     await bot.send_message(TARGET_CHANNEL_ID, text, parse_mode="HTML", disable_web_page_preview=True)
+        # Priority 4: Original single photo/video
         elif not force_no and (d.get('original_photo_file_id') or d.get('original_video_file_id')):
              pid = d.get('original_photo_file_id')
              vid = d.get('original_video_file_id')
-             if pid: await bot.send_photo(TARGET_CHANNEL_ID, pid, caption=text, parse_mode="HTML")
-             else: await bot.send_video(TARGET_CHANNEL_ID, vid, caption=text, parse_mode="HTML")
+             if pid: 
+                 await bot.send_photo(TARGET_CHANNEL_ID, pid, caption=text, parse_mode="HTML")
+             elif vid: 
+                 await bot.send_video(TARGET_CHANNEL_ID, vid, caption=text, parse_mode="HTML")
+        # Priority 5: Text only (no media or force_no_media)
         else:
              await bot.send_message(TARGET_CHANNEL_ID, text, parse_mode="HTML", disable_web_page_preview=True)
 
@@ -776,6 +798,11 @@ async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
             image_base64=None,
             force_no_media=False
         )
+
+        # Delete post content messages (not the menu)
+        post_msg_ids = d.get('last_message_ids', [])
+        if post_msg_ids:
+            await _safe_delete(bot, chat_id, post_msg_ids)
 
         # Wait 3 seconds
         await asyncio.sleep(3)
