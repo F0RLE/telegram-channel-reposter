@@ -769,16 +769,18 @@ class ModernLauncher(ctk.CTk):
             any_running = any(self.service_manager.procs.values())
         
         if any_running:
+            # Stopping services
             self.service_manager.stop_all_services()
             self.btn_system_control.configure(
-                text=t("ui.launcher.button.start_all", default="🚀 Start System"),
+                text="🚀 Запустить систему",
                 fg_color=COLORS['success'],
                 hover_color="#059669"
             )
         else:
+            # Starting services
             self.service_manager.start_all_services()
             self.btn_system_control.configure(
-                text=t("ui.launcher.button.stop_all", default="⏹ Stop System"),
+                text="⏹ Остановить систему",
                 fg_color=COLORS['danger'],
                 hover_color="#dc2626"
             )
@@ -1120,10 +1122,58 @@ class ModernLauncher(ctk.CTk):
         if not self.pages_created[idx]:
             try:
                 if idx == 1:
-                    # Создаем страницу настроек
-                    # Optimization: Create directly on main thread, but content is lazy loaded
-                    self.pages[1] = self.create_settings_page()
+                    # Create LOADING PAGE immediately
+                    loading_page = ctk.CTkFrame(self.content_frame, fg_color=COLORS['bg'])
+                    loading_label = ctk.CTkLabel(
+                        loading_page,
+                        text="⏳ Загрузка настроек...",
+                        font=("Segoe UI", 18),
+                        text_color=COLORS['text_muted']
+                    )
+                    loading_label.pack(expand=True)
+                    
+                    self.pages[1] = loading_page
                     self.pages_created[idx] = True
+                    
+                    # Show loading page immediately
+                    loading_page.grid(row=0, column=0, sticky="nsew")
+                    loading_page.lift()
+                    self.update_idletasks()
+                    
+                    # Create actual settings page in background
+                    def create_settings_bg():
+                        try:
+                            # Create the real page
+                            settings_page = self.create_settings_page()
+                            
+                            # Update UI on main thread
+                            def update_ui():
+                                try:
+                                    # Destroy loading page
+                                    loading_page.destroy()
+                                    
+                                    # Replace with real page
+                                    self.pages[1] = settings_page
+                                    settings_page.grid(row=0, column=0, sticky="nsew")
+                                    settings_page.lift()
+                                    
+                                    self.log("✅ [SYSTEM] Settings page loaded", "SYSTEM")
+                                except Exception as e:
+                                    self.log(f"❌ [SYSTEM] Error showing settings: {e}", "SYSTEM")
+                            
+                            self.after(0, update_ui)
+                        except Exception as e:
+                            def show_error():
+                                loading_label.configure(
+                                    text=f"❌ Ошибка загрузки настроек:\n{str(e)}",
+                                    text_color=COLORS['danger']
+                                )
+                            self.after(0, show_error)
+                            self.log(f"❌ [SYSTEM] Error creating settings: {e}", "SYSTEM")
+                    
+                    # Start background loading
+                    threading.Thread(target=create_settings_bg, daemon=True).start()
+                    
                 elif idx == 2:
                     self.pages[2] = self.create_channels_page()
                     self.pages_created[idx] = True
@@ -1312,7 +1362,33 @@ class ModernLauncher(ctk.CTk):
                 border_color=COLORS['border']
             )
             console.grid(row=0, column=0, sticky="nsew")
+            
+            # Enable selection but disable editing
             console.configure(state="normal")
+            
+            # Set selection colors (accessing internal Text widget)
+            try:
+                console._textbox.configure(
+                    selectbackground=COLORS['primary'],
+                    selectforeground='white',
+                    insertbackground='white'
+                )
+            except:
+                pass
+                
+            # Block typing but allow copying and navigation
+            def prevent_edit(event):
+                # Allow Ctrl+C, Ctrl+A
+                if (event.state & 4) and event.keysym.lower() in ['c', 'a']:
+                    return None
+                # Allow navigation
+                if event.keysym in ['Up', 'Down', 'Left', 'Right', 'Home', 'End', 'Prior', 'Next']:
+                    return None
+                # Block everything else
+                return "break"
+                
+            console._textbox.bind("<Key>", prevent_edit)
+            
             self.setup_console_context_menu(console)
             self.consoles[tab_name] = console
             self.console_frames[tab_name] = frame_inner
@@ -1660,6 +1736,10 @@ class ModernLauncher(ctk.CTk):
             ("image", "🎨 " + t("ui.launcher.settings.images"), self._create_image_settings_tab)
         ]
         
+        # Keep track of which tabs have been loaded
+        if not hasattr(self, 'settings_tabs_loaded'):
+            self.settings_tabs_loaded = {}
+        
         for idx, (key, label, create_func) in enumerate(tab_configs):
             # Create button
             btn = ctk.CTkButton(
@@ -1676,8 +1756,21 @@ class ModernLauncher(ctk.CTk):
             btn.grid(row=0, column=idx, sticky="ew", padx=3, pady=4)
             self.settings_tab_buttons.append((key, btn))
             
-            # Create the tab content frame
-            tab_frame = create_func(content_area)
+            # Create ONLY placeholder frame initially, content loads on demand
+            if idx == 0:
+                # Load first tab (general) immediately
+                tab_frame = create_func(content_area)
+                self.settings_tabs_loaded[key] = True
+            else:
+                # For other tabs, create empty placeholder
+                tab_frame = ctk.CTkFrame(content_area, fg_color=COLORS['bg'])
+                tab_frame.grid_columnconfigure(0, weight=1)
+                tab_frame.grid_rowconfigure(0, weight=1)
+                self.settings_tabs_loaded[key] = False
+                # Store create function for lazy loading
+                if not hasattr(self, 'settings_tabs_creators'):
+                    self.settings_tabs_creators = {}
+                self.settings_tabs_creators[key] = create_func
             
             if idx > 0:
                 tab_frame.grid_remove()
@@ -1708,34 +1801,107 @@ class ModernLauncher(ctk.CTk):
         return frame
     
     def _switch_settings_tab(self, tab_key):
-        """Переключает вкладку настроек"""
-        if not hasattr(self, 'settings_tab_frames') or not self.settings_tab_frames:
-            return
+        """Switches between settings tabs with lazy loading"""
         if tab_key not in self.settings_tab_frames:
             return
         
+        # IMMEDIATELY switch to the tab (even if empty) to prevent freeze perception
+        self._do_switch_settings_tab(tab_key)
+        
+        # Check if this tab needs to be loaded for the first time
+        if not self.settings_tabs_loaded.get(tab_key, False):
+            # Get the placeholder frame
+            tab_frame = self.settings_tab_frames[tab_key]
+            
+            # Clear any existing content
+            for widget in tab_frame.winfo_children():
+                widget.destroy()
+            
+            # Show loading message IMMEDIATELY
+            loading_label = ctk.CTkLabel(
+                tab_frame,
+                text=t("ui.launcher.settings.loading", default="⏳ Loading settings..."),
+                font=("Segoe UI", 14),
+                text_color=COLORS['text_muted']
+            )
+            loading_label.pack(expand=True)
+            
+            # Force immediate UI update
+            self.update_idletasks()
+            
+            # Load content in background after a tiny delay to let UI refresh
+            def load_tab_content():
+                try:
+                    import time
+                    # Small delay to ensure loading message is visible
+                    time.sleep(0.1)
+                    
+                    # Get the creator function
+                    create_func = self.settings_tabs_creators.get(tab_key)
+                    if create_func:
+                        # Create the actual content
+                        new_content = create_func(tab_frame.master)  # Use master (content_area)
+                        
+                        # Update UI on main thread
+                        def update_ui():
+                            try:
+                                # Destroy the placeholder frame
+                                tab_frame.destroy()
+                                
+                                # Replace in dictionary
+                                self.settings_tab_frames[tab_key] = new_content
+                                new_content.grid(row=0, column=0, sticky="nsew")
+                                new_content.lift()
+                                
+                                # Mark as loaded
+                                self.settings_tabs_loaded[tab_key] = True
+                                
+                                self.log(t("ui.launcher.log.tab_loaded", default="✅ [SYSTEM] Tab '{tab}' loaded successfully", tab=tab_key), "SYSTEM")
+                            except Exception as e:
+                                self.log(t("ui.launcher.log.tab_load_error", default="❌ [SYSTEM] Error loading tab '{tab}': {error}", tab=tab_key, error=str(e)), "SYSTEM")
+                        
+                        self.after(0, update_ui)
+                except Exception as e:
+                    def show_error():
+                        try:
+                            if loading_label.winfo_exists():
+                                loading_label.configure(
+                                    text=f"❌ Ошибка загрузки:\n{str(e)}",
+                                    text_color=COLORS['danger']
+                                )
+                        except:
+                            pass
+                    self.after(0, show_error)
+                    self.log(t("ui.launcher.log.tab_load_error", default="❌ [SYSTEM] Error loading tab '{tab}': {error}", tab=tab_key, error=str(e)), "SYSTEM")
+            
+            # Load in thread to avoid blocking UI
+            import threading
+            threading.Thread(target=load_tab_content, daemon=True).start()
+    
+    def _do_switch_settings_tab(self, tab_key):
+        """Actually performs the tab switch (called after content is loaded)"""
         # Hide all tabs
-        for key, tab_frame in self.settings_tab_frames.items():
-            tab_frame.grid_remove()
+        for key, frame in self.settings_tab_frames.items():
+            if frame.winfo_exists():
+                frame.grid_remove()
         
         # Show selected tab
-        self.settings_tab_frames[tab_key].grid()
+        if tab_key in self.settings_tab_frames:
+            self.settings_tab_frames[tab_key].grid(row=0, column=0, sticky="nsew")
         
         # Update button styles
         for key, btn in self.settings_tab_buttons:
             if key == tab_key:
                 btn.configure(
                     fg_color=COLORS['primary'],
-                    hover_color=COLORS['primary_hover'],
                     text_color="white",
-                    font=("Segoe UI", 13, "bold")
+                    font=("Segoe UI", 11, "bold")
                 )
             else:
                 btn.configure(
                     fg_color=COLORS['surface_light'],
-                    hover_color=COLORS['surface'],
                     text_color=COLORS['text_secondary'],
-                    font=("Segoe UI", 13, "normal")
+                    font=("Segoe UI", 11, "normal")
                 )
         
         self.current_settings_tab = tab_key
@@ -1832,24 +1998,26 @@ class ModernLauncher(ctk.CTk):
         bot_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         bot_content.grid_columnconfigure((0, 1), weight=1)
         
-        # Token с кнопкой копирования
+        # Token с кнопкой копирования и маскировкой
         token_label = ctk.CTkLabel(
             bot_content,
-            text=t("ui.launcher.settings.bot_token", default="Bot Token"),
+            text="Токен бота",
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
         )
-        token_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        token_label.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
         
         token_frame = ctk.CTkFrame(bot_content, fg_color="transparent")
         token_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
         token_frame.grid_columnconfigure(0, weight=1)
         
+        # Token entry with password masking
         token_entry = ctk.CTkEntry(
             token_frame,
-            placeholder_text=t("ui.launcher.settings.bot_token.placeholder", default="Bot token from @BotFather"),
+            placeholder_text="Токен от @BotFather",
             font=("Segoe UI", 11),
             height=32,
+            show="•",  # Password masking
             fg_color=COLORS.get('input_bg', COLORS['bg']),
             border_color=COLORS['border'],
             border_width=1,
@@ -1859,17 +2027,43 @@ class ModernLauncher(ctk.CTk):
         if token_value:
             token_entry.insert(0, token_value)
         token_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        self.add_focus_style(token_entry)  # Добавляем focus-стили
+        self.add_focus_style(token_entry)
         self.entries["BOT_TOKEN"] = token_entry
         token_entry.bind("<KeyRelease>", lambda e: self._auto_save_settings())
         token_entry.bind("<FocusOut>", lambda e: self._auto_save_settings())
+        
+        # Eye toggle button
+        token_visible = tk.BooleanVar(value=False)
+        
+        def toggle_token_visibility():
+            if token_visible.get():
+                # Hide token (mask it)
+                token_entry.configure(show="•")
+                eye_btn.configure(text="👁")
+                token_visible.set(False)
+            else:
+                # Show token (unmask it)
+                token_entry.configure(show="")
+                eye_btn.configure(text="🙈")
+                token_visible.set(True)
+        
+        eye_btn = ctk.CTkButton(
+            token_frame,
+            text="👁",
+            width=40,
+            height=32,
+            command=toggle_token_visibility,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            font=("Segoe UI", 12)
+        )
+        eye_btn.grid(row=0, column=1, padx=(0, 8))
         
         def copy_token():
             token_val = token_entry.get()
             if token_val:
                 self.clipboard_clear()
                 self.clipboard_append(token_val)
-                # Визуальная обратная связь
                 copy_btn.configure(text="✓", fg_color=COLORS['success'])
                 self.after(1000, lambda: copy_btn.configure(text="📋", fg_color=COLORS['surface_light']))
         
@@ -1883,16 +2077,16 @@ class ModernLauncher(ctk.CTk):
             hover_color=COLORS['surface'],
             font=("Segoe UI", 12)
         )
-        copy_btn.grid(row=0, column=1)
+        copy_btn.grid(row=0, column=2)
         
         # Channel ID с кнопкой копирования
         channel_label = ctk.CTkLabel(
             bot_content,
-            text=t("ui.launcher.settings.target_channel", default="Channel ID"),
+            text="ID канала",
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
         )
-        channel_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        channel_label.grid(row=2, column=0, columnspan=2, sticky="w", pady=(0, 8))
         
         channel_frame = ctk.CTkFrame(bot_content, fg_color="transparent")
         channel_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 12))
@@ -1900,7 +2094,7 @@ class ModernLauncher(ctk.CTk):
         
         channel_entry = ctk.CTkEntry(
             channel_frame,
-            placeholder_text=t("ui.launcher.settings.target_channel.placeholder", default="Target channel ID"),
+            placeholder_text="ID целевого канала",
             font=("Segoe UI", 11),
             height=32,
             fg_color=COLORS.get('input_bg', COLORS['bg']),
@@ -1937,19 +2131,19 @@ class ModernLauncher(ctk.CTk):
         )
         copy_channel_btn.grid(row=0, column=1)
         
-        # Дополнительные настройки в две колонки
-        # Имя бота (если есть в настройках)
+        # Дополнительные настройки
+        # Имя бота
         bot_name_label = ctk.CTkLabel(
             bot_content,
             text="Имя бота",
             font=("Segoe UI", 11),
             text_color=COLORS['text_secondary']
         )
-        bot_name_label.grid(row=4, column=0, sticky="w", pady=(0, 6), padx=(0, 8))
+        bot_name_label.grid(row=4, column=0, columnspan=2, sticky="w", pady=(0, 8))
         
         bot_name_entry = ctk.CTkEntry(
             bot_content,
-            placeholder_text="Опционально",
+            placeholder_text="Необязательно",
             font=("Segoe UI", 11),
             height=32,
             fg_color=COLORS.get('input_bg', COLORS['bg']),
@@ -1957,31 +2151,8 @@ class ModernLauncher(ctk.CTk):
             border_width=1,
             corner_radius=6
         )
-        bot_name_entry.grid(row=5, column=0, sticky="ew", pady=(0, 12), padx=(0, 8))
-        self.add_focus_style(bot_name_entry)  # Добавляем focus-стили
-        
-        # Язык интерфейса
-        lang_label = ctk.CTkLabel(
-            bot_content,
-            text="Язык",
-            font=("Segoe UI", 11),
-            text_color=COLORS['text_secondary']
-        )
-        lang_label.grid(row=4, column=1, sticky="w", pady=(0, 6))
-        
-        lang_options = ["🇷🇺 Русский", "🇬🇧 English"]
-        lang_var = tk.StringVar(value=lang_options[0] if self.current_language == "ru" else lang_options[1])
-        lang_menu = ctk.CTkOptionMenu(
-            bot_content,
-            values=lang_options,
-            variable=lang_var,
-            font=("Segoe UI", 11),
-            height=32,
-            fg_color=COLORS['surface_light'],
-            button_color=COLORS['primary'],
-            button_hover_color=COLORS['primary_hover']
-        )
-        lang_menu.grid(row=5, column=1, sticky="ew", pady=(0, 12))
+        bot_name_entry.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+        self.add_focus_style(bot_name_entry)
         
         # ========== КАРТОЧКА 2: Диагностика ==========
         debug_card = self.create_glass_card(grid_container, fg_color=COLORS['card_bg'], corner_radius=12)
@@ -2008,18 +2179,19 @@ class ModernLauncher(ctk.CTk):
         
         ctk.CTkLabel(
             status_tile,
-            text="Статус",
+            text="Статус бота",
             font=("Segoe UI", 10),
             text_color=COLORS['text_muted']
         ).pack(pady=(8, 4))
         
-        status_value = ctk.CTkLabel(
+        # Dynamic status label (will be updated by service_status_loop)
+        self.bot_status_value = ctk.CTkLabel(
             status_tile,
-            text="✅ OK",
+            text="⏸ Остановлен",
             font=("Segoe UI", 12, "bold"),
-            text_color=COLORS['success']
+            text_color=COLORS['text_muted']
         )
-        status_value.pack(pady=(0, 8))
+        self.bot_status_value.pack(pady=(0, 8))
         
         ping_tile = ctk.CTkFrame(debug_content, fg_color=COLORS['surface_light'], corner_radius=8)
         ping_tile.grid(row=0, column=1, sticky="ew", padx=3, pady=(0, 12))
@@ -2090,7 +2262,7 @@ class ModernLauncher(ctk.CTk):
         # Сохраняем ссылки для обновления
         if not hasattr(self, 'diagnostics_labels'):
             self.diagnostics_labels = {}
-        self.diagnostics_labels['status'] = status_value
+        self.diagnostics_labels['status'] = self.bot_status_value
         self.diagnostics_labels['ping'] = ping_value
         self.diagnostics_labels['queue'] = queue_value
         
@@ -2109,6 +2281,75 @@ class ModernLauncher(ctk.CTk):
                     gen_config = json.load(f)
             except:
                 pass
+        
+        # ========== КАРТОЧКА: Режим генерации ==========
+        mode_card = self.create_glass_card(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
+        mode_card.pack(fill="x", pady=(0, 12))
+        
+        mode_header = ctk.CTkFrame(mode_card, fg_color="transparent")
+        mode_header.pack(fill="x", padx=16, pady=(16, 12))
+        
+        ctk.CTkLabel(
+            mode_header,
+            text="🔧 Режим генерации текста",
+            font=("Segoe UI", 14, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        # Get current mode from ENV
+        current_mode = get_key(FILE_ENV, "TEXT_GEN_MODE") or "direct"
+        self.gen_mode_var = tk.StringVar(value=current_mode)
+        
+        def on_mode_change(value):
+            from dotenv import set_key
+            set_key(FILE_ENV, "TEXT_GEN_MODE", value)
+            self.gen_mode_var.set(value)
+            # Recreate test section
+            self._update_gen_test_ui(test_container, value)
+        
+        # Mode toggle
+        mode_toggle = ctk.CTkSegmentedButton(
+            mode_header,
+            values=["direct", "bot"],
+            variable=self.gen_mode_var,
+            command=on_mode_change,
+            fg_color=COLORS['surface_light'],
+            selected_color=COLORS['primary'],
+            selected_hover_color=COLORS['primary_hover']
+        )
+        mode_toggle.pack(side="right")
+        
+        # Mode descriptions
+        mode_desc_frame = ctk.CTkFrame(mode_card, fg_color="transparent")
+        mode_desc_frame.pack(fill="x", padx=16, pady=(0, 12))
+        
+        mode_desc = {
+            "direct": "🚀 Прямой режим (1-к-1): Генерация напрямую через Ollama без Telegram бота",
+            "bot": "🤖 Режим бота: Генерация через Telegram бот (требует запуска бота)"
+        }
+        
+        self.mode_desc_label = ctk.CTkLabel(
+            mode_desc_frame,
+            text=mode_desc.get(current_mode, mode_desc["direct"]),
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_muted'],
+            wraplength=650,
+            justify="left"
+        )
+        self.mode_desc_label.pack(fill="x")
+        
+        # Update description on mode change
+        def update_mode_desc(*args):
+            mode = self.gen_mode_var.get()
+            self.mode_desc_label.configure(text=mode_desc.get(mode, mode_desc["direct"]))
+        
+        self.gen_mode_var.trace_add("write", update_mode_desc)
+        
+        # ========== КАРТОЧКА: Тест генерации (только для direct режима) ==========
+        test_container = ctk.CTkFrame(scroll, fg_color="transparent")
+        test_container.pack(fill="x", pady=(0, 12))
+        
+        self._update_gen_test_ui(test_container, current_mode)
         
         # ========== КАРТОЧКА: Редактор промптов с вкладками ==========
         instructions_card = self.create_glass_card(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
@@ -4110,27 +4351,56 @@ class ModernLauncher(ctk.CTk):
             }
     
     def service_status_loop(self):
-        # Проверяем, что service_manager инициализирован
-        if not self.service_manager or not hasattr(self.service_manager, 'procs'):
-            self.after(500, self.service_status_loop)
+        """Периодически проверяет статус сервисов и обновляет индикаторы"""
+        # Check if window is being destroyed
+        if not self.winfo_exists():
             return
         
-        # Используем procs из service_manager
-        procs = self.service_manager.procs
-        for n, p in procs.items():
-            if p and p.poll() is not None:
-                self.procs[n] = None
-                self._set_service_indicator(n, COLORS['danger'])
-                self._set_service_button(n, text="▶", fg_color=COLORS['primary'])
-                self._set_service_status_label(n, text=t("ui.launcher.status.error", default="Ошибка"), color=COLORS['danger'])
-                service_name = self._get_service_name(n)
-                self.log(t("ui.launcher.log.service_crashed", default="❌ Сервис {service} завершился с ошибкой", service=service_name), n.upper())
-            elif p:
-                self._set_service_indicator(n, COLORS['success'])
-                self._set_service_button(n, text="⏸", fg_color=COLORS['danger'])
-                self._set_service_status_label(n, text=t("ui.launcher.status.working", default="Работает"), color=COLORS['success'])
+        if not hasattr(self, 'service_manager'):
+            self.after(2000, self.service_status_loop)
+            return
         
-        self.after(500, self.service_status_loop)
+        try:
+            # Check if bot is running
+            bot_running = self.service_manager.procs.get("Bot", None) is not None
+            
+            # Update debug panel status (synchronize with sidebar)
+            if hasattr(self, 'bot_status_value') and self.bot_status_value.winfo_exists():
+                if bot_running:
+                    self.bot_status_value.configure(
+                        text="✅ Работает",
+                        text_color=COLORS['success']
+                    )
+                else:
+                    self.bot_status_value.configure(
+                        text="⏸ Остановлен",
+                        text_color=COLORS['text_muted']
+                    )
+        except Exception as e:
+            # Log but don't crash
+            print(f"[DEBUG] Status loop error: {e}")
+        finally:
+            # Schedule next check only if window still exists
+            if self.winfo_exists() and hasattr(self, 'service_manager'):
+                self.after(2000, self.service_status_loop)
+        
+        # Используем procs из service_manager
+        try:
+            procs = self.service_manager.procs
+            for n, p in procs.items():
+                if p and p.poll() is not None:
+                    self.procs[n] = None
+                    self._set_service_indicator(n, COLORS['danger'])
+                    self._set_service_button(n, text="▶", fg_color=COLORS['primary'])
+                    self._set_service_status_label(n, text=t("ui.launcher.status.error", default="Ошибка"), color=COLORS['danger'])
+                    service_name = self._get_service_name(n)
+                    self.log(t("ui.launcher.log.service_crashed", default="❌ Сервис {service} завершился с ошибкой", service=service_name), n.upper())
+                elif p:
+                    self._set_service_indicator(n, COLORS['success'])
+                    self._set_service_button(n, text="⏸", fg_color=COLORS['danger'])
+                    self._set_service_status_label(n, text=t("ui.launcher.status.working", default="Работает"), color=COLORS['success'])
+        except Exception as e:
+            print(f"[DEBUG] Service check error: {e}")
 
     
     # CHANNELS MANAGEMENT
@@ -6296,25 +6566,47 @@ class ModernLauncher(ctk.CTk):
 
     def console_loop(self):
         """Оптимизированный цикл обработки логов"""
-        batch_size = 10  # Обрабатываем по 10 сообщений за раз
+        batch_size = 50  # Увеличиваем размер пакета
         processed = 0
+        
+        # Словарь для группировки сообщений по вкладкам
+        updates = {}
         
         while not self.log_queue.empty() and processed < batch_size:
             try:
                 txt, tab = self.log_queue.get_nowait()
-                console = self.consoles.get(tab)
-                
-                if console:
-                    console.configure(state="normal")
-                    console.insert("end", f"{txt}\n")
-                    # Автопрокрутка только для активной вкладки
-                    if getattr(self, 'current_console_tab', None) == tab:
-                        console.see("end")
+                if tab not in updates:
+                    updates[tab] = []
+                updates[tab].append(txt)
                 processed += 1
-            except (KeyError, AttributeError):
+            except:
                 break
         
-        self.after(50, self.console_loop)
+        # Применяем обновления пакетами
+        active_tab = getattr(self, 'current_console_tab', None)
+        
+        for tab, lines in updates.items():
+            console = self.consoles.get(tab)
+            if console:
+                try:
+                    text_to_insert = "\n".join(lines) + "\n"
+                    # State is always normal now (read-only via bindings)
+                    console.insert("end", text_to_insert)
+                    
+                    # Автопрокрутка только один раз за пакет
+                    if active_tab == tab:
+                        console.see("end")
+                        
+                    # Ограничение размера лога (опционально, чтобы память не текла)
+                    # Если больше 5000 строк, удаляем старые
+                    if int(console.index('end-1c').split('.')[0]) > 5000:
+                        console.delete("1.0", "2000.0")
+                except Exception:
+                    pass
+        
+        # Адаптивная задержка: если много логов, обновляем чаще
+        delay = 20 if processed == batch_size else 100
+        self.after(delay, self.console_loop)
     
     
     # CLEANUP
@@ -7022,6 +7314,224 @@ class ModernLauncher(ctk.CTk):
                 label.configure(text=t("ui.launcher.model.models_not_installed", default="Модели не установлены"))
         except Exception as e:
             label.configure(text=t("ui.launcher.model.info_error", default="Ошибка при получении информации: {error}", error=str(e)))
+    
+    def _update_gen_test_ui(self, container, mode):
+        """Updates test generation UI based on selected mode"""
+        # Clear existing widgets
+        for widget in container.winfo_children():
+            widget.destroy()
+        
+        if mode != "direct":
+            # No test UI for bot mode
+            return
+        
+        # Create test card
+        test_card = self.create_glass_card(container, fg_color=COLORS['card_bg'], corner_radius=12)
+        test_card.pack(fill="both", expand=True)
+        
+        # Header
+        test_header = ctk.CTkFrame(test_card, fg_color="transparent")
+        test_header.pack(fill="x", padx=16, pady=(16, 12))
+        
+        ctk.CTkLabel(
+            test_header,
+            text="🧪 Тест прямой генерации",
+            font=("Segoe UI", 13, "bold"),
+            text_color=COLORS['text']
+        ).pack(side="left")
+        
+        # Model selector dropdown
+        model_frame = ctk.CTkFrame(test_header, fg_color="transparent")
+        model_frame.pack(side="right")
+        
+        # Get available models
+        try:
+            from direct_generation import get_available_models
+            available_models = get_available_models()
+            if not available_models:
+                available_models = ["qwen2.5:3b"]  # Fallback
+        except:
+            available_models = ["qwen2.5:3b"]
+        
+        # Get current model from settings
+        current_model_str = get_key(FILE_ENV, "SELECTED_LLM_MODEL")
+        current_model = None
+        if current_model_str:
+            parts = current_model_str.split(":", 1)
+            if len(parts) >= 2 and parts[0] == 'ollama':
+                current_model = parts[1]
+        
+        if not current_model or current_model not in available_models:
+            current_model = available_models[0] if available_models else "qwen2.5:3b"
+        
+        self.test_gen_model = tk.StringVar(value=current_model)
+        
+        model_selector = ctk.CTkOptionMenu(
+            model_frame,
+            variable=self.test_gen_model,
+            values=available_models,
+            width=150,
+            height=28,
+            fg_color=COLORS['surface_light'],
+            button_color=COLORS['primary'],
+            button_hover_color=COLORS['primary_hover']
+        )
+        model_selector.pack(side="left", padx=(8, 0))
+        
+        ctk.CTkLabel(
+            model_frame,
+            text="Модель:",
+            font=("Segoe UI", 10),
+            text_color=COLORS['text_muted']
+        ).pack(side="left", padx=(0, 4))
+        
+        # Content
+        test_content = ctk.CTkFrame(test_card, fg_color="transparent")
+        test_content.pack(fill="both", expand=True, padx=16, pady=(0, 16))
+        
+        # Input label
+        ctk.CTkLabel(
+            test_content,
+            text="Введите запрос:",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).pack(anchor="w", pady=(0, 6))
+        
+        # Input textbox
+        test_input = ctk.CTkTextbox(
+            test_content,
+            height=80,
+            font=("Segoe UI", 11),
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1
+        )
+        test_input.pack(fill="x", pady=(0, 12))
+        test_input.insert("1.0", "Привет! Как дела?")
+        
+        # Buttons frame
+        btn_frame = ctk.CTkFrame(test_content, fg_color="transparent")
+        btn_frame.pack(fill="x", pady=(0, 12))
+        
+        # Generate function
+        def test_generate():
+            prompt = test_input.get("1.0", "end").strip()
+            if not prompt:
+                test_output.delete("1.0", "end")
+                test_output.insert("1.0", "❌ Введите текст запроса")
+                return
+            
+            # Disable button during generation
+            gen_btn.configure(state="disabled", text="⏳ Генерация...")
+            test_status.configure(text="Генерируем ответ...", text_color=COLORS['warning'])
+            test_output.delete("1.0", "end")
+            test_output.insert("1.0", "⏳ Ожидайте, модель думает...")
+            
+            def run_generation():
+                try:
+                    # Import here to avoid circular imports
+                    import sys
+                    import os
+                    core_path = os.path.join(os.path.dirname(__file__), "..", "core")
+                    if core_path not in sys.path:
+                        sys.path.insert(0, core_path)
+                    
+                    from direct_generation import generate_text_direct
+                    
+                    # Get selected model from dropdown
+                    selected_model = self.test_gen_model.get() if hasattr(self, 'test_gen_model') else None
+                    
+                    # Generate with selected model
+                    result = generate_text_direct(prompt, model=selected_model)
+                    
+                    # Update UI in main thread
+                    def update_ui():
+                        test_output.delete("1.0", "end")
+                        if result["success"]:
+                            test_output.insert("1.0", result["response"])
+                            test_status.configure(
+                                text=f"✅ Готово (модель: {result['model']})",
+                                text_color=COLORS['success']
+                            )
+                        else:
+                            test_output.insert("1.0", result["error"])
+                            test_status.configure(
+                                text="❌ Ошибка генерации",
+                                text_color=COLORS['danger']
+                            )
+                        gen_btn.configure(state="normal", text="🚀 Генерировать")
+                    
+                    self.after(0, update_ui)
+                    
+                except Exception as e:
+                    def show_error():
+                        test_output.delete("1.0", "end")
+                        test_output.insert("1.0", f"❌ Ошибка: {str(e)}")
+                        test_status.configure(
+                            text="❌ Ошибка выполнения",
+                            text_color=COLORS['danger']
+                        )
+                        gen_btn.configure(state="normal", text="🚀 Генерировать")
+                    self.after(0, show_error)
+            
+            # Run in thread
+            threading.Thread(target=run_generation, daemon=True).start()
+        
+        # Generate button
+        gen_btn = ctk.CTkButton(
+            btn_frame,
+            text="🚀 Генерировать",
+            command=test_generate,
+            fg_color=COLORS['primary'],
+            hover_color=COLORS['primary_hover'],
+            height=36,
+            font=("Segoe UI", 12, "bold")
+        )
+        gen_btn.pack(side="left", padx=(0, 8))
+        
+        # Clear button
+        def clear_all():
+            test_input.delete("1.0", "end")
+            test_output.delete("1.0", "end")
+            test_status.configure(text="", text_color=COLORS['text_muted'])
+        
+        clear_btn = ctk.CTkButton(
+            btn_frame,
+            text="🗑 Очистить",
+            command=clear_all,
+            fg_color=COLORS['surface_light'],
+            hover_color=COLORS['surface'],
+            height=36
+        )
+        clear_btn.pack(side="left")
+        
+        # Status label
+        test_status = ctk.CTkLabel(
+            btn_frame,
+            text="",
+            font=("Segoe UI", 10),
+            text_color=COLORS['text_muted']
+        )
+        test_status.pack(side="right")
+        
+        # Output label
+        ctk.CTkLabel(
+            test_content,
+            text="Ответ модели:",
+            font=("Segoe UI", 11),
+            text_color=COLORS['text_secondary']
+        ).pack(anchor="w", pady=(0, 6))
+        
+        # Output textbox
+        test_output = ctk.CTkTextbox(
+            test_content,
+            height=200,
+            font=("Segoe UI", 11),
+            fg_color=COLORS.get('input_bg', COLORS['bg']),
+            border_color=COLORS['border'],
+            border_width=1
+        )
+        test_output.pack(fill="both", expand=True)
     
     def setup_tray(self):
         """Sets up system tray icon"""
