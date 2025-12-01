@@ -246,10 +246,17 @@ async def _render_preview_post_unsafe(
         has_media=(content_type != "text"),
         link=data.get('link'),
         is_single_post=is_forwarded,
-        back_callback="back_main" if is_forwarded else "back_topics"
+        back_callback="back_main" if is_forwarded else "back_topics",
+        has_pending_messages=bool(data.get('pending_user_message_ids'))
     )
     
     menu_text = "📋 Выберите действие для работы с постом:"
+    # Show current prompt if exists
+    if data.get('image_prompt'):
+        prompt_preview = data['image_prompt'][:100]
+        if len(data['image_prompt']) > 100:
+            prompt_preview += "..."
+        menu_text += f"\n\n💡 <b>Текущий промпт:</b>\n<code>{prompt_preview}</code>"
     last_ids = data.get('last_message_ids', [])
     markup_id = data.get('last_markup_id')
     last_content_id = last_ids[0] if last_ids else None
@@ -545,6 +552,24 @@ async def cb_remove_media(cb: CallbackQuery, state: FSMContext, bot: Bot):
     await render_preview_post(bot, cb.message.chat.id, state, is_forwarded=is_fwd, edit_message_id=cb.message.message_id)
     await cb.answer("Медиа удалено")
 
+@router.callback_query(F.data == "remove_all_media")
+async def cb_remove_all_media(cb: CallbackQuery, state: FSMContext, bot: Bot):
+    """Removes ALL media including generated and original."""
+    await state.update_data(
+        force_no_media=True,
+        has_generated_image=False,
+        generated_image_bytes=None,
+        image_base64=None,
+        original_photo_file_id=None,
+        original_video_file_id=None,
+        media_group_raw=None,
+        image_prompt=None  # Also clear prompt
+    )
+    d = await state.get_data()
+    is_fwd = (d.get("source") == "forwarded_post")
+    await render_preview_post(bot, cb.message.chat.id, state, is_forwarded=is_fwd, edit_message_id=cb.message.message_id)
+    await cb.answer("Все медиа удалено")
+
 # ==========================================
 # 6. IMAGE GENERATION
 # ==========================================
@@ -730,6 +755,16 @@ async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
             p = load_published_posts()
             p.append(d['link'])
             save_published_posts(p)
+
+        # Clear modifications after publish
+        await state.update_data(
+            text=d.get('raw_text'),  # Reset to original text
+            image_prompt=None,  # Clear custom prompt
+            has_generated_image=False,  # Remove generated image
+            generated_image_bytes=None,
+            image_base64=None,
+            force_no_media=False
+        )
 
         delete_ids = [stat_msg.message_id] + (d.get('last_message_ids') or [])
         if d.get('last_markup_id'):

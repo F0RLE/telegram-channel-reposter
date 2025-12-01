@@ -36,7 +36,8 @@ def get_post_navigation_keyboard(
     has_media: bool, 
     link: str = None,
     is_single_post: bool = False,
-    back_callback: str = "back_topics"
+    back_callback: str = "back_topics",
+    has_pending_messages: bool = False
 ) -> InlineKeyboardMarkup:
     """
     Main Post Navigation (Prev/Next/Counter/Actions).
@@ -64,6 +65,13 @@ def get_post_navigation_keyboard(
             row_btns.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
             
         builder.row(*row_btns)
+    
+    # Message cleanup buttons (for forwarded posts)
+    if has_pending_messages:
+        builder.row(
+            InlineKeyboardButton(text="✅ Оставить сообщения", callback_data="keep_user_messages"),
+            InlineKeyboardButton(text="🗑️ Удалить сообщения", callback_data="delete_user_messages")
+        )
     
     # Original Link
     if link:
@@ -104,6 +112,7 @@ def media_actions_keyboard(has_media: bool) -> InlineKeyboardMarkup:
     
     if has_media:
         builder.row(InlineKeyboardButton(text="🗑️ Удалить медиа", callback_data="choose_remove_media"))
+        builder.row(InlineKeyboardButton(text="🗑️ Удалить всё медиа", callback_data="remove_all_media"))
         
     builder.row(InlineKeyboardButton(text="🔙 Назад", callback_data="open_actions_menu"))
     return builder.as_markup()

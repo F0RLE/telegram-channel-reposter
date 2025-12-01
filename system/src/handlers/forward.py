@@ -55,6 +55,31 @@ router.message.middleware(AlbumMiddleware())
 from core.utils import safe_delete_message as _safe_delete
 
 # ==========================================
+# 3. MESSAGE CLEANUP HANDLERS
+# ==========================================
+@router.callback_query(F.data == "keep_user_messages")
+async def cb_keep_messages(cb: types.CallbackQuery, state: FSMContext):
+    """User chose to keep their forwarded messages."""
+    await state.update_data(pending_user_message_ids=None)
+    await cb.answer("✅ Сообщения оставлены")
+    # Update keyboard to remove the buttons
+    from handlers.post_actions import render_preview_post
+    await render_preview_post(cb.bot, cb.message.chat.id, state, is_forwarded=True)
+
+@router.callback_query(F.data == "delete_user_messages")
+async def cb_delete_messages(cb: types.CallbackQuery, state: FSMContext, bot: Bot):
+    """User chose to delete their forwarded messages."""
+    data = await state.get_data()
+    msg_ids = data.get('pending_user_message_ids')
+    if msg_ids:
+        await _safe_delete(bot, cb.message.chat.id, msg_ids)
+    await state.update_data(pending_user_message_ids=None)
+    await cb.answer("🗑️ Сообщения удалены")
+    # Update keyboard to remove the buttons
+    from handlers.post_actions import render_preview_post
+    await render_preview_post(bot, cb.message.chat.id, state, is_forwarded=True)
+
+# ==========================================
 # 3. HANDLERS
 # ==========================================
 @router.callback_query(F.data == "forward_post")
@@ -90,9 +115,8 @@ async def msg_handle_forward(
     chat_id = message.chat.id
     msgs = album or [message]
 
-    # Delete user messages to keep chat clean
-    for m in msgs: 
-        await _safe_delete(bot, chat_id, m.message_id)
+    # Don't delete messages yet - ask user first
+    msg_ids_to_maybe_delete = [m.message_id for m in msgs]
     
     # Delete instruction message
     data = await state.get_data()
@@ -141,7 +165,10 @@ async def msg_handle_forward(
         "current_post_index": 0,
         "search_results": [],
         "last_message_ids": [],
-        "last_markup_id": None
+        "last_markup_id": None,
+        
+        # Store user message IDs for later deletion option
+        "pending_user_message_ids": msg_ids_to_maybe_delete
     }
     
     # If only 1 media file, set it as main (optimization for render)
@@ -155,5 +182,5 @@ async def msg_handle_forward(
     await state.update_data(update_data)
     await state.set_state(FormState.viewing_post)
     
-    # Render the result
+    # Render the result (will show post + offer delete buttons)
     await render_preview_post(bot, chat_id, state, is_forwarded=True)
