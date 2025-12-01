@@ -712,7 +712,8 @@ async def msg_prompt_input(msg: Message, state: FSMContext, bot: Bot):
 
 @router.callback_query(F.data == "confirm_publish")
 async def cb_pub_conf(cb: CallbackQuery):
-    await _upd_menu(cb, "🚀 <b>Публикация</b>\nУверены?", confirm_publish_keyboard())
+    # Edit current menu to show confirmation
+    await _upd_menu(cb, "🚀 <b>Публикация</b>\n\n⚠️ Вы уверены что хотите опубликовать?", confirm_publish_keyboard())
 
 @router.callback_query(F.data == "publish")
 async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
@@ -720,12 +721,22 @@ async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
         return await cb.answer("❌ ID канала не настроен!", show_alert=True)
 
     chat_id = cb.message.chat.id
+    confirm_msg_id = cb.message.message_id  # ID сообщения с подтверждением
     d = await state.get_data()
     text = _get_text(d)
     # Очищаем текст перед публикацией
     text = _sanitize_html_text(text)
     
-    stat_msg = await bot.send_message(chat_id, "🚀 Публикую...")
+    # Edit confirmation message to "Publishing..."
+    try:
+        await bot.edit_message_text(
+            text="🚀 <b>Публикую...</b>",
+            chat_id=chat_id,
+            message_id=confirm_msg_id,
+            parse_mode="HTML"
+        )
+    except:
+        pass
     
     try:
         force_no = d.get('force_no_media', False)
@@ -766,10 +777,35 @@ async def cb_publish(cb: CallbackQuery, state: FSMContext, bot: Bot):
             force_no_media=False
         )
 
-        delete_ids = [stat_msg.message_id] + (d.get('last_message_ids') or [])
-        if d.get('last_markup_id'):
-            delete_ids.append(d.get('last_markup_id'))
-        await _safe_delete(bot, chat_id, delete_ids)
+        # Wait 3 seconds
+        await asyncio.sleep(3)
+        
+        # Edit to success + next actions menu
+        try:
+            await bot.edit_message_text(
+                text="✅ <b>Опубликовано!</b>\n\nЧто вы хотите сделать дальше?",
+                chat_id=chat_id,
+                message_id=confirm_msg_id,
+                reply_markup=post_publish_actions_keyboard(),
+                parse_mode="HTML"
+            )
+        except:
+            # Fallback: send new message if edit fails
+            await bot.send_message(
+                chat_id=chat_id,
+                text="✅ <b>Опубликовано!</b>\n\nЧто вы хотите сделать дальше?",
+                reply_markup=post_publish_actions_keyboard(),
+                parse_mode="HTML"
+            )
+        
     except Exception as e:
         logger.error(f"Error publishing: {e}")
-        await bot.send_message(chat_id, f"❌ Ошибка публикации: {e}")
+        try:
+            await bot.edit_message_text(
+                text=f"❌ <b>Ошибка публикации:</b>\n{str(e)[:200]}",
+                chat_id=chat_id,
+                message_id=confirm_msg_id,
+                parse_mode="HTML"
+            )
+        except:
+            await bot.send_message(chat_id, f"❌ Ошибка публикации: {e}")
