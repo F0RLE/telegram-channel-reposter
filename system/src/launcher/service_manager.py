@@ -637,7 +637,8 @@ class ServiceManager:
                 if cuda_supported and USE_GPU:
                     # Add skip-torch-cuda-test to bypass strict startup checks
                     # Removed --cuda-stream as it is risky (can cause black images/OOM)
-                    cmd.extend(["--xformers", "--skip-torch-cuda-test"])
+                    # Add --disable-gpu-warning to suppress low VRAM warnings
+                    cmd.extend(["--xformers", "--skip-torch-cuda-test", "--disable-gpu-warning"])
                 else:
                     # Removed --no-half as it is obsolete in Forge
                     cmd.extend(["--use-cpu", "all", "--skip-torch-cuda-test"])
