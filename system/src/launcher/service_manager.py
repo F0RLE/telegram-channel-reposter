@@ -651,6 +651,7 @@ class ServiceManager:
                 
                 # Explicitly set PYTHONPATH for the process environment too
                 os.environ["PYTHONPATH"] = env["PYTHONPATH"]
+                self.log(f"🔧 [SD] PYTHONPATH: {env['PYTHONPATH']}", "SD")
                     
                 cwd = SD_DIR
 

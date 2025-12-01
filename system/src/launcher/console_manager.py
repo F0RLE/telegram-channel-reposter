@@ -27,14 +27,20 @@ class ConsoleManager:
     def __init__(self, parent_window):
         self.parent = parent_window
     
+    def _get_widget(self, textbox):
+        """Gets underlying Tkinter widget from CTkTextbox if needed"""
+        return textbox._textbox if hasattr(textbox, '_textbox') else textbox
+
     def setup_console_context_menu(self, textbox):
         """Adds context menu for copying text like in Windows"""
+        widget = self._get_widget(textbox)
+        
         def show_context_menu(event):
             try:
                 # Get selected text
                 try:
-                    if textbox.tag_ranges("sel"):
-                        selected = textbox.get("sel.first", "sel.last")
+                    if widget.tag_ranges("sel"):
+                        selected = widget.get("sel.first", "sel.last")
                     else:
                         selected = None
                 except:
@@ -79,15 +85,15 @@ class ConsoleManager:
                 pass
         
         # Bind right mouse button
-        textbox.bind("<Button-3>", show_context_menu)
+        widget.bind("<Button-3>", show_context_menu)
         # Standard Windows keyboard shortcuts
-        textbox.bind("<Control-c>", lambda e: (self.copy_selected(textbox), "break"))
-        textbox.bind("<Control-a>", lambda e: (self.select_all(textbox), "break"))
-        textbox.bind("<Control-x>", lambda e: (self.cut_selected(textbox), "break"))
-        textbox.bind("<Control-v>", lambda e: (self.paste_to_console(textbox), "break"))
+        widget.bind("<Control-c>", lambda e: (self.copy_selected(textbox), "break"))
+        widget.bind("<Control-a>", lambda e: (self.select_all(textbox), "break"))
+        widget.bind("<Control-x>", lambda e: (self.cut_selected(textbox), "break"))
+        widget.bind("<Control-v>", lambda e: (self.paste_to_console(textbox), "break"))
         
         # Enable standard text selection with mouse
-        textbox.bind("<Button-1>", lambda e: textbox.focus_set())
+        widget.bind("<Button-1>", lambda e: widget.focus_set())
     
     def copy_to_clipboard(self, text: str):
         """Copies text to clipboard"""
@@ -100,7 +106,8 @@ class ConsoleManager:
     def copy_all_to_clipboard(self, textbox):
         """Copies all text from console"""
         try:
-            text = textbox.get("1.0", "end-1c")
+            widget = self._get_widget(textbox)
+            text = widget.get("1.0", "end-1c")
             self.parent.clipboard_clear()
             self.parent.clipboard_append(text)
         except:
@@ -109,8 +116,9 @@ class ConsoleManager:
     def copy_selected(self, textbox) -> bool:
         """Copies selected text"""
         try:
-            if textbox.tag_ranges("sel"):
-                selected = textbox.get("sel.first", "sel.last")
+            widget = self._get_widget(textbox)
+            if widget.tag_ranges("sel"):
+                selected = widget.get("sel.first", "sel.last")
                 if selected:
                     self.parent.clipboard_clear()
                     self.parent.clipboard_append(selected)
@@ -122,14 +130,15 @@ class ConsoleManager:
     def cut_selected(self, textbox) -> bool:
         """Cuts selected text"""
         try:
-            if textbox.tag_ranges("sel"):
-                selected = textbox.get("sel.first", "sel.last")
+            widget = self._get_widget(textbox)
+            if widget.tag_ranges("sel"):
+                selected = widget.get("sel.first", "sel.last")
                 if selected:
                     self.parent.clipboard_clear()
                     self.parent.clipboard_append(selected)
-                    textbox.configure(state="normal")
-                    textbox.delete("sel.first", "sel.last")
-                    textbox.configure(state="normal")
+                    widget.configure(state="normal")
+                    widget.delete("sel.first", "sel.last")
+                    widget.configure(state="normal")
                     return True
         except:
             pass
@@ -138,11 +147,12 @@ class ConsoleManager:
     def paste_to_console(self, textbox) -> bool:
         """Pastes text from clipboard"""
         try:
-            textbox.configure(state="normal")
+            widget = self._get_widget(textbox)
+            widget.configure(state="normal")
             clipboard_text = self.parent.clipboard_get()
             if clipboard_text:
-                textbox.insert("insert", clipboard_text)
-            textbox.configure(state="normal")
+                widget.insert("insert", clipboard_text)
+            widget.configure(state="normal")
             return True
         except:
             pass
@@ -151,20 +161,24 @@ class ConsoleManager:
     def select_all(self, textbox):
         """Selects all text"""
         try:
-            textbox.configure(state="normal")
-            textbox.tag_add("sel", "1.0", "end")
-            textbox.mark_set("insert", "1.0")
-            textbox.see("1.0")
-            textbox.configure(state="normal")
+            widget = self._get_widget(textbox)
+            widget.focus_set()
+            widget.configure(state="normal")
+            widget.tag_add("sel", "1.0", "end")
+            widget.mark_set("insert", "1.0")
+            widget.see("1.0")
+            # Keep disabled but selected
+            widget.configure(state="disabled") 
         except:
             pass
     
     def clear_single_console(self, textbox):
         """Clears a single console"""
         try:
-            textbox.configure(state="normal")
-            textbox.delete("1.0", "end")
-            textbox.configure(state="normal")  # Keep normal for text selection
+            widget = self._get_widget(textbox)
+            widget.configure(state="normal")
+            widget.delete("1.0", "end")
+            widget.configure(state="normal")  # Keep normal for text selection
         except:
             pass
 
