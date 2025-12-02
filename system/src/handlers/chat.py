@@ -96,22 +96,25 @@ async def cb_start_chat(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(FormState.chatting)
     
+    # Create back button
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    back_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔙 Вернуться в меню", callback_data="back_main")
+    ]])
+    
     await cb.message.edit_text(
         "💬 <b>Режим общения</b>\n\n"
-        "Задавайте вопросы или попросите нарисовать картинку!\n\n"
-        "Команда /menu - вернуться в главное меню",
+        "Задавайте вопросы или попросите нарисовать картинку!",
+        reply_markup=back_kb,
         parse_mode="HTML"
     )
 
-@router.message(F.text == "/menu", FormState.chatting)
-async def cmd_back_to_menu(msg: Message, state: FSMContext):
-    """Return to main menu from chat mode."""
-    await state.clear()
-    await msg.answer(
-        "🏠 <b>Главное меню</b>",
-        reply_markup=main_menu_keyboard(),
-        parse_mode="HTML"
-    )
+# Back button helper
+def _get_back_button():
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔙 В меню", callback_data="back_main")
+    ]])
 
 @router.message(F.text, FormState.chatting)
 async def msg_chat(msg: Message, state: FSMContext, bot: Bot):
@@ -123,7 +126,11 @@ async def msg_chat(msg: Message, state: FSMContext, bot: Bot):
     
     if image_subject:
         # Image generation mode
-        status_msg = await msg.answer("🎨 <b>Stable Diffusion</b>\n\nГенерирую изображение...", parse_mode="HTML")
+        status_msg = await msg.answer(
+            "🎨 <b>Stable Diffusion</b>\n\nГенерирую изображение...",
+            reply_markup=_get_back_button(),
+            parse_mode="HTML"
+        )
         animation_task = asyncio.create_task(
             animate_message(bot, msg.chat.id, status_msg.message_id, "Генерация изображения")
         )
@@ -149,13 +156,15 @@ async def msg_chat(msg: Message, state: FSMContext, bot: Bot):
                 await msg.answer_photo(
                     BufferedInputFile(img_bytes, "generated.png"),
                     caption=f"✅ Готово!\n\n💡 Промпт: <code>{prompt}</code>",
+                    reply_markup=_get_back_button(),
                     parse_mode="HTML"
                 )
             else:
                 await bot.edit_message_text(
                     "❌ Не удалось сгенерировать изображение.",
                     chat_id=msg.chat.id,
-                    message_id=status_msg.message_id
+                    message_id=status_msg.message_id,
+                    reply_markup=_get_back_button()
                 )
         except Exception as e:
             logger.error(f"Image generation error in chat: {e}")
@@ -163,7 +172,8 @@ async def msg_chat(msg: Message, state: FSMContext, bot: Bot):
                 await bot.edit_message_text(
                     f"❌ Ошибка генерации: {str(e)[:100]}",
                     chat_id=msg.chat.id,
-                    message_id=status_msg.message_id
+                    message_id=status_msg.message_id,
+                    reply_markup=_get_back_button()
                 )
             except:
                 pass
@@ -173,7 +183,11 @@ async def msg_chat(msg: Message, state: FSMContext, bot: Bot):
     
     else:
         # Regular LLM chat mode
-        status_msg = await msg.answer("🤖 <b>LLM</b>\n\nДумаю...", parse_mode="HTML")
+        status_msg = await msg.answer(
+            "🤖 <b>LLM</b>\n\nДумаю...",
+            reply_markup=_get_back_button(),
+            parse_mode="HTML"
+        )
         animation_task = asyncio.create_task(
             animate_message(bot, msg.chat.id, status_msg.message_id, "Обработка запроса")
         )
@@ -186,13 +200,15 @@ async def msg_chat(msg: Message, state: FSMContext, bot: Bot):
                     f"💬 {response}",
                     chat_id=msg.chat.id,
                     message_id=status_msg.message_id,
+                    reply_markup=_get_back_button(),
                     parse_mode="HTML"
                 )
             else:
                 await bot.edit_message_text(
                     "❌ Не удалось получить ответ от LLM.",
                     chat_id=msg.chat.id,
-                    message_id=status_msg.message_id
+                    message_id=status_msg.message_id,
+                    reply_markup=_get_back_button()
                 )
         except Exception as e:
             logger.error(f"LLM chat error: {e}")
@@ -200,7 +216,8 @@ async def msg_chat(msg: Message, state: FSMContext, bot: Bot):
                 await bot.edit_message_text(
                     f"❌ Ошибка: {str(e)[:100]}",
                     chat_id=msg.chat.id,
-                    message_id=status_msg.message_id
+                    message_id=status_msg.message_id,
+                    reply_markup=_get_back_button()
                 )
             except:
                 pass
