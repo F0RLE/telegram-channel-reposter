@@ -50,6 +50,7 @@ try:
     from handlers.topics import router as topics_router
     from handlers.post_actions import router as post_actions_router
     from handlers.forward import router as forward_router
+    from handlers.chat import router as chat_router
 except ImportError as e:
     logger.critical(f"❌ IMPORT ERROR: {e}")
     sys.exit(1)
@@ -170,7 +171,7 @@ async def main():
     dp = bot_manager.dispatcher
 
     # Register Routers
-    dp.include_routers(start_router, topics_router, post_actions_router, forward_router)
+    dp.include_routers(start_router, topics_router, post_actions_router, forward_router, chat_router)
 
     # Register Lifecycle Hooks
     dp.startup.register(on_startup)

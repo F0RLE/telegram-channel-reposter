@@ -4,11 +4,12 @@ from config.settings import TELEGRAM_CHANNELS, reload_channels
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     """
-    Start Menu: Choose Topic or Manual Forward.
+    Start Menu: Choose Topic, Manual Forward, or Chat.
     """
     builder = InlineKeyboardBuilder()
     builder.button(text="📰 Выбрать тему", callback_data="choose_topic")
     builder.button(text="📤 Переслать пост", callback_data="forward_post")
+    builder.button(text="💬 Общение с ботом", callback_data="chat_mode")
     builder.adjust(1)
     return builder.as_markup()
 

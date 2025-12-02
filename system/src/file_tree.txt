@@ -1,0 +1,56 @@
+├── Launch.bat
+├── config
+│   └── settings.py
+├── core
+│   ├── animation.py
+│   ├── bot_manager.py
+│   ├── constants.py
+│   ├── debug_port.txt
+│   ├── debug_server.py
+│   ├── error_handler.py
+│   ├── exceptions.py
+│   ├── fsm_states.py
+│   ├── models.py
+│   ├── monitoring.py
+│   ├── rate_limiter.py
+│   ├── utils.py
+│   └── validators.py
+├── handlers
+│   ├── __init__.py
+│   ├── forward.py
+│   ├── post_actions.py
+│   ├── start.py
+│   └── topics.py
+├── keyboards
+│   └── inline.py
+├── launcher
+│   ├── __init__.py
+│   ├── analytics.py
+│   ├── animations.py
+│   ├── bootstrapper.py
+│   ├── config.py
+│   ├── console_manager.py
+│   ├── core
+│   │   ├── __init__.py
+│   │   └── rate_limiter.py
+│   ├── i18n.py
+│   ├── installer.py
+│   ├── launcher.pyw
+│   ├── locales
+│   │   ├── en.json
+│   │   └── ru.json
+│   ├── model_manager.py
+│   ├── security.py
+│   ├── service_manager.py
+│   ├── setup_runtime.ps1
+│   ├── ui_helpers.py
+│   └── updater.py
+├── main.py
+├── modules
+│   ├── Images
+│   │   └── Zaglushka.png
+│   ├── image_gen.py
+│   ├── llm.py
+│   └── parser.py
+├── requirements.txt
+└── tree.py

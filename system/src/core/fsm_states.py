@@ -28,3 +28,6 @@ class FormState(StatesGroup):
     
     # 7. Background / Processing
     generating_image = State()       # Image generation in progress
+    
+    # 8. Chat Mode
+    chatting = State()               # User is chatting with LLM

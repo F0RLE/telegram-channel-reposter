@@ -2349,7 +2349,8 @@ class ModernLauncher(ctk.CTk):
         test_container = ctk.CTkFrame(scroll, fg_color="transparent")
         test_container.pack(fill="x", pady=(0, 12))
         
-        self._update_gen_test_ui(test_container, current_mode)
+        # NOTE: Test generation UI removed - use bot chat mode instead
+        # self._update_gen_test_ui(test_container, current_mode)
         
         # ========== КАРТОЧКА: Редактор промптов с вкладками ==========
         instructions_card = self.create_glass_card(scroll, fg_color=COLORS['card_bg'], corner_radius=12)
