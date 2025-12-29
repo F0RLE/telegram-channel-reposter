@@ -45,7 +45,8 @@ app.on('window-all-closed', () => {
 
 // IPC Handlers
 ipcMain.handle('get-default-path', () => {
-    return path.join(process.env.APPDATA, 'FluxData');
+    // Default to Program Files
+    return path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Flux Platform');
 });
 
 ipcMain.handle('start-install', async (event, installPath) => {

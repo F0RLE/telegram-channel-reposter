@@ -5,37 +5,37 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 const { spawn } = require('child_process');
 
-// Component URLs
+// Component URLs - Latest stable versions
 const COMPONENTS = {
     python: {
         name: 'Python Runtime',
-        url: 'https://www.python.org/ftp/python/3.12.0/python-3.12.0-embed-amd64.zip',
-        dest: 'System/Runtime/python',
-        size: 10 * 1024 * 1024 // ~10 MB compressed
+        url: 'https://www.python.org/ftp/python/3.14.2/python-3.14.2-embed-amd64.zip',
+        dest: 'Runtime/python',
+        size: 15 * 1024 * 1024 // ~15 MB compressed
     },
     getPip: {
         name: 'pip Installer',
         url: 'https://bootstrap.pypa.io/get-pip.py',
-        dest: 'System/Runtime/python/get-pip.py',
+        dest: 'Runtime/python/get-pip.py',
         isFile: true,
         size: 2 * 1024 * 1024
     },
     electron: {
         name: 'Electron Runtime',
-        url: 'https://github.com/electron/electron/releases/download/v28.0.0/electron-v28.0.0-win32-x64.zip',
-        dest: 'System/Runtime/electron',
-        size: 100 * 1024 * 1024 // ~100 MB compressed
+        url: 'https://github.com/electron/electron/releases/download/v39.2.7/electron-v39.2.7-win32-x64.zip',
+        dest: 'Runtime/electron',
+        size: 136 * 1024 * 1024 // ~136 MB compressed
     },
     git: {
         name: 'MinGit',
-        url: 'https://github.com/git-for-windows/git/releases/download/v2.43.0.windows.1/MinGit-2.43.0-64-bit.zip',
-        dest: 'System/Runtime/git',
-        size: 30 * 1024 * 1024 // ~30 MB
+        url: 'https://github.com/git-for-windows/git/releases/download/v2.52.0.windows.1/MinGit-2.52.0-64-bit.zip',
+        dest: 'Runtime/git',
+        size: 42 * 1024 * 1024 // ~42 MB
     },
     launcher: {
         name: 'Flux Launcher',
         url: 'https://github.com/F0RLE/flux-platform/archive/refs/heads/main.zip',
-        dest: 'System/Launcher',
+        dest: 'Launcher',
         size: 1 * 1024 * 1024, // ~1 MB
         stripRoot: true // Strip the "flux-platform-main" folder
     }
@@ -85,7 +85,7 @@ class Installer {
                     });
                 } else {
                     // Download and extract zip
-                    const tempZip = path.join(installPath, 'System/Temp', `${key}.zip`);
+                    const tempZip = path.join(installPath, 'Temp', `${key}.zip`);
 
                     await this.downloadFile(component.url, tempZip, (percent) => {
                         onProgress({
@@ -151,15 +151,14 @@ class Installer {
     }
 
     createDirectories(installPath) {
+        // Program Files structure
         const dirs = [
-            'System/Runtime/python',
-            'System/Runtime/electron',
-            'System/Runtime/git',
-            'System/Launcher',
-            'System/Logs',
-            'System/Temp',
-            'System/Fonts',
-            'User/Configs'
+            'Runtime/python',
+            'Runtime/electron',
+            'Runtime/git',
+            'Launcher',
+            'Logs',
+            'Temp'
         ];
 
         for (const dir of dirs) {
@@ -268,8 +267,8 @@ class Installer {
     }
 
     async configurePython(installPath) {
-        const pythonDir = path.join(installPath, 'System/Runtime/python');
-        const pthFile = path.join(pythonDir, 'python312._pth');
+        const pythonDir = path.join(installPath, 'Runtime/python');
+        const pthFile = path.join(pythonDir, 'python314._pth');
 
         // Modify python._pth to enable pip
         if (fs.existsSync(pthFile)) {
@@ -288,9 +287,9 @@ class Installer {
     }
 
     async installDependencies(installPath) {
-        const pythonExe = path.join(installPath, 'System/Runtime/python/python.exe');
-        const getPipPath = path.join(installPath, 'System/Runtime/python/get-pip.py');
-        const launcherDir = path.join(installPath, 'System/Launcher');
+        const pythonExe = path.join(installPath, 'Runtime/python/python.exe');
+        const getPipPath = path.join(installPath, 'Runtime/python/get-pip.py');
+        const launcherDir = path.join(installPath, 'Launcher');
         const requirementsPath = path.join(launcherDir, 'requirements.txt');
 
         // Install pip
@@ -322,8 +321,8 @@ class Installer {
     }
 
     async createShortcuts(installPath, desktop = true, startMenu = true) {
-        const launchBat = path.join(installPath, 'System/Launcher/scripts/launch.bat');
-        const electronExe = path.join(installPath, 'System/Runtime/electron/electron.exe');
+        const launchBat = path.join(installPath, 'Launcher/scripts/launch.bat');
+        const electronExe = path.join(installPath, 'Runtime/electron/electron.exe');
 
         // Create a VBS script to create shortcuts (Windows-native)
         const createShortcutVbs = `
@@ -332,7 +331,7 @@ Set WshShell = CreateObject("WScript.Shell")
 ${desktop ? `
 Set DesktopShortcut = WshShell.CreateShortcut(WshShell.SpecialFolders("Desktop") & "\\Flux Platform.lnk")
 DesktopShortcut.TargetPath = "${launchBat.replace(/\\/g, '\\\\')}"
-DesktopShortcut.WorkingDirectory = "${path.join(installPath, 'System/Launcher').replace(/\\/g, '\\\\')}"
+DesktopShortcut.WorkingDirectory = "${path.join(installPath, 'Launcher').replace(/\\/g, '\\\\')}"
 DesktopShortcut.Description = "Flux Platform"
 DesktopShortcut.Save
 ` : ''}
@@ -340,13 +339,13 @@ DesktopShortcut.Save
 ${startMenu ? `
 Set StartMenuShortcut = WshShell.CreateShortcut(WshShell.SpecialFolders("StartMenu") & "\\Programs\\Flux Platform.lnk")
 StartMenuShortcut.TargetPath = "${launchBat.replace(/\\/g, '\\\\')}"
-StartMenuShortcut.WorkingDirectory = "${path.join(installPath, 'System/Launcher').replace(/\\/g, '\\\\')}"
+StartMenuShortcut.WorkingDirectory = "${path.join(installPath, 'Launcher').replace(/\\/g, '\\\\')}"
 StartMenuShortcut.Description = "Flux Platform"
 StartMenuShortcut.Save
 ` : ''}
 `;
 
-        const vbsPath = path.join(installPath, 'System/Temp/create_shortcuts.vbs');
+        const vbsPath = path.join(installPath, 'Temp/create_shortcuts.vbs');
         fs.writeFileSync(vbsPath, createShortcutVbs);
 
         await this.runCommand('cscript', ['//nologo', vbsPath]);
@@ -358,12 +357,12 @@ StartMenuShortcut.Save
     }
 
     async launchApp(installPath) {
-        const launchBat = path.join(installPath, 'System/Launcher/scripts/launch.bat');
+        const launchBat = path.join(installPath, 'Launcher/scripts/launch.bat');
 
         spawn('cmd.exe', ['/c', launchBat], {
             detached: true,
             stdio: 'ignore',
-            cwd: path.join(installPath, 'System/Launcher')
+            cwd: path.join(installPath, 'Launcher')
         }).unref();
 
         return { success: true };
