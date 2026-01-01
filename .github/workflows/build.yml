@@ -5,8 +5,8 @@ on:
     branches:
       - main
     paths-ignore:
-      - 'README.md'
-      - '.github/**'
+      - "README.md"
+      - ".github/**"
 
 permissions:
   contents: write
@@ -37,7 +37,7 @@ jobs:
       - name: Bump Version
         id: bump
         run: |
-          node scripts/bump-version.js > version_output.txt
+          node scripts/utils/bump-version.js > version_output.txt
           $NEW_VERSION = (Get-Content src/package.json | ConvertFrom-Json).version
           echo "NEW_VERSION=$NEW_VERSION" >> $env:GITHUB_ENV
 
@@ -68,8 +68,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v${{ env.NEW_VERSION }}
-          releaseName: 'Flux Platform v${{ env.NEW_VERSION }}'
-          releaseBody: 'Automated release for version v${{ env.NEW_VERSION }}'
+          releaseName: "Flux Platform v${{ env.NEW_VERSION }}"
+          releaseBody: "Automated release for version v${{ env.NEW_VERSION }}"
           releaseDraft: false
           prerelease: false
           projectPath: ./src-tauri
