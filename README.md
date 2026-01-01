@@ -41,7 +41,7 @@ The platform implements a proprietary telemetry engine for real-time analysis:
 
 #### Performance & Frontend
 *   **Vite Architecture**: Instant Hot Module Replacement (HMR) and optimized asset bundling.
-*   **Vanilla JS**: The core dashboard avoids heavy frameworks (React/Vue) to minimize initialization time and runtime overhead.
+*   **Vanilla TypeScript**: The core dashboard avoids heavy frameworks (React/Vue) to minimize initialization time and runtime overhead.
 *   **Custom Design System**: Bespoke CSS architecture ensures consistent rendering and efficient updates.
 
 #### Security
@@ -56,7 +56,7 @@ The platform implements a proprietary telemetry engine for real-time analysis:
 - **Build**: Cargo, NPM, PowerShell Automation
 - **Installer**: WiX Toolset (MSI), NSIS (EXE)
 
-### Quick Start
+### Quick Start (Development)
 
 **Prerequisites:**
 - Windows 10/11 (x64 Build 19041+)
@@ -83,7 +83,7 @@ The `./dev.ps1` script automates dependency checks, compilation, and debug launc
 
 **Flux Platform** — модульная десктопная платформа для управления сервисами, ориентированная на высокую производительность, предсказуемость и расширяемость. Платформа построена на экосистеме **Rust** и фреймворке **Tauri v2**, сочетая нативный системный код с современным веб-интерфейсом.
 
-Платформа проектировалась с учётом требований корпоративной эксплуатации: предсказуемость, изоляция процессов и контроль доступа. Использование нативного WebView2 позволяет достичь значительно меньшего размера приложения и потребления памяти по сравнению с аналогами на Electron.
+Платформа проектировалась с учётом требований корпоративной эксплуатации: изоляция процессов, контроль доступа и стабильное поведение под нагрузкой. Использование нативного WebView2 позволяет достичь значительно меньшего размера приложения и потребления памяти по сравнению с аналогами на Electron.
 
 ### Технический обзор
 
@@ -101,7 +101,7 @@ The `./dev.ps1` script automates dependency checks, compilation, and debug launc
 
 #### Производительность и Фронтенд
 *   **Архитектура Vite**: Мгновенный HMR и оптимизированная сборка ассетов.
-*   **Vanilla JS**: Отказ от тяжелых фреймворков в ядре дашборда минимизирует время инициализации.
+*   **Vanilla TypeScript**: Отказ от тяжелых фреймворков в ядре дашборда минимизирует время инициализации.
 *   **Дизайн-система**: Уникальная CSS-архитектура для стабильного рендеринга и плавных анимаций.
 
 #### Безопасность
@@ -116,7 +116,7 @@ The `./dev.ps1` script automates dependency checks, compilation, and debug launc
 - **Build**: Cargo, NPM, PowerShell Automation
 - **Installer**: WiX Toolset (MSI), NSIS (EXE)
 
-### Запуск
+### Запуск (Development)
 
 **Требования:**
 - Windows 10/11 (x64 версия 19041+)
@@ -161,7 +161,7 @@ cd scripts
 
 #### 性能与前端
 *   **Vite 架构**: 即时热模块替换 (HMR) 和优化的资源打包。
-*   **Vanilla JS**: 核心仪表板避免使用沉重的框架（React/Vue），以最大限度地缩短初始化时间。
+*   **Vanilla TypeScript**: 核心仪表板避免使用沉重的框架（React/Vue），以最大限度地缩短初始化时间。
 *   **自定义设计系统**: 定制的 CSS 架构确保一致的渲染效果和高效的更新。
 
 #### 安全性
@@ -176,7 +176,7 @@ cd scripts
 - **构建**: Cargo, NPM, PowerShell Automation
 - **安装程序**: WiX Toolset (MSI), NSIS (EXE)
 
-### 快速开始
+### 快速开始 (Development)
 
 **先决条件:**
 - Windows 10/11 (x64 版本 19041+)
