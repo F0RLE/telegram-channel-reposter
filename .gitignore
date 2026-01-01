@@ -10,7 +10,7 @@
 Cargo.lock
 
 # Tauri auto-generated schemas (regenerated on build)
-source/backend/gen/schemas/
+src-tauri/gen/schemas/
 
 # ─────────────────────────────────────────────────────────────────────
 # Node.js / Vite
@@ -66,8 +66,9 @@ $RECYCLE.BIN/
 release/
 build/
 *.exe
-!source/tools/bin/*.exe
-!source/tools/bin/*.dll
+release/
+build/
+*.exe
 
 # ─────────────────────────────────────────────────────────────────────
 # Logs & Temporary Files
