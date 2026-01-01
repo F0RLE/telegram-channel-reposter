@@ -1,31 +1,58 @@
-# Dev Mode Launch Script
+<#
+.SYNOPSIS
+    Launches the Flux Platform in development mode.
+
+.DESCRIPTION
+    Standard development launch script.
+    Running this script starts both the Vite frontend server and the Tauri backend.
+#>
+
 $ErrorActionPreference = "Stop"
 
-# Ensure Cargo is in PATH
-$env:PATH = "C:\Users\FORLE\.cargo\bin;$env:PATH"
+function Write-Header {
+    param([string]$Message)
+    Write-Host "`n🚀 $Message" -ForegroundColor Cyan
+}
 
-Write-Host "Starting Flux Platform (Dev Mode)..." -ForegroundColor Cyan
+function Write-Step {
+    param([string]$Message)
+    Write-Host "👉 $Message" -ForegroundColor Yellow
+}
 
-$scriptDir = $PSScriptRoot
-$srcDir = Join-Path $scriptDir "..\src"
-$tauriDir = Join-Path $scriptDir "..\src-tauri"
+Write-Header "Starting Flux Platform (Dev Mode)"
 
-# Install frontend deps if missing
-if (-not (Test-Path "$srcDir\node_modules")) {
-    Write-Host "Installing dependencies..." -ForegroundColor Yellow
-    Set-Location $srcDir
+# 1. Setup Environment
+$ScriptDir = $PSScriptRoot
+$SrcDir = "$ScriptDir\..\src"
+$TauriDir = "$ScriptDir\..\src-tauri"
+
+# Ensure Cargo is found
+$env:PATH = "$env:USERPROFILE\.cargo\bin;" + $env:PATH
+
+# 2. Check Dependencies
+if (-not (Test-Path "$SrcDir\node_modules")) {
+    Write-Step "Installing frontend dependencies..."
+    Set-Location $SrcDir
     npm install
 }
 
-# Start Vite in background (using cmd /c to ensure npm works)
-Write-Host "Starting Vite..." -ForegroundColor Cyan
-$viteProcess = Start-Process -FilePath "cmd" -ArgumentList "/c npm run dev" -WorkingDirectory $srcDir -PassThru -NoNewWindow
-Start-Sleep -Seconds 5
+# 3. Start Frontend
+Write-Step "Starting Vite server..."
+# Use cmd /c to ensure npm works reliably across shells
+$ViteProcess = Start-Process -FilePath "cmd" -ArgumentList "/c npm run dev" -WorkingDirectory $SrcDir -PassThru -NoNewWindow
+Start-Sleep -Seconds 3
 
-Write-Host "Launching Tauri..." -ForegroundColor Cyan
-Set-Location $tauriDir
-rustup run stable-msvc cargo tauri dev
-
-# Kill Vite on exit
-Stop-Process -Id $viteProcess.Id -ErrorAction SilentlyContinue
-Write-Host "Stopped Vite." -ForegroundColor DarkGray
+# 4. Start Backend
+Write-Step "Launching Tauri..."
+Set-Location $TauriDir
+try {
+    # Specify stable-msvc explicitly to avoid ambiguity
+    rustup run stable-msvc cargo tauri dev
+}
+finally {
+    # 5. Cleanup
+    if ($ViteProcess -and -not $ViteProcess.HasExited) {
+        Stop-Process -Id $ViteProcess.Id -ErrorAction SilentlyContinue
+        Write-Host "🛑 Stopped Vite server." -ForegroundColor DarkGray
+    }
+}

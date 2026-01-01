@@ -72,12 +72,10 @@ pub fn run() {
 /// Setup system tray icon with menu
 fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     // Create menu items
-    let show_item = MenuItem::with_id(app, "show", "Показать", true, None::<&str>)?;
-    let separator = MenuItem::with_id(app, "sep", "─────────", false, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
 
     // Create menu
-    let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
+    let menu = Menu::with_items(app, &[&quit_item])?;
 
     // Build tray icon
     let _tray = TrayIconBuilder::new()
@@ -86,13 +84,6 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "show" => {
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
             "quit" => {
                 // Graceful shutdown
                 services::system_monitor::stop_monitoring();

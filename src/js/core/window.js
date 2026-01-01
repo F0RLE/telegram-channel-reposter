@@ -398,20 +398,7 @@ window.confirmLlmStart = function () {
 };
 
 // Zoom Support (Ctrl + Scroll)
-document.addEventListener('wheel', function (e) {
-    if (e.ctrlKey) {
-        e.preventDefault();
-        let currentZoom = parseFloat(document.body.style.zoom) || 1;
-        if (e.deltaY < 0) {
-            currentZoom += 0.1;
-        } else {
-            currentZoom -= 0.1;
-        }
-        // Limit zoom
-        currentZoom = Math.min(Math.max(currentZoom, 0.5), 3.0);
-        document.body.style.zoom = currentZoom;
-    }
-}, { passive: false });
+// Zoom Support removed to ensure responsive browser-like behavior
 
 // Sync maximize icon on resize (handle external snaps or backend toggles)
 window.addEventListener('resize', async () => {

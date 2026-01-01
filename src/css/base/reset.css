@@ -1,31 +1,33 @@
 ﻿/* Base Reset & Body Styles */
 * {
-                box-sizing: border-box;
-            }
+    box-sizing: border-box;
+}
 
-            html {
-                scroll-behavior: smooth;
-                overflow: hidden;
-                height: 100%;
-            }
+html {
+    scroll-behavior: smooth;
+    overflow: hidden;
+    height: 100%;
+    /* Fluid Scaling: Min 12px, Ideal 14px + 0.4vw, Max 18px */
+    font-size: clamp(12px, 0.8rem + 0.4vw, 18px);
+}
 
 body {
-                font-family: 'Monocraft', 'Inter', sans-serif;
-                background: var(--bg-dark);
-                color: var(--text-primary);
-                margin: 0;
-                padding: 0;
-                display: flex;
-                height: 100vh;
-                width: 100vw;
-                overflow: hidden;
-                font-size: 14px;
-                box-sizing: border-box;
-                opacity: 1;
-                /* Changed for splash screen handling */
-                transition: opacity 0.5s ease-in;
-            }
+    font-family: "Monocraft", "Inter", sans-serif;
+    background: var(--bg-dark);
+    color: var(--text-primary);
+    margin: 0;
+    padding: 0;
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    font-size: 14px;
+    box-sizing: border-box;
+    opacity: 1;
+    /* Changed for splash screen handling */
+    transition: opacity 0.5s ease-in;
+}
 
-            * {
-                box-sizing: border-box;
-            }
+* {
+    box-sizing: border-box;
+}

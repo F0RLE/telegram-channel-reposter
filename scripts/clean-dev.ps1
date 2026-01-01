@@ -1,30 +1,51 @@
-# Clean Environment Launch Script
+<#
+.SYNOPSIS
+    Sanitizes the environment and launches the development server.
+
+.DESCRIPTION
+    This script:
+    1. Removes conflicting tools (MinGW, GNU Rust, MSYS) from the PATH.
+    2. Prioritizes the MSVC Rust toolchain.
+    3. Launches the Tauri development server.
+
+.EXAMPLE
+    .\clean-dev.ps1
+#>
+
 $ErrorActionPreference = "Stop"
 
-Write-Host "Cleaning environment variables..." -ForegroundColor Cyan
+function Write-Step {
+    param([string]$Message)
+    Write-Host "👉 $Message" -ForegroundColor Yellow
+}
 
-# Remove GnuWin32, MinGW, and Rogue Rust GNU from PATH
-$cleanPath = ($env:PATH -split ';').Where({
-    $_ -notlike "*GnuWin32*" -and
-    $_ -notlike "*mingw*" -and
-    $_ -notlike "*MSYS*" -and
-    $_ -notlike "*Rust stable GNU*"
-}) -join ';'
+function Write-Success {
+    param([string]$Message)
+    Write-Host "✅ $Message" -ForegroundColor Green
+}
 
-# The original script had an intermediate assignment to $env:PATH here.
-# We are removing that intermediate assignment and directly applying the final desired PATH.
-# This ensures .cargo/bin is prepended to the *cleaned* path.
+Write-Host "🚀 Starting Clean Dev Environment..." -ForegroundColor Cyan
 
-# Force Cargo/Rustup to the FRONT of PATH to override any rogue installs
-$env:PATH = "C:\Users\FORLE\.cargo\bin;" + $cleanPath
+# 1. Sanitize Environment
+Write-Step "Sanitizing environment variables..."
+$CurrentPath = $env:PATH
+$CleanPath = ($CurrentPath -split ';').Where({
+        $_ -notlike "*GnuWin32*" -and
+        $_ -notlike "*mingw*" -and
+        $_ -notlike "*MSYS*" -and
+        $_ -notlike "*Rust stable GNU*"
+    }) -join ';'
 
-Write-Host "PATH sanitized. Checking Toolchain..." -ForegroundColor Cyan
+# 2. Configure Toolchain
+Write-Step "Configuring MSVC Toolchain..."
+$UserCargo = "$env:USERPROFILE\.cargo\bin"
+$env:PATH = $UserCargo + ";" + $CleanPath
 
-# Ensure target is present for the ACTIVE toolchain
-rustup target add x86_64-pc-windows-msvc
+# 3. Ensure Target
+Write-Step "Checking Rust target..."
+rustup target add x86_64-pc-windows-msvc | Out-Null
 
-Write-Host "Launching Tauri..." -ForegroundColor Green
-
-# Navigate to root and run the dev command
-Set-Location "$PSScriptRoot/.."
+# 4. Launch
+Write-Success "Environment ready. Launching Tauri..."
+Set-Location "$PSScriptRoot/../src"
 npm run tauri:dev
