@@ -62,14 +62,18 @@ jobs:
         working-directory: ./src
         run: npm run build
 
-      - name: Tauri Action
-        uses: tauri-apps/tauri-action@v0
+      - name: Build Portable EXE
+        working-directory: ./src
+        run: npm run tauri:build
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.NEW_VERSION }}
+          name: "Flux Platform v${{ env.NEW_VERSION }}"
+          body: "Automated portable release v${{ env.NEW_VERSION }}"
+          draft: false
+          prerelease: false
+          files: src-tauri/target/release/flux-platform.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v${{ env.NEW_VERSION }}
-          releaseName: "Flux Platform v${{ env.NEW_VERSION }}"
-          releaseBody: "Automated release for version v${{ env.NEW_VERSION }}"
-          releaseDraft: false
-          prerelease: false
-          projectPath: ./src-tauri
