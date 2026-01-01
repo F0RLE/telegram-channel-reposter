@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🚀 Flux Platform
+# Flux Platform
 
 [![Rust](https://img.shields.io/badge/Rust-1.70+-orange.svg?style=flat-square&logo=rust)](https://www.rust-lang.org/)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-blue.svg?style=flat-square&logo=tauri)](https://tauri.app/)
@@ -21,43 +21,42 @@
 <a name="english"></a>
 ## <img src="https://flagcdn.com/24x18/gb.png" valign="middle"> English
 
-**Flux Platform** is an enterprise-grade, modular service management platform designed for high-performance applications. Built upon the robust **Rust** ecosystem and the **Tauri v2** framework, it bridges the gap between native system performance and modern web interfaces.
+**Flux Platform** is a modular service management platform designed for high performance, predictability, and extensibility. Built upon the **Rust** ecosystem and **Tauri v2**, it bridges the gap between native system execution and modern interfaces.
 
-Unlike Electron-based alternatives, Flux Platform leverages the system's native WebView (WebView2 on Windows), resulting in a binary size that is significantly smaller and RAM usage that is drastically lower.
+The platform was designed with enterprise requirements in mind: strict process isolation, access control, and stable resource usage. Unlike Electron-based alternatives, Flux Platform leverages the native WebView2, resulting in a significantly smaller binary size and reduced memory footprint.
 
-### ✨ Detailed Features
+### Technical Overview
 
-#### �️ Core Architecture
-*   **Rust Backend**: The core business logic is written in pure Rust, ensuring memory safety and thread safety without the overhead of a garbage collector.
-*   **Tauri v2 IPC**: Uses an optimized asynchronous Inter-Process Communication (IPC) bridge to communicate between the UI and the Backend.
-*   **Zero-Overhead Abstractions**: Critical services like the `LicenseVerifier` and `SystemMonitor` run on separate threads, ensuring the UI never freezes.
+#### Core Architecture
+*   **Rust Backend**: Business logic is implemented in pure Rust, ensuring memory safety and thread safety without Garbage Collection overhead.
+*   **Tauri v2 IPC**: Utilizes an optimized asynchronous Inter-Process Communication bridge for low-latency state synchronization.
+*   **Zero-Overhead Abstractions**: Critical services (LicenseVerifier, SystemMonitor) execute on isolated threads to prevent UI blocking.
 
-#### 📊 Advanced Monitoring System
-The platform includes a proprietary system monitoring engine that provides real-time telemetry:
-*   **CPU**: Individual core usage tracking and process-level analysis.
-*   **RAM/VRAM**: Detailed breakdown of used, cached, and available memory.
-*   **GPU**: Real-time utilization stats for NVIDIA (via NVML) and generic adapters.
-*   **Disk I/O**: Read/Write speeds and partition usage.
-*   **Network**: Real-time Upload/Download throughput monitoring.
+#### Monitoring System
+The platform implements a proprietary telemetry engine for real-time analysis:
+*   **CPU**: Per-core load tracking and process-level heuristics.
+*   **Memory**: Detailed breakdown of physical (RAM) and video (VRAM) memory allocation.
+*   **GPU**: Real-time utilization metrics via direct NVML integration for NVIDIA hardware.
+*   **I/O**: Throughput analysis for disk and network interfaces.
 
-#### ⚡ Performance & Frontend
-*   **Vite-Powered**: Instant HMR (Hot Module Replacement) and optimized production builds.
-*   **Vanilla JS Optimization**: We purposefully avoided heavy frontend frameworks (React/Vue/Angular) for the core dashboard to maximize startup speed and minimize overhead.
-*   **Custom Design System**: A bespoke CSS framework ensures consistent theming and smooth 60fps animations.
+#### Performance & Frontend
+*   **Vite Architecture**: Instant Hot Module Replacement (HMR) and optimized asset bundling.
+*   **Vanilla JS**: The core dashboard avoids heavy frameworks (React/Vue) to minimize initialization time and runtime overhead.
+*   **Custom Design System**: Bespoke CSS architecture ensures consistent rendering and efficient updates.
 
-#### 🔒 Enterprise Security
-*   **Path Traversal Protection**: All file system operations are sandboxed and validated against strict allowlists.
-*   **Input Sanitization**: All user inputs and IPC payloads are strictly typed and sanitized before processing.
-*   **Secure Storage**: Sensitive configuration data is encrypted at rest using OS-level key chains.
+#### Security
+*   **Path Traversal Protection**: Filesystem operations are strictly sandboxed and validated against allowlists.
+*   **Input Sanitization**: Strict typing and sanitization for all IPC payloads.
+*   **Secure Storage**: Sensitive configuration data is encrypted using the operating system's native key storage mechanisms.
 
-### 🛠️ Technical Stack
+### Stack
 
 - **Backend**: Rust (Tokio, Serde, Tauri, Sysinfo, NVML-Wrapper)
-- **Frontend**: TypeScript, Vite, SASS/CSS Modules, Chart.js
-- **Build System**: Cargo, NPM, PowerShell Automation
+- **Frontend**: TypeScript, Vite, SASS, Chart.js
+- **Build**: Cargo, NPM, PowerShell Automation
 - **Installer**: WiX Toolset (MSI), NSIS (EXE)
 
-### � Quick Start Guide
+### Quick Start
 
 **Prerequisites:**
 - Windows 10/11 (x64 Build 19041+)
@@ -66,59 +65,58 @@ The platform includes a proprietary system monitoring engine that provides real-
 - [Visual Studio C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 
 ```powershell
-# 1. Clone the repository including submodules
+# 1. Clone repository
 git clone https://github.com/F0RLE/flux-platform.git
 cd flux-platform
 
-# 2. Initialize the development environment
+# 2. Initialize environment
 cd scripts
 ./dev.ps1
 ```
 
-The `./dev.ps1` script automates the entire process: it checks for dependencies, installs NPM packages, compiles the Rust backend, and launches the application in debug mode.
+The `./dev.ps1` script automates dependency checks, compilation, and debug launch.
 
 ---
 
 <a name="russian"></a>
 ## <img src="https://flagcdn.com/24x18/ru.png" valign="middle"> Русский
 
-**Flux Platform** — это модульная платформа корпоративного уровня для управления сервисами, разработанная с упором на максимальную производительность. Построенная на экосистеме **Rust** и фреймворке **Tauri v2**, она объединяет мощь нативного кода с гибкостью современных веб-интерфейсов.
+**Flux Platform** — модульная десктопная платформа для управления сервисами, ориентированная на высокую производительность, предсказуемость и расширяемость. Платформа построена на экосистеме **Rust** и фреймворке **Tauri v2**, сочетая нативный системный код с современным веб-интерфейсом.
 
-В отличие от решений на базе Electron, Flux Platform использует нативный системный WebView (WebView2 в Windows), что обеспечивает экстремально малый размер приложения и минимальное потребление оперативной памяти (в 10-20 раз меньше аналогов).
+Платформа проектировалась с учётом требований корпоративной эксплуатации: предсказуемость, изоляция процессов и контроль доступа. Использование нативного WebView2 позволяет достичь значительно меньшего размера приложения и потребления памяти по сравнению с аналогами на Electron.
 
-### ✨ Подробный разбор возможностей
+### Технический обзор
 
-#### 🛡️ Архитектура Ядра
-*   **Бэкенд на Rust**: Вся бизнес-логика написана на чистом Rust, что гарантирует безопасность памяти и отсутствие пауз на сборку мусора (GC).
-*   **Tauri v2 IPC**: Используется оптимизированный асинхронный мост (IPC) для мгновенного обмена данными между UI и системным ядром.
-*   **Многопоточность**: Критические сервисы, такие как проверка лицензий и мониторинг, работают в изолированных потоках, гарантируя, что интерфейс всегда остается отзывчивым.
+#### Архитектура ядра
+*   **Бэкенд на Rust**: Бизнес-логика реализована на Rust, что гарантирует безопасность памяти и отсутствие пауз на сборку мусора (GC).
+*   **Tauri v2 IPC**: Используется оптимизированный асинхронный мост для обмена данными между UI и ядром с минимальными задержками.
+*   **Изоляция потоков**: Критические сервисы (мониторинг, проверка лицензий) работают в независимых потоках, не блокируя основной цикл приложения.
 
-#### 📊 Продвинутая Система Мониторинга
-Платформа включает собственный движок телеметрии:
-*   **CPU**: Отслеживание нагрузки по каждому ядру и анализ процессов.
-*   **RAM/VRAM**: Детальная статистика использования, кэша и доступной памяти.
-*   **GPU**: Мониторинг нагрузки в реальном времени для NVIDIA (через NVML) и других адаптеров.
-*   **Диски**: Скорость чтения/записи и заполненность разделов.
-*   **Сеть**: Текущая скорость отдачи/загрузки.
+#### Система мониторинга
+Собственный движок телеметрии обеспечивает анализ в реальном времени:
+*   **CPU**: Отслеживание нагрузки по ядрам и анализ процессов.
+*   **Память**: Детальная статистика по RAM и VRAM (доступно/использовано/кэш).
+*   **GPU**: Прямая интеграция с NVML для получения метрик видеокарт NVIDIA.
+*   **I/O**: Мониторинг пропускной способности дисков и сетевых адаптеров.
 
-#### ⚡ Производительность и Фронтенд
-*   **Vite**: Мгновенный HMR (Hot Module Replacement) и оптимизированные сборки.
-*   **Оптимизация**: Мы намеренно отказались от тяжелых фреймворков (React/Vue) в ядре дашборда, чтобы приложения запускалось мгновенно.
-*   **Дизайн-система**: Уникальный CSS-фреймворк обеспечивает визуальную целостность и плавные анимации 60fps.
+#### Производительность и Фронтенд
+*   **Архитектура Vite**: Мгновенный HMR и оптимизированная сборка ассетов.
+*   **Vanilla JS**: Отказ от тяжелых фреймворков в ядре дашборда минимизирует время инициализации.
+*   **Дизайн-система**: Уникальная CSS-архитектура для стабильного рендеринга и плавных анимаций.
 
-#### 🔒 Корпоративная Безопасность
-*   **Защита от Path Traversal**: Все операции с файловой системой проходят через "песочницу" и строгую валидацию путей.
-*   **Санитизация ввода**: Все данные от пользователя и через IPC строго типизируются и очищаются.
-*   **Безопасное хранение**: Чувствительные данные шифруются с использованием системных механизмов защиты ключей.
+#### Безопасность
+*   **Защита FS**: Операции с файловой системой проходят через "песочницу" и валидацию списков доступа.
+*   **Санитизация ввода**: Строгая типизация всех данных, передаваемых через IPC.
+*   **Безопасное хранение**: Шифрование чувствительных данных с использованием системных хранилищ ключей (Windows DPAPI/Credential Locker).
 
-### 🛠️ Технический Стек
+### Стек технологий
 
 - **Backend**: Rust (Tokio, Serde, Tauri, Sysinfo, NVML-Wrapper)
-- **Frontend**: TypeScript, Vite, SASS/CSS Modules, Chart.js
-- **Сборка**: Cargo, NPM, PowerShell Automation
-- **Инсталлер**: WiX Toolset (MSI), NSIS (EXE)
+- **Frontend**: TypeScript, Vite, SASS, Chart.js
+- **Build**: Cargo, NPM, PowerShell Automation
+- **Installer**: WiX Toolset (MSI), NSIS (EXE)
 
-### 🚀 Инструкция по запуску
+### Запуск
 
 **Требования:**
 - Windows 10/11 (x64 версия 19041+)
@@ -127,59 +125,58 @@ The `./dev.ps1` script automates the entire process: it checks for dependencies,
 - [Visual Studio C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/)
 
 ```powershell
-# 1. Клонирование репозитория
+# 1. Клонирование
 git clone https://github.com/F0RLE/flux-platform.git
 cd flux-platform
 
-# 2. Инициализация среды разработки
+# 2. Инициализация
 cd scripts
 ./dev.ps1
 ```
 
-Скрипт `./dev.ps1` полностью автоматизирует процесс: проверяет зависимости, устанавливает пакеты NPM, компилирует Rust бэкенд и запускает приложение в режиме отладки.
+Скрипт `./dev.ps1` выполняет проверку окружения, установку зависимостей и сборку проекта.
 
 ---
 
 <a name="chinese"></a>
 ## <img src="https://flagcdn.com/24x18/cn.png" valign="middle"> 中文
 
-**Flux Platform** 是一个企业级的模块化服务管理平台，专为高性能应用设计。基于 **Rust** 生态系统和 **Tauri v2** 框架构建，它完美结合了原生系统的性能与现代 Web 界面的灵活性。
+**Flux Platform** 是一个专注于高性能、可预测性和可扩展性的模块化服务管理平台。该平台基于 **Rust** 生态系统和 **Tauri v2** 构建，弥合了原生系统执行与现代界面之间的鸿沟。
 
-与基于 Electron 的替代方案不同，Flux Platform 利用系统的原生 WebView（Windows 上的 WebView2），因此二进制文件体积极小，且 RAM 占用率大幅降低。
+该平台的设计充分考虑了企业级运营需求：严格的进程隔离、访问控制和稳定的资源使用。与基于 Electron 的替代方案不同，Flux Platform 利用原生 WebView2，从而显著减小了二进制文件大小并降低了内存占用。
 
-### ✨ 功能详解
+### 技术概览
 
-#### 🛡️ 核心架构
-*   **Rust 后端**: 核心业务逻辑完全使用 Rust 编写，确保内存安全和线程安全，没有垃圾回收（GC）的开销。
-*   **Tauri v2 IPC**: 使用优化的异步进程间通信（IPC）桥梁，在 UI 和后端之间进行高效通信。
-*   **零开销抽象**: 诸如 `LicenseVerifier` 和 `SystemMonitor` 等关键服务在独立线程上运行，确保 UI 永不卡顿。
+#### 核心架构
+*   **Rust 后端**: 业务逻辑完全使用 Rust 实现，确保内存安全和线程安全，无垃圾回收 (GC) 开销。
+*   **Tauri v2 IPC**:通过优化的异步进程间通信桥梁，实现低延迟的状态同步。
+*   **零开销抽象**: 关键服务（如许可证验证、系统监控）在隔离线程上运行，防止阻塞用户界面。
 
-#### 📊 高级监控系统
-平台包含专有的系统监控引擎，提供实时遥测：
-*   **CPU**: 跟踪单个核心的使用率及进程级分析。
-*   **RAM/VRAM**: 详细细分已用、缓存和可用内存。
-*   **GPU**: NVIDIA (通过 NVML) 和通用适配器的实时利用率统计。
-*   **磁盘 I/O**: 读/写速度和分区使用情况。
-*   **网络**: 实时上传/下载吞吐量监控。
+#### 监控系统
+平台实现了专有的实时遥测分析引擎：
+*   **CPU**: 核心级负载跟踪和进程级启发式分析。
+*   **内存**: 物理内存 (RAM) 和显存 (VRAM) 分配的详细分类。
+*   **GPU**: 通过直接集成 NVML 获取 NVIDIA 硬件的实时利用率指标。
+*   **I/O**: 磁盘和网络接口的吞吐量分析。
 
-#### ⚡ 性能与前端
-*   **Vite 驱动**: 即时 HMR（热模块替换）和优化的生产构建。
-*   **原生 JS 优化**: 核心仪表板刻意避免使用沉重的前端框架（如 React/Vue/Angular），以最大限度地提高启动速度并减少开销。
-*   **自定义设计系统**: 定制的 CSS 框架确保一致的主题风格和流畅的 60fps 动画。
+#### 性能与前端
+*   **Vite 架构**: 即时热模块替换 (HMR) 和优化的资源打包。
+*   **Vanilla JS**: 核心仪表板避免使用沉重的框架（React/Vue），以最大限度地缩短初始化时间。
+*   **自定义设计系统**: 定制的 CSS 架构确保一致的渲染效果和高效的更新。
 
-#### 🔒 企业级安全
-*   **路径遍历保护**: 所有文件系统操作都在沙箱中进行，并根据严格的白名单进行验证。
-*   **输入清洗**: 所有用户输入和 IPC 负载在处理前都经过严格的类型检查和清洗。
-*   **安全存储**: 敏感配置数据使用操作系统级密钥链进行静态加密。
+#### 安全性
+*   **路径遍历保护**: 文件系统操作经过严格沙箱化，并针对白名单进行验证。
+*   **输入清洗**: 对所有 IPC 负载进行严格类型检查和数据清洗。
+*   **安全存储**: 使用操作系统原生密钥存储机制加密敏感配置数据。
 
-### 🛠️ 技术栈
+### 技术栈
 
 - **后端**: Rust (Tokio, Serde, Tauri, Sysinfo, NVML-Wrapper)
-- **前端**: TypeScript, Vite, SASS/CSS Modules, Chart.js
-- **构建系统**: Cargo, NPM, PowerShell Automation
+- **前端**: TypeScript, Vite, SASS, Chart.js
+- **构建**: Cargo, NPM, PowerShell Automation
 - **安装程序**: WiX Toolset (MSI), NSIS (EXE)
 
-### � 快速开始指南
+### 快速开始
 
 **先决条件:**
 - Windows 10/11 (x64 版本 19041+)
@@ -192,12 +189,12 @@ cd scripts
 git clone https://github.com/F0RLE/flux-platform.git
 cd flux-platform
 
-# 2. 初始化开发环境
+# 2. 初始化环境
 cd scripts
 ./dev.ps1
 ```
 
-`./dev.ps1` 脚本自动化了整个过程：它会检查依赖项、安装 NPM 包、编译 Rust 后端，并在调试模式下启动应用程序。
+`./dev.ps1` 脚本自动执行依赖检查、编译和调试启动。
 
 ---
 
