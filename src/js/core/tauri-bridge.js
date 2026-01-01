@@ -117,9 +117,7 @@
                     // No, simpler to return stub or invoke mock.
                     // Actually, if we are in browser, we CAN simply fetch the json files directly if they exist in public/locales!
                     // But for now, let's use the invoke path which returns empty object in mock
-                    const translations = await invoke('get_translations', { lang });
-                    // Improve mock: return valid minimal JSON with visible keys
-                    const mockTranslations = {
+                    const mockTranslationsEn = {
                         "ui.launcher.button.cancel": "Cancel",
                         "ui.launcher.button.close": "Close",
                         "ui.launcher.diagnostics.status_ok": "OK",
@@ -136,76 +134,94 @@
                         "ui.launcher.web.vram": "VRAM",
                         "ui.launcher.web.disk": "Disk",
                         "ui.launcher.web.network": "Network",
-                        "ui.launcher.web.home_title": "Welcome User"
+                        "ui.launcher.web.home_title": "Welcome User",
+                        "ui.launcher.web.title": "Flux Platform",
+                        "ui.launcher.web.downloads_subtitle": "Manage model and module downloads",
+                        "ui.launcher.web.downloads_active": "Active Download",
+                        "ui.launcher.web.no_active_downloads": "No active downloads",
+                        "ui.launcher.web.status_waiting": "Waiting",
+                        "ui.launcher.web.progress": "Progress",
+                        "ui.launcher.web.downloaded": "Downloaded",
+                        "ui.launcher.web.total": "Total",
+                        "ui.launcher.web.speed": "Speed",
+                        "ui.launcher.web.eta_label": "ETA",
+                        "ui.launcher.web.information": "Information",
+                        "ui.launcher.web.not_downloading": "Not downloading yet",
+                        "ui.launcher.button.minimize": "Minimize",
+                        "ui.launcher.button.maximize": "Maximize"
                     };
 
-                    // Simple mock for other languages to prove switching works
-                    if (lang === 'ru') {
-                        // Object.keys(mockTranslations).forEach(k => mockTranslations[k] += " (RU)");
-                        mockTranslations["ui.launcher.button.cancel"] = "Отмена";
-                        mockTranslations["ui.launcher.button.close"] = "Закрыть";
-                        mockTranslations["ui.launcher.web.main_menu"] = "Главное меню";
-                        mockTranslations["ui.launcher.web.chat"] = "Чат";
-                        mockTranslations["ui.launcher.web.modules"] = "Модули";
-                        mockTranslations["ui.launcher.web.settings"] = "Настройки";
-                        mockTranslations["ui.launcher.web.console"] = "Консоль";
-                        mockTranslations["ui.launcher.web.downloads"] = "Загрузки";
-                        mockTranslations["ui.launcher.web.cpu"] = "ЦП";
-                        mockTranslations["ui.launcher.web.gpu"] = "ГП";
-                        mockTranslations["ui.launcher.web.ram"] = "ОЗУ";
-                        mockTranslations["ui.launcher.web.vram"] = "VRAM";
-                        mockTranslations["ui.launcher.web.disk"] = "Диск";
-                        mockTranslations["ui.launcher.web.network"] = "Сеть";
-                        mockTranslations["ui.launcher.web.home_title"] = "Добро пожаловать";
-                        mockTranslations["ui.launcher.web.title"] = "Платформа Flux";
-                        mockTranslations["ui.launcher.web.downloads_subtitle"] = "Управление загрузками";
-                        mockTranslations["ui.launcher.web.downloads_active"] = "Активная загрузка";
-                        mockTranslations["ui.launcher.web.no_active_downloads"] = "Нет активных загрузок";
-                        mockTranslations["ui.launcher.web.status_waiting"] = "Ожидание";
-                        mockTranslations["ui.launcher.web.progress"] = "Прогресс";
-                        mockTranslations["ui.launcher.web.downloaded"] = "Скачано";
-                        mockTranslations["ui.launcher.web.total"] = "Всего";
-                        mockTranslations["ui.launcher.web.speed"] = "Скорость";
-                        mockTranslations["ui.launcher.web.eta_label"] = "Осталось";
-                        mockTranslations["ui.launcher.web.information"] = "Информация";
-                        mockTranslations["ui.launcher.web.not_downloading"] = "Загрузка не идет";
-                        mockTranslations["ui.launcher.button.minimize"] = "Свернуть";
-                        mockTranslations["ui.launcher.button.maximize"] = "Развернуть";
-                    }
-                    if (lang === 'zh') {
-                        // Object.keys(mockTranslations).forEach(k => mockTranslations[k] += " (ZH)");
-                        mockTranslations["ui.launcher.button.cancel"] = "取消";
-                        mockTranslations["ui.launcher.button.close"] = "关闭";
-                        mockTranslations["ui.launcher.web.main_menu"] = "主菜单";
-                        mockTranslations["ui.launcher.web.chat"] = "聊天";
-                        mockTranslations["ui.launcher.web.modules"] = "模块";
-                        mockTranslations["ui.launcher.web.settings"] = "设置";
-                        mockTranslations["ui.launcher.web.console"] = "控制台";
-                        mockTranslations["ui.launcher.web.downloads"] = "下载";
-                        mockTranslations["ui.launcher.web.cpu"] = "CPU";
-                        mockTranslations["ui.launcher.web.gpu"] = "GPU";
-                        mockTranslations["ui.launcher.web.ram"] = "内存";
-                        mockTranslations["ui.launcher.web.vram"] = "显存";
-                        mockTranslations["ui.launcher.web.disk"] = "磁盘";
-                        mockTranslations["ui.launcher.web.network"] = "网络";
-                        mockTranslations["ui.launcher.web.home_title"] = "欢迎用户";
-                        mockTranslations["ui.launcher.web.title"] = "Flux平台";
-                        mockTranslations["ui.launcher.web.downloads_subtitle"] = "管理模型和模块下载";
-                        mockTranslations["ui.launcher.web.downloads_active"] = "当前下载";
-                        mockTranslations["ui.launcher.web.no_active_downloads"] = "无活动下载";
-                        mockTranslations["ui.launcher.web.status_waiting"] = "等待中";
-                        mockTranslations["ui.launcher.web.progress"] = "进度";
-                        mockTranslations["ui.launcher.web.downloaded"] = "已下载";
-                        mockTranslations["ui.launcher.web.total"] = "总计";
-                        mockTranslations["ui.launcher.web.speed"] = "速度";
-                        mockTranslations["ui.launcher.web.eta_label"] = "剩余时间";
-                        mockTranslations["ui.launcher.web.information"] = "信息";
-                        mockTranslations["ui.launcher.web.not_downloading"] = "未开始下载";
-                        mockTranslations["ui.launcher.button.minimize"] = "最小化";
-                        mockTranslations["ui.launcher.button.maximize"] = "最大化";
-                    }
+                    const mockTranslationsRu = {
+                        "ui.launcher.button.cancel": "Отмена",
+                        "ui.launcher.button.close": "Закрыть",
+                        "ui.launcher.web.main_menu": "Главное меню",
+                        "ui.launcher.web.chat": "Чат",
+                        "ui.launcher.web.modules": "Модули",
+                        "ui.launcher.web.settings": "Настройки",
+                        "ui.launcher.web.console": "Консоль",
+                        "ui.launcher.web.downloads": "Загрузки",
+                        "ui.launcher.web.cpu": "ЦП",
+                        "ui.launcher.web.gpu": "ГП",
+                        "ui.launcher.web.ram": "ОЗУ",
+                        "ui.launcher.web.vram": "VRAM",
+                        "ui.launcher.web.disk": "Диск",
+                        "ui.launcher.web.network": "Сеть",
+                        "ui.launcher.web.home_title": "Добро пожаловать",
+                        "ui.launcher.web.title": "Платформа Flux",
+                        "ui.launcher.web.downloads_subtitle": "Управление загрузками",
+                        "ui.launcher.web.downloads_active": "Активная загрузка",
+                        "ui.launcher.web.no_active_downloads": "Нет активных загрузок",
+                        "ui.launcher.web.status_waiting": "Ожидание",
+                        "ui.launcher.web.progress": "Прогресс",
+                        "ui.launcher.web.downloaded": "Скачано",
+                        "ui.launcher.web.total": "Всего",
+                        "ui.launcher.web.speed": "Скорость",
+                        "ui.launcher.web.eta_label": "Осталось",
+                        "ui.launcher.web.information": "Информация",
+                        "ui.launcher.web.not_downloading": "Загрузка не идет",
+                        "ui.launcher.button.minimize": "Свернуть",
+                        "ui.launcher.button.maximize": "Развернуть"
+                    };
 
-                    return new Response(JSON.stringify(isTauri ? translations : mockTranslations));
+                    const mockTranslationsZh = {
+                        "ui.launcher.button.cancel": "取消",
+                        "ui.launcher.button.close": "关闭",
+                        "ui.launcher.web.main_menu": "主菜单",
+                        "ui.launcher.web.chat": "聊天",
+                        "ui.launcher.web.modules": "模块",
+                        "ui.launcher.web.settings": "设置",
+                        "ui.launcher.web.console": "控制台",
+                        "ui.launcher.web.downloads": "下载",
+                        "ui.launcher.web.cpu": "CPU",
+                        "ui.launcher.web.gpu": "GPU",
+                        "ui.launcher.web.ram": "内存",
+                        "ui.launcher.web.vram": "显存",
+                        "ui.launcher.web.disk": "磁盘",
+                        "ui.launcher.web.network": "网络",
+                        "ui.launcher.web.home_title": "欢迎用户",
+                        "ui.launcher.web.title": "Flux平台",
+                        "ui.launcher.web.downloads_subtitle": "管理模型和模块下载",
+                        "ui.launcher.web.downloads_active": "当前下载",
+                        "ui.launcher.web.no_active_downloads": "无活动下载",
+                        "ui.launcher.web.status_waiting": "等待中",
+                        "ui.launcher.web.progress": "进度",
+                        "ui.launcher.web.downloaded": "已下载",
+                        "ui.launcher.web.total": "总计",
+                        "ui.launcher.web.speed": "速度",
+                        "ui.launcher.web.eta_label": "剩余时间",
+                        "ui.launcher.web.information": "信息",
+                        "ui.launcher.web.not_downloading": "未开始下载",
+                        "ui.launcher.button.minimize": "最小化",
+                        "ui.launcher.button.maximize": "最大化"
+                    };
+
+                    let data = {};
+                    if (lang === 'ru') data = mockTranslationsRu;
+                    else if (lang === 'zh') data = mockTranslationsZh;
+                    else data = mockTranslationsEn; // Default / English
+
+                    const translations = isTauri ? await invoke('get_translations', { lang }) : data;
+                    return new Response(JSON.stringify(translations));
                 }
 
                 if (path === '/api/system_stats') {
@@ -214,14 +230,16 @@
                     const now = Date.now() / 1000;
 
                     const stats = isTauri ? await invoke('get_system_stats') : {
-                        cpu: { percent: Math.round(20 + Math.sin(now) * 10 + Math.random() * 5) }, // Oscillates 15-35%
-                        ram: { percent: 45, used: 8.5, total: 32 }, // Stable RAM
-                        gpu: { util: Math.round(Math.abs(Math.sin(now * 0.5)) * 60), memory: 4 }, // Load spikes
-                        vram: { percent: 30, used: 6, total: 12 },
-                        disk: { percent: 45, used: 200, total: 500 },
+                        cpu: { percent: Math.round(15 + Math.random() * 10), cores: 16, name: "Mock CPU (Browser Mode)" },
+                        ram: { percent: 45, used_gb: 14.5, total_gb: 32.0 },
+                        gpu: { util: Math.round(Math.random() * 30), memory: 8 },
+                        vram: { percent: 30, used: 2.4, total: 8.0 },
+                        disk: { percent: 25, used: 256, total: 1024 },
                         network: {
-                            up: Math.floor(1000 + Math.random() * 500),
-                            down: Math.floor(50000 + Math.random() * 20000)
+                            down: Math.floor(Math.random() * 50000), // raw bytes for legacy
+                            up: Math.floor(Math.random() * 2000),
+                            download_rate: Math.floor(Math.random() * 5 * 1024 * 1024), // 0-5 MB/s
+                            upload_rate: Math.floor(Math.random() * 500 * 1024) // 0-500 KB/s
                         }
                     };
                     return new Response(JSON.stringify(stats));

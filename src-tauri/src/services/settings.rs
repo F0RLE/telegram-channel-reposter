@@ -1,8 +1,8 @@
-use std::fs;
-use crate::utils::paths::{FILE_ENV, FILE_GEN_CONFIG};
-use serde_json::Value;
 use crate::errors::AppError;
 use crate::models::AppSettings;
+use crate::utils::paths::{FILE_ENV, FILE_GEN_CONFIG};
+use serde_json::Value;
+use std::fs;
 
 pub fn get_settings() -> Result<AppSettings, AppError> {
     if !FILE_ENV.exists() {
@@ -58,11 +58,21 @@ pub fn get_gen_config() -> Result<Value, AppError> {
     serde_json::from_str(&content).map_err(|e| AppError::Serialization(e))
 }
 
-pub fn save_gen_config(config: Value) -> Result<(), String> {
-    let content = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    fs::write(&*FILE_GEN_CONFIG, content).map_err(|e| e.to_string())
+pub fn save_gen_config(config: Value) -> Result<(), AppError> {
+    let content = serde_json::to_string_pretty(&config).map_err(AppError::Serialization)?;
+    fs::write(&*FILE_GEN_CONFIG, content).map_err(AppError::Io)
 }
 
+/// Get current language from settings, or detect from Windows if not set
 pub fn get_language() -> String {
-    get_settings().map(|s| s.language).unwrap_or_else(|_| "ru".to_string())
+    get_settings()
+        .map(|s| {
+            if s.language.is_empty() {
+                // No language saved, detect from system
+                crate::utils::windows::detect_system_language()
+            } else {
+                s.language
+            }
+        })
+        .unwrap_or_else(|_| crate::utils::windows::detect_system_language())
 }

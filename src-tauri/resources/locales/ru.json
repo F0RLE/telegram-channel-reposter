@@ -69,5 +69,8 @@
   "ui.launcher.settings.monitor_ram": "RAM",
   "ui.launcher.settings.monitor_vram": "VRAM",
   "ui.launcher.settings.monitor_disk": "Диск",
-  "ui.launcher.settings.monitor_network": "Сеть"
+  "ui.launcher.settings.monitor_network": "Сеть",
+  "ui.launcher.modal.confirm_close_title": "Подтверждение выхода",
+  "ui.launcher.button.cancel": "Отмена",
+  "ui.launcher.button.close": "Закрыть"
 }

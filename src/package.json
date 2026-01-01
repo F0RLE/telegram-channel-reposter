@@ -1,14 +1,14 @@
 {
     "name": "flux-platform-frontend",
-    "version": "1.2.0",
+    "version": "0.0.1-alpha",
     "description": "Flux Platform Frontend",
     "type": "module",
     "scripts": {
         "dev": "vite",
         "build": "tsc && vite build",
         "preview": "vite preview",
-        "tauri:dev": "cd ../src-tauri && cargo tauri dev",
-        "tauri:build": "cd ../src-tauri && cargo tauri build"
+        "tauri:dev": "cd ../src-tauri && cargo tauri dev --target x86_64-pc-windows-msvc",
+        "tauri:build": "cd ../src-tauri && cargo tauri build --target x86_64-pc-windows-msvc"
     },
     "devDependencies": {
         "@tauri-apps/api": "^2.0.0",

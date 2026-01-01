@@ -1,11 +1,11 @@
 {
     "productName": "Flux Platform",
-    "version": "1.2.0",
+    "version": "0.0.1-alpha",
     "identifier": "com.flux.platform",
     "build": {
-        "beforeDevCommand": null,
+        "beforeDevCommand": "npm run dev --prefix src",
         "devUrl": "http://localhost:1420",
-        "beforeBuildCommand": null,
+        "beforeBuildCommand": "npm run build --prefix src",
         "frontendDist": "../src/dist"
     },
     "app": {
@@ -14,7 +14,7 @@
             {
                 "title": "Flux Platform",
                 "width": 1280,
-                "height": 720,
+                "height": 800,
                 "resizable": true,
                 "fullscreen": false,
                 "decorations": false,
@@ -22,7 +22,10 @@
             }
         ],
         "security": {
-            "csp": null
+            "csp": null,
+            "capabilities": [
+                "default"
+            ]
         }
     },
     "bundle": {

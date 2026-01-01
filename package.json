@@ -1,0 +1,19 @@
+{
+    "name": "flux-platform-root",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Root proxy for Flux Platform",
+    "scripts": {
+        "tauri:dev": "cd src && npm run tauri:dev",
+        "tauri:build": "cd src && npm run tauri:build",
+        "dev": "cd src && npm run dev",
+        "build": "cd src && npm run build",
+        "preview": "cd src && npm run preview",
+        "lint": "cd src && npm run lint",
+        "format": "cd src && npm run format",
+        "install-deps": "cd src && npm install"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}

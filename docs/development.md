@@ -3,7 +3,7 @@
 ## Требования
 
 | Компонент | Версия               |
-|-----------|----------------------|
+| --------- | -------------------- |
 | Rust      | 1.70+                |
 | Node.js   | 18+                  |
 | Windows   | 10/11 (64-bit)       |
@@ -29,10 +29,10 @@ Dev сервер Vite: `http://localhost:1420`
 
 ## Скрипты
 
-| Скрипт | Описание |
-|--------|----------|
-| `./scripts/dev.ps1` | Dev режим с Vite hot-reload |
-| `./scripts/build.ps1` | Production сборка + installer |
+| Скрипт                | Описание                         |
+| --------------------- | -------------------------------- |
+| `./scripts/dev.ps1`   | Dev режим с Vite hot-reload      |
+| `./scripts/build.ps1` | Production сборка + installer    |
 | `./scripts/clean.ps1` | Очистка target/, dist/, release/ |
 
 ---
@@ -112,8 +112,8 @@ pub mod example;
 ### 5. Вызвать из JS
 
 ```javascript
-const result = await window.__TAURI__.invoke('my_command', {
-    param: 'test'
+const result = await window.__TAURI__.invoke("my_command", {
+    param: "test",
 });
 ```
 
@@ -125,17 +125,17 @@ const result = await window.__TAURI__.invoke('my_command', {
 
 ```javascript
 // js/events/system.js
-import { listen } from '@tauri-apps/api/event';
+import { listen } from "@tauri-apps/api/event";
 
 export async function subscribeToSystemStats(callback) {
-    return await listen('system_stats', (event) => {
+    return await listen("system_stats", (event) => {
         callback(event.payload);
     });
 }
 
 // Использование
 const unsub = await subscribeToSystemStats((stats) => {
-    console.log('CPU:', stats.cpu.percent);
+    console.log("CPU:", stats.cpu.percent);
 });
 
 // При выходе
@@ -148,11 +148,11 @@ unsub();
 
 Файлы: `src-tauri/resources/locales/`
 
-| Файл | Язык |
-|------|------|
+| Файл      | Язык    |
+| --------- | ------- |
 | `en.json` | English |
 | `ru.json` | Русский |
-| `zh.json` | 中文 |
+| `zh.json` | 中文    |
 
 ### Добавление перевода
 
@@ -166,16 +166,17 @@ unsub();
 
 ```javascript
 // Проверка статуса
-const status = await invoke('get_license_status');
+const status = await invoke("get_license_status");
 // { status: "Free" | "Pro" | "Enterprise", email: null }
 
 // Проверка фичи
-const canUse = await invoke('check_feature', { feature: 'advanced_chat' });
+const canUse = await invoke("check_feature", { feature: "advanced_chat" });
 ```
 
 Ключи форматы:
-- `PRO-XXXX-XXXX` → Pro tier
-- `ENT-XXXX-XXXX` → Enterprise tier
+
+-   `PRO-XXXX-XXXX` → Pro tier
+-   `ENT-XXXX-XXXX` → Enterprise tier
 
 ---
 
@@ -209,10 +210,11 @@ cargo build
 ## Сборка
 
 ```powershell
-./source/tools/build.ps1
+./scripts/build.ps1
 ```
 
 Результат:
-- `release/FluxPlatform.exe`
-- `release/dist/*.msi`
-- `release/dist/*.exe` (NSIS installer)
+
+-   `release/FluxPlatform.exe`
+-   `release/dist/*.msi`
+-   `release/dist/*.exe` (NSIS installer)

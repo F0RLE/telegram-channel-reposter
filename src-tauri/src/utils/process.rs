@@ -1,7 +1,4 @@
 use crate::services::logs;
-// use std::process::Command;
-// use crate::utils::paths::FILE_ENV;
-// use std::path::PathBuf;
 
 #[cfg(windows)]
 mod win_job {
@@ -23,5 +20,9 @@ pub fn kill_old_processes() -> usize {
 }
 
 pub fn register_pid(name: &str, pid: u32) {
-    logs::add_log(&format!("Registered {} PID: {}", name, pid), "Process", "info");
+    logs::add_log(
+        &format!("Registered {} PID: {}", name, pid),
+        "Process",
+        "info",
+    );
 }

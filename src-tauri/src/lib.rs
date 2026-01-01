@@ -5,6 +5,11 @@ pub mod services;
 pub mod utils;
 
 use commands::*;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+    Manager,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -37,6 +42,12 @@ pub fn run() {
             license::deactivate_license,
             license::check_feature,
             theme::get_theme_colors,
+            // Window settings commands
+            window_settings::get_window_settings,
+            window_settings::save_window_size,
+            window_settings::save_window_position,
+            window_settings::save_maximized_state,
+            window_settings::save_zoom_level,
         ])
         .setup(|app| {
             // Initialize directories
@@ -48,9 +59,59 @@ pub fn run() {
             // Start system monitoring with events
             services::system_monitor::start_monitoring(app.handle().clone(), 1000);
 
+            // Setup System Tray
+            setup_system_tray(app)?;
+
             log::info!("✅ Setup complete");
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Setup system tray icon with menu
+fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Create menu items
+    let show_item = MenuItem::with_id(app, "show", "Показать", true, None::<&str>)?;
+    let separator = MenuItem::with_id(app, "sep", "─────────", false, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Выход", true, None::<&str>)?;
+
+    // Create menu
+    let menu = Menu::with_items(app, &[&show_item, &separator, &quit_item])?;
+
+    // Build tray icon
+    let _tray = TrayIconBuilder::new()
+        .icon(app.default_window_icon().unwrap().clone())
+        .tooltip("Flux Platform")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            "quit" => {
+                // Graceful shutdown
+                services::system_monitor::stop_monitoring();
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
+                let app = tray.app_handle();
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .build(app)?;
+
+    log::info!("🔔 System tray initialized");
+    Ok(())
 }

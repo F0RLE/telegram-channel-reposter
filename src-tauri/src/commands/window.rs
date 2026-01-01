@@ -1,3 +1,6 @@
+use crate::services::system_monitor;
+use tauri::Manager;
+
 #[tauri::command]
 pub fn minimize_window(window: tauri::Window) {
     let _ = window.minimize();
@@ -14,5 +17,7 @@ pub fn maximize_window(window: tauri::Window) {
 
 #[tauri::command]
 pub fn close_window(window: tauri::Window) {
-    let _ = window.close();
+    // Graceful shutdown: stop monitoring before exit
+    system_monitor::stop_monitoring();
+    window.app_handle().exit(0);
 }

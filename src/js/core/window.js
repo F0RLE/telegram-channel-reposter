@@ -1,19 +1,32 @@
-﻿// Window control functions (for Electron)
-window.minimizeWindow = function () {
-    if (window.electronAPI && window.electronAPI.minimize) {
+﻿// Window control functions for Tauri desktop application
+let isClosing = false;
+window.minimizeWindow = async function () {
+    if (window.__TAURI__) {
+        try {
+            await window.__TAURI__.core.invoke('minimize_window');
+        } catch (e) {
+            console.error("Failed to minimize:", e);
+        }
+    } else if (window.electronAPI && window.electronAPI.minimize) {
         window.electronAPI.minimize();
     } else {
-        // Fallback for browser
-        console.log('Minimize window');
+        console.log('Minimize window (Mock)');
     }
 };
 
-window.toggleMaximizeWindow = function () {
-    if (window.electronAPI && window.electronAPI.toggleMaximize) {
+window.toggleMaximizeWindow = async function () {
+    if (window.__TAURI__) {
+        try {
+            // Let backend handle the toggle state
+            await window.__TAURI__.core.invoke('maximize_window');
+            // We can rely on resize event to update icon, or manually check after short delay
+        } catch (e) {
+            console.error("Failed to toggle maximize:", e);
+        }
+    } else if (window.electronAPI && window.electronAPI.toggleMaximize) {
         window.electronAPI.toggleMaximize();
     } else {
-        // Fallback for browser
-        console.log('Toggle maximize window');
+        console.log('Toggle maximize window (Mock)');
     }
 };
 
@@ -34,27 +47,12 @@ window.updateMaximizeIcon = function (isMaximized) {
 window.showCloseConfirmModal = function () {
     const modal = document.getElementById('close-confirm-modal');
     if (!modal) return;
-    // Add blur to entire launcher (body)
+
+    // Add blur and show modal
     document.body.classList.add('launcher-blur');
-    // Block all clicks except modal buttons
-    const blockClicks = function (e) {
-        // Allow clicks only on modal overlay and its children
-        if (!e.target.closest('#close-confirm-modal')) {
-            e.preventDefault();
-            e.stopPropagation();
-            e.stopImmediatePropagation();
-            return false;
-        }
-    };
-    // Add click blocker to document
-    document.addEventListener('click', blockClicks, true);
-    modal._clickBlocker = blockClicks;
-    // Prevent clicks outside modal
-    modal.style.pointerEvents = 'auto';
-    if (modal.style.display === 'none') modal.style.display = ''; // Reset inline none if present
-    // modal.style.display = 'flex'; // Handled by CSS visibility
     modal.classList.add('show');
-    // Allow closing by clicking on background
+
+    // Simple click outside to close
     modal.onclick = function (e) {
         if (e.target === modal) {
             hideCloseConfirmModal();
@@ -65,18 +63,10 @@ window.showCloseConfirmModal = function () {
 window.hideCloseConfirmModal = function () {
     const modal = document.getElementById('close-confirm-modal');
     if (!modal) return;
-    // Remove blur from entire launcher
     document.body.classList.remove('launcher-blur');
-    // Remove click blocker
-    if (modal._clickBlocker) {
-        document.removeEventListener('click', modal._clickBlocker, true);
-        modal._clickBlocker = null;
-    }
-    // Remove onclick handler
-    modal.onclick = null;
-    // modal.style.display = 'none'; // Handled by CSS visibility
     modal.classList.remove('show');
 };
+
 
 window.confirmCloseFromModal = function () {
     try { hideCloseConfirmModal(); } catch (e) { }
@@ -87,55 +77,20 @@ window.confirmCloseFromModal = function () {
 window.confirmClose = async function () {
     isClosing = true;
 
-    // Close window immediately - don't wait for processes to stop
-    try {
-        window.close();
-        // If close() doesn't work, redirect to about:blank
-        setTimeout(() => {
-            if (!document.hidden) {
-                window.location.href = 'about:blank';
-            }
-        }, 100);
-    } catch (e) {
-        // Fallback: redirect to blank page
-        window.location.href = 'about:blank';
-    }
-
-    // Stop all services and clear logs in background (non-blocking)
-    // Use sendBeacon for reliable delivery even after window closes
-    try {
-        if (navigator && typeof navigator.sendBeacon === 'function') {
-            // Clear logs
-            navigator.sendBeacon('/api/logs/clear', '');
-            // Stop all services
-            const stopData = JSON.stringify({ action: 'stop', service: 'all' });
-            navigator.sendBeacon('/api/control', stopData);
-            // Shutdown launcher process
-            navigator.sendBeacon('/api/shutdown', '');
-        } else {
-            // Fallback: use fetch with keepalive
-            fetch('/api/logs/clear', { method: 'POST', keepalive: true }).catch(() => { });
-            fetch('/api/control', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'stop', service: 'all' }),
-                keepalive: true
-            }).catch(() => { });
-            fetch('/api/shutdown', { method: 'POST', keepalive: true }).catch(() => { });
+    // Use backend command to close (exit(0))
+    if (window.__TAURI__) {
+        try {
+            await window.__TAURI__.core.invoke('close_window');
+        } catch (e) {
+            console.error("Failed to invoke close_window:", e);
         }
-    } catch (e) {
-        // Ignore errors - window is already closing
+    } else {
+        // Mock / Web fallback
+        try {
+            window.close();
+            setTimeout(() => { if (!document.hidden) window.location.href = 'about:blank'; }, 100);
+        } catch (e) { window.location.href = 'about:blank'; }
     }
-
-    // Also clear UI logs immediately
-    try {
-        ['logs-general', 'logs-bot', 'logs-llm', 'logs-sd'].forEach(id => {
-            const pane = document.getElementById(id);
-            if (pane) pane.innerHTML = '';
-        });
-        allLogs = [];
-        lastTimestamp = 0;
-    } catch (e) { }
 };
 
 window.changeLanguage = async function (lang) {
@@ -293,11 +248,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 });
 
+/**
+ * @deprecated SD settings moved to module-settings.html
+ */
 function updateSdSettingsLock(installed) {
     // SD settings moved to module-settings.html, this function is no longer needed
     return;
 }
 
+/**
+ * @deprecated SD install check no longer needed
+ */
 async function checkSdInstalled() {
     // SD install check disabled - no longer needed
     return;
@@ -435,3 +396,31 @@ window.confirmLlmStart = function () {
         llmStartModalResolve = null;
     }
 };
+
+// Zoom Support (Ctrl + Scroll)
+document.addEventListener('wheel', function (e) {
+    if (e.ctrlKey) {
+        e.preventDefault();
+        let currentZoom = parseFloat(document.body.style.zoom) || 1;
+        if (e.deltaY < 0) {
+            currentZoom += 0.1;
+        } else {
+            currentZoom -= 0.1;
+        }
+        // Limit zoom
+        currentZoom = Math.min(Math.max(currentZoom, 0.5), 3.0);
+        document.body.style.zoom = currentZoom;
+    }
+}, { passive: false });
+
+// Sync maximize icon on resize (handle external snaps or backend toggles)
+window.addEventListener('resize', async () => {
+   if (window.__TAURI__) {
+       try {
+           const appWindow = window.__TAURI__.window.getCurrentWindow();
+           const isMaximized = await appWindow.isMaximized();
+           updateMaximizeIcon(isMaximized);
+       } catch(e) {}
+   }
+});
+

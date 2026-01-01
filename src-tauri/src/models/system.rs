@@ -4,9 +4,27 @@ use serde::Serialize;
 pub struct SystemStats {
     pub cpu: CpuStats,
     pub ram: RamStats,
+    pub gpu: Option<GpuStats>,
+    pub vram: Option<VramStats>,
     pub disk: DiskStats,
     pub network: NetworkStats,
     pub pid: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct GpuStats {
+    pub usage: u32,
+    pub memory_used: u64,
+    pub memory_total: u64,
+    pub temp: u32,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct VramStats {
+    pub percent: f32,
+    pub used_gb: f32,
+    pub total_gb: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]

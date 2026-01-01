@@ -245,7 +245,7 @@
             </div>
             <!-- Title (hidden when collapsed) -->
             <div class="sidebar-title-wrapper">
-                <div class="app-title" data-i18n="ui.launcher.web.title">Flux Platform</div>
+                <div class="app-title">Flux Platform</div>
             </div>
         </div>
 
@@ -1146,14 +1146,15 @@
     <!-- Close Confirmation Modal -->
     <div id="close-confirm-modal" class="modal-overlay">
         <div class="modal" style="max-width: 400px;">
-            <div class="modal-title" data-i18n="ui.launcher.modal.confirm_close_title">Confirm Close</div>
-            <div class="modal-message" data-i18n="ui.launcher.modal.confirm_close_desc">Are you sure you want to close
-                the launcher? All running processes will be stopped.</div>
+            <div class="modal-title" style="display: flex; align-items: center; gap: 0.5rem;" data-i18n="ui.launcher.modal.confirm_close_title">
+                Confirm Close
+            </div>
+            <div class="modal-message" data-i18n="ui.launcher.web.close_warning">
+                Are you sure you want to close the launcher? All services will be stopped.
+            </div>
             <div class="modal-actions">
-                <button class="modal-btn modal-btn-cancel" onclick="hideCloseConfirmModal()"
-                    data-i18n="ui.launcher.button.cancel">Cancel</button>
-                <button class="modal-btn modal-btn-confirm" onclick="confirmCloseFromModal()"
-                    data-i18n="ui.launcher.button.close">Close</button>
+                <button class="modal-btn modal-btn-cancel" onclick="hideCloseConfirmModal()" data-i18n="ui.launcher.button.cancel">Cancel</button>
+                <button class="modal-btn modal-btn-confirm" onclick="confirmCloseFromModal()" data-i18n="ui.launcher.button.close">Close</button>
             </div>
         </div>
     </div>
