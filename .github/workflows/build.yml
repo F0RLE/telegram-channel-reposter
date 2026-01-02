@@ -33,6 +33,14 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
+      - name: install dependencies (frontend)
+        working-directory: ./src
+        run: npm install
+
+      - name: build frontend
+        working-directory: ./src
+        run: npm run build
+
       - name: Bump Version
         id: bump
         run: |
@@ -52,14 +60,6 @@ jobs:
         run: |
           git tag v${{ env.NEW_VERSION }}
           git push origin v${{ env.NEW_VERSION }}
-
-      - name: install dependencies (frontend)
-        working-directory: ./src
-        run: npm install
-
-      - name: build frontend
-        working-directory: ./src
-        run: npm run build
 
       - name: Build Portable EXE
         working-directory: ./src
