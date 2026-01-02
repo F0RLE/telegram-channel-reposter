@@ -1,5 +1,5 @@
-﻿let modulesLoading = false;
-async function loadModulesTab() {
+﻿let modulesLoading: boolean = false;
+async function loadModulesTab(): Promise<void> {
     const grid = document.getElementById('modules-grid');
     if (!grid) return;
 
@@ -10,10 +10,11 @@ async function loadModulesTab() {
     // Show skeleton loaders (only once)
     const skeletons = grid.querySelectorAll('[id^="modules-grid-skeleton"]');
     skeletons.forEach(s => {
-        s.style.display = 'block';
-        s.style.animation = 'none';
-        void s.offsetWidth; // Force reflow
-        s.style.animation = '';
+        const el = s as HTMLElement;
+        el.style.display = 'block';
+        el.style.animation = 'none';
+        void el.offsetWidth; // Force reflow
+        el.style.animation = '';
     });
 
     try {
@@ -24,21 +25,38 @@ async function loadModulesTab() {
 
 
         // Hide skeleton loaders
-        skeletons.forEach(s => s.style.display = 'none');
+        skeletons.forEach(s => (s as HTMLElement).style.display = 'none');
 
         // Render modules with animation
         renderModules(items);
         showActionFeedback('success');
-    } catch (e) {
-        skeletons.forEach(s => s.style.display = 'none');
-        grid.innerHTML = `<div style="color: var(--danger); padding: 2rem; text-align: center;">Ошибка загрузки модулей: ${e.message}</div>`;
+    } catch (e: unknown) {
+        skeletons.forEach(s => (s as HTMLElement).style.display = 'none');
+        const error = e as Error;
+        grid.innerHTML = `<div style="color: var(--danger); padding: 2rem; text-align: center;">Ошибка загрузки модулей: ${error.message}</div>`;
         showToast('Ошибка загрузки модулей', 'error', 3000, 'Ошибка');
     } finally {
         modulesLoading = false;
     }
 }
 
-function renderModules(items) {
+interface ModuleItem {
+    id: string;
+    name?: string;
+    version?: string;
+    description?: string;
+    type?: string;
+    kind?: string;
+    status?: string;
+    installed?: boolean;
+    icon?: string;
+    removable?: boolean;
+    recommended?: boolean;
+    repo?: string;
+    custom?: boolean;
+}
+
+function renderModules(items: ModuleItem[]): void {
     const grid = document.getElementById('modules-grid');
     if (!grid) return;
     if (!items || items.length === 0) {
@@ -46,14 +64,11 @@ function renderModules(items) {
         return;
     }
 
-    function serviceLabel(type) {
-        // Оставляем возможность для будущих пользовательских модулей,
-        // но для текущих core-модулей подпись скрываем (чтобы не дублировать название).
+    function serviceLabel(type: string): string {
         return '';
     }
 
-    function statusHint(status, installed) {
-        // Убираем шум для рекомендуемых модулей, оставляем только простые статусы при необходимости.
+    function statusHint(status: string, installed: boolean): string {
         if (status === 'recommended') return '';
         if (installed && status === 'installed') return 'Модуль установлен';
         if (status === 'running') return 'Сервис запущен';
@@ -66,7 +81,7 @@ function renderModules(items) {
     const imageGenerationCards = [];
     const generalServicesCards = [];
 
-    function getModuleCategory(type) {
+    function getModuleCategory(type: string): string {
         const typeLower = (type || '').toLowerCase();
         if (typeLower === 'llm' || typeLower.includes('llm') || typeLower.includes('language') || typeLower.includes('text')) {
             return 'textGeneration';
@@ -77,7 +92,7 @@ function renderModules(items) {
         }
     }
 
-    function pushCard(category, html) {
+    function pushCard(category: string, html: string): void {
         if (category === 'textGeneration') textGenerationCards.push(html);
         else if (category === 'imageGeneration') imageGenerationCards.push(html);
         else generalServicesCards.push(html);
@@ -136,12 +151,12 @@ function renderModules(items) {
                                 </div>
                                 ${installed ? `
                                     <div class="module-header-actions">
-                                    <button class="module-action-btn module-action-btn-primary" 
-                                            onclick="event.stopPropagation(); window.openModuleSettings('${mod.id}')" 
+                                    <button class="module-action-btn module-action-btn-primary"
+                                            onclick="event.stopPropagation(); window.openModuleSettings('${mod.id}')"
                                             title="${t('ui.launcher.web.module_settings', 'Настройки')}">
                                         <svg class="icon" style="width: 1rem; height: 1rem;"><use href="#icon-settings"></use></svg>
                                     </button>
-                                        <button class="module-start-stop-btn ${isRunning ? 'running' : 'stopped'}" 
+                                        <button class="module-start-stop-btn ${isRunning ? 'running' : 'stopped'}"
                                                 onclick="event.stopPropagation(); window.toggleModule('${mod.id}')"
                                                 title="${isRunning ? 'Остановить' : 'Запустить'}">
                                         </button>
@@ -234,11 +249,11 @@ function renderModules(items) {
     }
 }
 
-window.addModule = function (category) {
+window.addModule = function (category: string) {
     showAddModuleModal(category);
 }
 
-function toggleModuleContextMenu(moduleId, event) {
+function toggleModuleContextMenu(moduleId: string, event: Event) {
     event.stopPropagation();
     const menus = document.querySelectorAll('.module-context-dropdown');
     menus.forEach(menu => {
@@ -252,7 +267,7 @@ function toggleModuleContextMenu(moduleId, event) {
     }
 }
 
-function closeModuleContextMenu(moduleId) {
+function closeModuleContextMenu(moduleId: string) {
     const menu = document.getElementById(`context-menu-${moduleId}`);
     if (menu) {
         menu.classList.remove('show');
@@ -260,16 +275,16 @@ function closeModuleContextMenu(moduleId) {
 }
 
 document.addEventListener('click', function (e) {
-    if (!e.target.closest('.module-context-menu')) {
+    if (!(e.target as HTMLElement).closest('.module-context-menu')) {
         document.querySelectorAll('.module-context-dropdown').forEach(menu => {
             menu.classList.remove('show');
         });
     }
 });
 
-window.toggleModule = async function (moduleId) {
-    const toggleBtn = document.querySelector(`[onclick*="toggleModule('${moduleId}')"]`) ||
-        document.querySelector(`.module-start-stop-btn[data-module-id="${moduleId}"]`);
+window.toggleModule = async function (moduleId: string) {
+    const toggleBtn = (document.querySelector(`[onclick*="toggleModule('${moduleId}')"]`) ||
+        document.querySelector(`.module-start-stop-btn[data-module-id="${moduleId}"]`)) as HTMLButtonElement | null;
 
     if (toggleBtn) {
         setButtonLoading(toggleBtn, true);
@@ -283,7 +298,7 @@ window.toggleModule = async function (moduleId) {
         showActionFeedback('success');
         await loadModulesTab();
         showToast('Статус модуля обновлен', 'success', 2000, 'Успешно');
-    } catch (e) {
+    } catch (e: any) {
         showActionFeedback('error');
         showToast('Ошибка: ' + e.message, 'error', 3000, 'Ошибка');
     } finally {
@@ -293,20 +308,20 @@ window.toggleModule = async function (moduleId) {
     }
 };
 
-window.viewModuleLogs = function (moduleId) {
+window.viewModuleLogs = function (moduleId: string) {
     showPage('debug');
     const consoleTab = document.querySelector('.debug-tab[onclick*="console"]');
     if (consoleTab) {
-        setDebugTab('console', consoleTab);
+        window.setDebugTab('console', consoleTab as HTMLElement);
     }
 };
 
-function showAddModuleModal(category) {
+function showAddModuleModal(category: string) {
     showToast('Функция добавления модулей будет доступна в будущем', 'info');
 }
 
-window.installModule = async function (id) {
-    const installBtn = document.querySelector(`[onclick*="installModule('${id}')"]`);
+window.installModule = async function (id: string) {
+    const installBtn = document.querySelector(`[onclick*="installModule('${id}')"]`) as HTMLButtonElement | null;
     if (installBtn) {
         setButtonLoading(installBtn, true);
     }
@@ -327,7 +342,7 @@ window.installModule = async function (id) {
             showActionFeedback('error');
             showToast(t('ui.launcher.web.module_install_failed', 'Не удалось установить модуль'), 'error', 3000, 'Ошибка');
         }
-    } catch (e) {
+    } catch (e: any) {
         showActionFeedback('error');
         showToast(t('ui.launcher.web.module_install_failed', 'Не удалось установить модуль') + ': ' + e.message, 'error', 3000, 'Ошибка');
     } finally {
@@ -337,8 +352,8 @@ window.installModule = async function (id) {
     }
 };
 
-window.uninstallModule = async function (id) {
-    const uninstallBtn = document.querySelector(`[onclick*="uninstallModule('${id}')"]`);
+window.uninstallModule = async function (id: string) {
+    const uninstallBtn = document.querySelector(`[onclick*="uninstallModule('${id}')"]`) as HTMLButtonElement | null;
     if (uninstallBtn) {
         setButtonLoading(uninstallBtn, true);
     }
@@ -359,7 +374,7 @@ window.uninstallModule = async function (id) {
             showActionFeedback('error');
             showToast(t('ui.launcher.web.module_remove_failed', 'Не удалось удалить модуль'), 'error', 3000, 'Ошибка');
         }
-    } catch (e) {
+    } catch (e: any) {
         showActionFeedback('error');
         showToast(t('ui.launcher.web.module_remove_failed', 'Не удалось удалить модуль') + ': ' + e.message, 'error', 3000, 'Ошибка');
     } finally {
@@ -369,13 +384,13 @@ window.uninstallModule = async function (id) {
     }
 };
 
-window.openModuleSettings = function (moduleId) {
+window.openModuleSettings = function (moduleId: string) {
     showModuleSettingsModal(moduleId);
 };
 
-let currentModuleId = null;
+currentModuleId = null;
 
-async function showModuleSettingsModal(moduleId) {
+async function showModuleSettingsModal(moduleId: string) {
     currentModuleId = moduleId;
     const modal = document.getElementById('module-settings-modal');
     const loading = document.getElementById('module-settings-loading');
@@ -465,7 +480,7 @@ async function showModuleSettingsModal(moduleId) {
             formContainer.style.transform = 'translateY(0)';
         }, 100);
 
-    } catch (e) {
+    } catch (e: any) {
         loading.style.display = 'none';
         errorDiv.style.display = 'block';
         errorDiv.textContent = 'Ошибка загрузки настроек: ' + e.message;
@@ -485,7 +500,7 @@ function hideModuleSettingsModal() {
 
 // Subscribe to download events
 if (window.listenToEvent) {
-    window.listenToEvent('download://progress', (event) => {
+    window.listenToEvent('download://progress', (event: any) => {
         const payload = event.payload;
         // Payload ID is "module_id.zip", so we strip extension to get module ID
         const moduleId = payload.id.replace('.zip', '');
@@ -493,7 +508,7 @@ if (window.listenToEvent) {
     });
 }
 
-function updateDownloadUI(moduleId, progress) {
+function updateDownloadUI(moduleId: string, progress: any) {
     const card = document.querySelector(`.module-card[data-module-id="${moduleId}"]`);
     if (!card) return;
 
@@ -501,11 +516,11 @@ function updateDownloadUI(moduleId, progress) {
     const headerActions = card.querySelector('.module-header-actions') || card.querySelector('.module-header');
 
     // Remove old install button if present
-    const installBtn = card.querySelector('.module-install-btn');
+    const installBtn = card.querySelector('.module-install-btn') as HTMLElement;
     if (installBtn) installBtn.style.display = 'none';
 
     // Create or update progress bar container
-    let progressContainer = card.querySelector('.download-progress-container');
+    let progressContainer = card.querySelector('.download-progress-container') as HTMLElement;
     if (!progressContainer) {
         progressContainer = document.createElement('div');
         progressContainer.className = 'download-progress-container';

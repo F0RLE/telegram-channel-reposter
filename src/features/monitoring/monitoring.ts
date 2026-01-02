@@ -1,7 +1,8 @@
 
-import { subscribeToSystemStats } from '../events/system.js';
+import { subscribeToSystemStats } from '../../lib/events/system';
+import type { SystemStats } from '../../lib/types';
 
-function initMonitoring() {
+function initMonitoring(): void {
     console.log("[Monitoring] Initializing...");
     const cpuVal = document.getElementById('cpu-percent');
 
@@ -10,7 +11,7 @@ function initMonitoring() {
         return;
     }
 
-    subscribeToSystemStats((stats) => {
+    subscribeToSystemStats((stats: any) => {
         // console.log("[Monitoring] Update", stats); // specific debug
         updateUI(stats);
     });
@@ -41,7 +42,16 @@ if (document.readyState === 'loading') {
     initMonitoring();
 }
 
-function updateUI(stats) {
+interface MonitoringStats {
+    cpu?: { percent: number };
+    ram?: { percent: number; used_gb?: number; total_gb?: number };
+    gpu?: { usage?: number; util?: number; memory_used?: number; memory_total?: number };
+    vram?: { percent: number; used_gb?: number; total_gb?: number; used?: number; total?: number };
+    disk?: { utilization?: number; used_gb: number; total_gb: number; read_rate?: number; write_rate?: number };
+    network?: { download_rate?: number; upload_rate?: number };
+}
+
+function updateUI(stats: any): void {
     const cpuVal = document.getElementById('cpu-percent');
     const cpuBar = document.getElementById('cpu-progress');
     const gpuVal = document.getElementById('gpu-util');
@@ -106,7 +116,7 @@ function updateUI(stats) {
         const write = stats.disk.write_rate || 0;
 
         // Format to MB/s or GB/s only
-        const fmtSpeed = (bytes) => {
+        const fmtSpeed = (bytes: number): string => {
             const mb = bytes / (1024 * 1024);
             if (mb < 1000) return `${mb.toFixed(1)} MB/s`;
             return `${(mb/1024).toFixed(1)} GB/s`;
@@ -129,7 +139,7 @@ function updateUI(stats) {
         const downRate = stats.network.download_rate || 0;
         const upRate = stats.network.upload_rate || 0;
 
-        const fmtNet = (bytes) => {
+        const fmtNet = (bytes: number): string => {
              const mb = bytes / (1024 * 1024);
              return `${mb.toFixed(1)} MB/s`;
         };
@@ -142,7 +152,7 @@ function updateUI(stats) {
     }
 }
 
-function formatBytes(bytes, decimals = 1) {
+function formatBytes(bytes: number, decimals: number = 1): string {
     if (!+bytes) return '0 B';
     const k = 1024;
     const dm = decimals < 0 ? 0 : decimals;

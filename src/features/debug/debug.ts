@@ -1,7 +1,9 @@
 ﻿// Debug Page - Card Resizing and Debug Tools
 // Note: startResize is defined in settings-ui.js
 
-function handleResize(e) {
+
+
+function handleResize(e: MouseEvent): void {
     if (!resizeState.isResizing || !resizeState.card) return;
 
     // Calculate movement relative to start position
@@ -100,7 +102,7 @@ function handleResize(e) {
     console.log('Card resized:', cardId, 'from', currentWidth, 'to', newWidth, 'diffX:', diffX);
 }
 
-function stopResize() {
+function stopResize(): void {
     if (resizeState.card) {
         // Remove resizing class after animation completes
         setTimeout(() => {
@@ -120,67 +122,70 @@ function stopResize() {
 }
 
 // Debug Page Initialization
-function initDebugPage() {
+function initDebugPage(): void {
     // Slider 1
-    const slider1 = document.querySelector('.debug-slider-1');
+    const slider1 = document.querySelector('.debug-slider-1') as HTMLInputElement | null;
     const slider1Value = document.querySelector('.debug-slider-1-value');
     if (slider1 && slider1Value) {
-        slider1.addEventListener('input', function (e) {
-            slider1Value.textContent = e.target.value + '%';
+        slider1.addEventListener('input', function (e: Event): void {
+            const target = e.target as HTMLInputElement;
+            slider1Value.textContent = target.value + '%';
         });
     }
 
     // Slider 2 (animated)
-    const animatedSlider = document.querySelector('.debug-slider-animated');
+    const animatedSlider = document.querySelector('.debug-slider-animated') as HTMLInputElement | null;
     const sliderValue = document.querySelector('.debug-slider-value');
     if (animatedSlider && sliderValue) {
-        animatedSlider.addEventListener('input', function (e) {
-            sliderValue.textContent = e.target.value + '%';
+        animatedSlider.addEventListener('input', function (e: Event): void {
+            const target = e.target as HTMLInputElement;
+            sliderValue.textContent = target.value + '%';
         });
     }
 
     // Slider 3 (gradient)
-    const slider3 = document.querySelector('.debug-slider-3');
+    const slider3 = document.querySelector('.debug-slider-3') as HTMLInputElement | null;
     const slider3Value = document.querySelector('.debug-slider-3-value');
     if (slider3 && slider3Value) {
-        slider3.addEventListener('input', function (e) {
-            slider3Value.textContent = e.target.value + '%';
+        slider3.addEventListener('input', function (e: Event): void {
+            const target = e.target as HTMLInputElement;
+            slider3Value.textContent = target.value + '%';
         });
     }
 
     // Draggable elements - improved
-    const draggable = document.querySelector('.debug-draggable');
+    const draggable = document.querySelector('.debug-draggable') as HTMLElement | null;
     if (draggable) {
         let isDragging = false;
         let startX, startY, initialX, initialY;
 
-        draggable.addEventListener('mousedown', function (e) {
+        draggable.addEventListener('mousedown', function (e: MouseEvent) {
             isDragging = true;
             startX = e.clientX;
             startY = e.clientY;
             const rect = draggable.getBoundingClientRect();
             initialX = rect.left;
             initialY = rect.top;
-            draggable.style.position = 'fixed';
-            draggable.style.zIndex = '10000';
-            draggable.style.cursor = 'grabbing';
+            (draggable as HTMLElement).style.position = 'fixed';
+            (draggable as HTMLElement).style.zIndex = '10000';
+            (draggable as HTMLElement).style.cursor = 'grabbing';
             e.preventDefault();
             e.stopPropagation();
         });
 
-        const handleMouseMove = function (e) {
+        const handleMouseMove = function (e: MouseEvent) {
             if (!isDragging) return;
             e.preventDefault();
             const dx = e.clientX - startX;
             const dy = e.clientY - startY;
-            draggable.style.left = (initialX + dx) + 'px';
-            draggable.style.top = (initialY + dy) + 'px';
+            (draggable as HTMLElement).style.left = (initialX + dx) + 'px';
+            (draggable as HTMLElement).style.top = (initialY + dy) + 'px';
         };
 
         const handleMouseUp = function (e) {
             if (!isDragging) return;
             isDragging = false;
-            draggable.style.cursor = 'move';
+            (draggable as HTMLElement).style.cursor = 'move';
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
@@ -190,7 +195,7 @@ function initDebugPage() {
     }
 
     // Drop zone
-    const dropzone = document.querySelector('.debug-dropzone');
+    const dropzone = document.querySelector('.debug-dropzone') as HTMLElement | null;
     if (dropzone) {
         dropzone.addEventListener('dragover', function (e) {
             e.preventDefault();
@@ -212,7 +217,7 @@ function initDebugPage() {
     }
 }
 
-window.setDebugTab = function (tabId, btn) {
+window.setDebugTab = function (tabId: string, btn: HTMLElement | null): void {
     document.querySelectorAll('.debug-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.debug-tab-content').forEach(p => p.classList.remove('active'));
     if (btn) btn.classList.add('active');
@@ -223,7 +228,7 @@ window.setDebugTab = function (tabId, btn) {
 };
 
 // Load saved card widths
-window.loadCardWidths = function () {
+window.loadCardWidths = function (): void {
     document.querySelectorAll('.resizable-card').forEach(card => {
         // Try to get card ID from data attribute first, fallback to title text
         const cardId = card.getAttribute('data-card-id') ||
@@ -245,31 +250,38 @@ if (document.readyState === 'loading') {
         setTimeout(() => {
             initTaskbarToggles();
             initMonitorToggles();
-            loadCardWidths();
+            window.loadCardWidths();
         }, 500);
     });
 } else {
     setTimeout(() => {
         initTaskbarToggles();
         initMonitorToggles();
-        loadCardWidths();
+        window.loadCardWidths();
     }, 500);
 }
 
-let lastTimestamp = 0, allLogs = [];
-let currentLogView = 'general'; // general | bot | llm | sd
-const LOG_PREFIX_MAP = { "BOT": "🤖", "LLM": "🧠", "SD": "🎨", "SYSTEM": "⚙️" };
+interface LogEntry {
+    level: string;
+    source: string;
+    timestamp: number;
+    message: string;
+}
 
-function normSource(source) {
+let lastTimestamp: number = 0, allLogs: LogEntry[] = [];
+let currentLogView: string = 'general'; // general | bot | llm | sd
+const LOG_PREFIX_MAP: Record<string, string> = { "BOT": "🤖", "LLM": "🧠", "SD": "🎨", "SYSTEM": "⚙️" };
+
+function normSource(source: string | undefined): string {
     const raw = String(source || '').trim();
     return raw.replace(/[^a-z0-9_]/gi, '').toUpperCase();
 }
 
-function getLogPrefix(sourceNorm) {
+function getLogPrefix(sourceNorm: string): string {
     return LOG_PREFIX_MAP[sourceNorm] || "📝";
 }
 
-function logMatchesView(log, view) {
+function logMatchesView(log: LogEntry | undefined, view: string): boolean {
     const s = normSource(log && log.source);
     if (!s) return false;
     if (view === 'bot') return s === 'BOT';
@@ -279,12 +291,12 @@ function logMatchesView(log, view) {
     return s !== 'BOT' && s !== 'LLM' && s !== 'SD';
 }
 
-function getActiveLogsPane() {
+function getActiveLogsPane(): HTMLElement | null {
     const id = `logs-${currentLogView}`;
     return document.getElementById(id) || document.getElementById('logs-general');
 }
 
-window.setLogView = function (view, btn) {
+window.setLogView = function (view: string, btn: HTMLElement | null): void {
     currentLogView = view || 'general';
     document.querySelectorAll('.terminal-tab').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
@@ -294,7 +306,7 @@ window.setLogView = function (view, btn) {
     renderLogs(true);
 };
 
-async function clearBackendLogs() {
+async function clearBackendLogs(): Promise<void> {
     try {
         // Best-effort; even if it fails we still clear UI
         await fetch('/api/logs/clear', { method: 'POST' });
@@ -303,7 +315,7 @@ async function clearBackendLogs() {
     }
 }
 
-window.clearLogs = async function (showMessage = true) {
+window.clearLogs = async function (showMessage: boolean = true): Promise<void> {
     ['logs-general', 'logs-bot', 'logs-llm', 'logs-sd'].forEach(id => {
         const pane = document.getElementById(id);
         if (pane) pane.innerHTML = '';
@@ -316,7 +328,7 @@ window.clearLogs = async function (showMessage = true) {
     }
 };
 
-function createLogEl(log) {
+function createLogEl(log: LogEntry): HTMLElement {
     const div = document.createElement('div');
     div.className = `log-entry level-${log.level}`;
     const sNorm = normSource(log.source);
@@ -327,7 +339,7 @@ function createLogEl(log) {
     return div;
 }
 
-function renderLogs(clear = false) {
+function renderLogs(clear: boolean = false): void {
     const container = getActiveLogsPane();
     if (!container) return;
     if (clear) container.innerHTML = '';
@@ -354,7 +366,7 @@ if (!window.safeJsonParse) {
     };
 }
 
-async function pollLogs() {
+async function pollLogs(): Promise<void> {
     try {
         const res = await fetch(`/api/logs?since=${lastTimestamp}`);
         const text = await res.text();
@@ -381,11 +393,11 @@ async function pollLogs() {
     setTimeout(pollLogs, 1000);
 }
 
-window.updateState = async function () {
+window.updateState = async function (): Promise<void> {
     try {
         const res = await fetch('/api/state');
         const text = await res.text();
-        const data = window.safeJsonParse(text, {});
+        const data = window.safeJsonParse(text, {}) as any;
         const serviceMap = {
             bot: t('ui.launcher.service.telegram_bot', 'Telegram Bot'),
             llm: t('ui.launcher.service.llm_server', 'Ollama'),
@@ -432,7 +444,7 @@ window.updateState = async function () {
             const actions = row.querySelector('.service-actions');
             if (actions) {
                 // Restart button (only when running)
-                let restartBtn = actions.querySelector('.btn-toggle-service.restart');
+                let restartBtn = actions.querySelector('.btn-toggle-service.restart') as HTMLButtonElement | null;
                 if (isRun) {
                     if (!restartBtn) {
                         restartBtn = document.createElement('button');
@@ -449,7 +461,7 @@ window.updateState = async function () {
                 }
 
                 // Main toggle button
-                let toggleBtn = actions.querySelector('.btn-toggle-service.main');
+                let toggleBtn = actions.querySelector('.btn-toggle-service.main') as HTMLButtonElement | null;
                 if (!toggleBtn) {
                     toggleBtn = document.createElement('button');
                     toggleBtn.className = 'btn-toggle-service main';
@@ -497,7 +509,7 @@ window.updateState = async function () {
             const statuses = Object.values(data.services || {});
             const anyError = statuses.includes('error');
             const anyRun2 = statuses.includes('running');
-            statusDot.style.background = anyError ? 'var(--danger)' : (anyRun2 ? 'var(--success)' : 'var(--text-muted)');
+            (statusDot as HTMLElement).style.background = anyError ? 'var(--danger)' : (anyRun2 ? 'var(--success)' : 'var(--text-muted)');
         }
     } catch (e) {
         const statusIndicator = document.getElementById('status-indicator');
@@ -507,14 +519,14 @@ window.updateState = async function () {
     }
 }
 
-async function startSdWithInstallCheck() {
+async function startSdWithInstallCheck(): Promise<void> {
     try {
         const res = await fetch('/api/check_sd_installed');
         if (res.ok) {
             const data = await res.json();
             if (data && data.installed === false) {
                 // Explicit user action: show modal even if previously dismissed.
-                showSdInstallModal();
+                window.showInstallModal();
                 return;
             }
         }
@@ -524,7 +536,7 @@ async function startSdWithInstallCheck() {
     control('start', 'sd');
 }
 
-window.toggleLangDropdown = function (page = 'console') {
+window.toggleLangDropdown = function (page: string = 'console'): void {
     const menuId = `lang-dropdown-menu-${page}`;
     const menu = document.getElementById(menuId);
     if (menu) {

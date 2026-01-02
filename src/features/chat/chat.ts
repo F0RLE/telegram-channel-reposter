@@ -1,5 +1,33 @@
-﻿
-document.addEventListener('keydown', (e) => {
+﻿// Chat Feature - Model Management, Voice Input, System Stats
+
+declare function showToast(message: string, type: string, duration?: number, title?: string): void;
+declare function t(key: string, fallback?: string): string;
+declare function markUnsaved(fieldId: string): void;
+declare function saveSetting(key: string, value: unknown, notify?: boolean, reload?: boolean, fieldId?: string): Promise<void>;
+declare function agentLog(level: string, location: string, action: string, data?: Record<string, unknown>): void;
+declare function loadSdModels(): void;
+// globals declared in vite-env.d.ts
+
+declare function flushLauncherLogs(): void;
+
+interface ChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
+interface ChatAttachment {
+    name: string;
+    type: string;
+    size: number;
+    data_base64: string;
+}
+
+interface ChatImage {
+    mime: string;
+    data_base64: string;
+}
+
+document.addEventListener('keydown', (e: KeyboardEvent): void => {
     // Ctrl/Cmd + S to save current settings
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
@@ -19,10 +47,10 @@ document.addEventListener('keydown', (e) => {
 // Bot token/channel functions removed - moved to module settings
 
 // Paste models directory from clipboard
-window.pasteModelsDir = async function () {
+window.pasteModelsDir = async function (): Promise<void> {
     try {
         const text = await navigator.clipboard.readText();
-        const modelsDirField = document.getElementById('field-models-dir');
+        const modelsDirField = document.getElementById('field-models-dir') as HTMLInputElement | null;
         if (modelsDirField) {
             modelsDirField.value = text;
             markUnsaved('models-dir');
@@ -34,13 +62,13 @@ window.pasteModelsDir = async function () {
 };
 
 // Select models folder via Windows dialog
-window.selectModelsFolder = async function () {
+window.selectModelsFolder = async function (): Promise<void> {
     try {
         showToast(t('ui.launcher.button.opening_folder_dialog', 'Открывается диалог выбора папки...'), 'info', 1000);
         const res = await fetch('/api/select_folder', { method: 'POST' });
         const data = await res.json();
         if (data.ok && data.path) {
-            const modelsDirField = document.getElementById('field-models-dir');
+            const modelsDirField = document.getElementById('field-models-dir') as HTMLInputElement | null;
             if (modelsDirField) {
                 modelsDirField.value = data.path;
                 markUnsaved('models-dir');
@@ -53,15 +81,15 @@ window.selectModelsFolder = async function () {
             }
         }
     } catch (e) {
-        showToast(t('ui.launcher.button.folder_select_failed', 'Не удалось выбрать папку') + ': ' + e.message, 'error');
+        showToast(t('ui.launcher.button.folder_select_failed', 'Не удалось выбрать папку') + ': ' + (e as Error).message, 'error');
     }
 };
 
 // Paste SD models directory from clipboard
-window.pasteSdModelsDir = async function () {
+window.pasteSdModelsDir = async function (): Promise<void> {
     try {
         const text = await navigator.clipboard.readText();
-        const modelsDirField = document.getElementById('field-sd-models-dir');
+        const modelsDirField = document.getElementById('field-sd-models-dir') as HTMLInputElement | null;
         if (modelsDirField) {
             modelsDirField.value = text;
             markUnsaved('sd-models-dir');
@@ -73,13 +101,13 @@ window.pasteSdModelsDir = async function () {
 };
 
 // Select SD models folder via Windows dialog
-window.selectSdModelsFolder = async function () {
+window.selectSdModelsFolder = async function (): Promise<void> {
     try {
         showToast(t('ui.launcher.button.opening_folder_dialog', 'Открывается диалог выбора папки...'), 'info', 1000);
         const res = await fetch('/api/select_folder', { method: 'POST' });
         const data = await res.json();
         if (data.ok && data.path) {
-            const modelsDirField = document.getElementById('field-sd-models-dir');
+            const modelsDirField = document.getElementById('field-sd-models-dir') as HTMLInputElement | null;
             if (modelsDirField) {
                 modelsDirField.value = data.path;
                 markUnsaved('sd-models-dir');
@@ -92,16 +120,16 @@ window.selectSdModelsFolder = async function () {
             }
         }
     } catch (e) {
-        showToast(t('ui.launcher.button.folder_select_failed', 'Не удалось выбрать папку') + ': ' + e.message, 'error');
+        showToast(t('ui.launcher.button.folder_select_failed', 'Не удалось выбрать папку') + ': ' + (e as Error).message, 'error');
     }
 };
 
 // Model download
 let downloadCanceled = false;
-let downloadProgressInterval = null;
+let downloadProgressInterval: ReturnType<typeof setInterval> | null = null;
 
-window.downloadModel = async function () {
-    const urlField = document.getElementById('field-sd-model-url');
+window.downloadModel = async function (): Promise<void> {
+    const urlField = document.getElementById('field-sd-model-url') as HTMLInputElement | null;
     let url = urlField?.value?.trim();
 
     if (!url || url === '') {
@@ -118,7 +146,7 @@ window.downloadModel = async function () {
     }
 
     // Update the field with cleaned URL
-    urlField.value = url;
+    if (urlField) urlField.value = url;
 
     if (!url.startsWith('http')) {
         showToast(t('ui.launcher.web.invalid_url', 'Некорректный URL'), 'error');
@@ -213,7 +241,7 @@ window.downloadModel = async function () {
                     console.error('Error fetching download progress:', e);
                 }
             }, 500);
-        } catch (e) {
+        } catch (e: any) {
             console.error('Download error:', e);
             clearInterval(downloadProgressInterval);
             hideModelDownloadModal();
@@ -222,7 +250,7 @@ window.downloadModel = async function () {
     }
 };
 
-window.cancelModelDownload = function () {
+window.cancelModelDownload = function (): void {
     downloadCanceled = true;
     clearInterval(downloadProgressInterval);
     fetch('/api/cancel_download', { method: 'POST' }).catch(() => { });
@@ -230,7 +258,7 @@ window.cancelModelDownload = function () {
     showToast(t('ui.launcher.web.download_cancelled', 'Загрузка отменена'), 'warning');
 };
 
-window.hideModelDownloadModal = function () {
+window.hideModelDownloadModal = function (): void {
     const modal = document.getElementById('model-download-modal');
     if (modal) {
         modal.style.display = 'none';
@@ -240,7 +268,7 @@ window.hideModelDownloadModal = function () {
 };
 
 // System monitoring update
-window.updateSystemStats = async function () {
+window.updateSystemStats = async function (): Promise<void> {
     try {
         const res = await fetch('/api/system_stats');
         // #region agent log
@@ -458,11 +486,11 @@ const chatQuestions = [
     'Какая тема актуальна?'
 ];
 
-function getRandomChatQuestion() {
+function getRandomChatQuestion(): string {
     return chatQuestions[Math.floor(Math.random() * chatQuestions.length)];
 }
 
-function chatFormatBytes(bytes) {
+function chatFormatBytes(bytes: number): string {
     try {
         const b = Number(bytes || 0);
         if (b < 1024) return `${b} B`;
@@ -477,7 +505,12 @@ function chatFormatBytes(bytes) {
     }
 }
 
-function appendChatMessage(role, content, opts = {}) {
+interface AppendChatOptions {
+    error?: boolean;
+    images?: ChatImage[];
+}
+
+function appendChatMessage(role: string, content: string, opts: AppendChatOptions = {}): void {
     const wrap = document.getElementById('chat-messages');
     const container = document.getElementById('chat-container');
     if (!wrap || !container) return;
@@ -519,7 +552,7 @@ function appendChatMessage(role, content, opts = {}) {
     wrap.scrollTop = wrap.scrollHeight;
 }
 
-function updateChatAttachmentsUI() {
+function updateChatAttachmentsUI(): void {
     const wrap = document.getElementById('chat-attachments');
     if (!wrap) return;
     wrap.innerHTML = '';
@@ -545,7 +578,7 @@ function updateChatAttachmentsUI() {
     });
 }
 
-function readFileAsBase64(file) {
+function readFileAsBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => {
@@ -562,12 +595,12 @@ function readFileAsBase64(file) {
     });
 }
 
-window.pickChatFiles = function () {
+window.pickChatFiles = function (): void {
     const input = document.getElementById('chat-file');
     if (input) input.click();
 };
 
-window.clearChat = function () {
+window.clearChat = function (): void {
     chatHistory = [];
     chatFiles = [];
     const wrap = document.getElementById('chat-messages');
@@ -593,9 +626,9 @@ let audioChunks = [];
 let chunkInterval = null;
 let initialInputText = '';
 
-window.toggleVoiceInput = async function () {
-    const voiceBtn = document.getElementById('chat-voice-btn');
-    const chatInput = document.getElementById('chat-input');
+window.toggleVoiceInput = async function (): Promise<void> {
+    const voiceBtn = document.getElementById('chat-voice-btn') as HTMLElement | null;
+    const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
 
     if (isRecording) {
         stopVoiceRecording();
@@ -643,14 +676,14 @@ window.toggleVoiceInput = async function () {
         // Start Chunk Loop (every 2s for stability)
         chunkInterval = setInterval(processAudioChunk, 2000);
 
-    } catch (e) {
+    } catch (e: any) {
         console.error('Voice input error:', e);
         showToast(t('ui.launcher.web.voice_error', 'Ошибка доступа к микрофону') + ': ' + e.message, 'error', 3000);
         stopVoiceRecording();
     }
 };
 
-async function processAudioChunk(isFinal = false) {
+async function processAudioChunk(isFinal: boolean = false): Promise<void> {
     if (audioChunks.length === 0) return;
     if (!audioContext) return;
 
@@ -668,7 +701,7 @@ async function processAudioChunk(isFinal = false) {
 
         // Upload
         const lang = (typeof currentLang !== 'undefined' ? currentLang : (window.currentLang || 'en'));
-        // User asked for "no forced language", but API needs one. 
+        // User asked for "no forced language", but API needs one.
         // We'll stick to UI language for now as a reasonable default.
         const langParam = lang === 'ru' ? 'ru-RU' : 'en-US';
 
@@ -682,12 +715,12 @@ async function processAudioChunk(isFinal = false) {
         if (data.text && data.text.trim()) {
             if (chatInput) {
                 // If this is not the first chunk, append with space
-                const currentText = chatInput.value;
+                const currentText = (chatInput as HTMLInputElement).value;
                 const prefix = currentText ? (currentText + (currentText.endsWith(' ') ? '' : ' ')) : '';
-                chatInput.value = prefix + data.text;
-                chatInput.scrollTop = chatInput.scrollHeight;
+                (chatInput as HTMLInputElement).value = prefix + data.text;
+                (chatInput as HTMLInputElement).scrollTop = chatInput.scrollHeight;
 
-                // Update initialInputText so if we stop/start we don't dup? 
+                // Update initialInputText so if we stop/start we don't dup?
                 // Actually initialInputText is basically ignored after first chunk append
             }
         }
@@ -697,7 +730,7 @@ async function processAudioChunk(isFinal = false) {
     }
 }
 
-async function stopVoiceRecording() {
+async function stopVoiceRecording(): Promise<void> {
     const voiceBtn = document.getElementById('chat-voice-btn');
     const chatInput = document.getElementById('chat-input');
 
@@ -724,7 +757,7 @@ async function stopVoiceRecording() {
         voiceBtn.style.animation = '';
     }
     if (chatInput) {
-        chatInput.placeholder = t('ui.launcher.web.chat_placeholder_ask', 'Спросите что-нибудь...');
+        (chatInput as HTMLInputElement).placeholder = t('ui.launcher.web.chat_placeholder_ask', 'Спросите что-нибудь...');
         chatInput.focus();
     }
 
@@ -734,7 +767,7 @@ async function stopVoiceRecording() {
 }
 
 // WAV Encoder Helpers
-function exportWAV(chunks, sampleRate) {
+function exportWAV(chunks: Float32Array[], sampleRate: number): Blob {
     // Merge chunks
     let length = 0;
     for (let chunk of chunks) length += chunk.length;
@@ -788,7 +821,7 @@ function exportWAV(chunks, sampleRate) {
     return new Blob([view, buffer16], { type: 'audio/wav' });
 }
 
-function writeString(view, offset, string) {
+function writeString(view: DataView, offset: number, string: string): void {
     for (let i = 0; i < string.length; i++) {
         view.setUint8(offset + i, string.charCodeAt(i));
     }
@@ -796,7 +829,7 @@ function writeString(view, offset, string) {
 
 
 // Auto-detect mode based on text content
-function detectChatMode(text) {
+function detectChatMode(text: string): string {
     if (!text) return 'llm';
     const lowerText = text.toLowerCase();
     const generationKeywords = [
@@ -810,11 +843,11 @@ function detectChatMode(text) {
     return generationKeywords.some(keyword => lowerText.includes(keyword)) ? 'sd' : 'llm';
 }
 
-window.sendChat = async function () {
-    const input = document.getElementById('chat-input');
-    const btn = document.getElementById('chat-send');
+window.sendChat = async function (): Promise<void> {
+    const chatInput = document.getElementById('chat-input') as HTMLInputElement | null;
+    const btn = document.getElementById('chat-send') as HTMLButtonElement | null;
 
-    const text = (input ? input.value : '').trim();
+    const text = (chatInput ? chatInput.value : '').trim();
     if (!text && !chatFiles.length) {
         showToast(t('ui.launcher.web.chat_empty', 'Enter a message or attach a file'), 'error', 2000);
         return;
@@ -827,7 +860,7 @@ window.sendChat = async function () {
     appendChatMessage('user', (text || '') + fileNote);
 
     // Clear input immediately after showing user message
-    if (input) input.value = '';
+    if (chatInput) chatInput.value = '';
 
     const attachments = [];
     const maxTotalBytes = 15 * 1024 * 1024; // 15 MB total
@@ -925,7 +958,7 @@ window.sendChat = async function () {
                 throw new Error('Empty response from server');
             }
             data = JSON.parse(text);
-        } catch (parseError) {
+        } catch (parseError: any) {
             console.error('[Chat] JSON parse error:', parseError, 'Response text:', text?.substring(0, 200));
             data = { ok: false, error: `Ошибка сервера: ${parseError.message || 'Неверный формат ответа'}` };
         }
@@ -948,7 +981,7 @@ window.sendChat = async function () {
         } else {
             appendChatMessage('assistant', (data && data.error) ? String(data.error) : t('ui.launcher.web.chat_error', 'Error'), { error: true });
         }
-    } catch (e) {
+    } catch (e: any) {
         // Remove typing indicator on error too
         removeTypingIndicator(typingId);
         appendChatMessage('assistant', String(e && e.message ? e.message : e), { error: true });
@@ -964,7 +997,7 @@ window.sendChat = async function () {
 };
 
 // Typing indicator functions
-function appendTypingIndicator(id) {
+function appendTypingIndicator(id: string): void {
     const container = document.getElementById('chat-messages');
     if (!container) return;
 
@@ -980,15 +1013,16 @@ function appendTypingIndicator(id) {
     container.scrollTop = container.scrollHeight;
 }
 
-function removeTypingIndicator(id) {
+function removeTypingIndicator(id: string): void {
     const indicator = document.getElementById(id);
     if (indicator) indicator.remove();
 }
 
 // Update range progress for all sliders
-function updateRangeProgress() {
-    document.querySelectorAll('input[type="range"]').forEach(range => {
-        const wrap = range.closest('.range-wrap');
+function updateRangeProgress(): void {
+    document.querySelectorAll('input[type="range"]').forEach(r => {
+        const range = r as HTMLInputElement;
+        const wrap = range.closest('.range-wrap') as HTMLElement;
         if (wrap) {
             const min = parseFloat(range.min) || 0;
             const max = parseFloat(range.max) || 100;
@@ -1000,8 +1034,9 @@ function updateRangeProgress() {
 }
 
 // Update range progress on input
-document.addEventListener('input', (e) => {
-    if (e.target.type === 'range') {
+document.addEventListener('input', (e: Event) => {
+    const target = e.target as HTMLInputElement;
+    if (target && target.type === 'range') {
         updateRangeProgress();
     }
 });
@@ -1013,7 +1048,7 @@ setTimeout(() => {
 }, 100);
 
 // Debug Tab Functions
-window.setDebugTab = function (tabId, btn) {
+window.setDebugTab = function (tabId: string, btn: HTMLElement | null): void {
     // Update buttons
     document.querySelectorAll('.debug-tabs .debug-tab').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
@@ -1026,7 +1061,7 @@ window.setDebugTab = function (tabId, btn) {
     }
 };
 
-window.debugSwitchTab = function (tabId, btn) {
+window.debugSwitchTab = function (tabId: string, btn: HTMLElement): void {
     // Update buttons
     const tabsContainer = btn.closest('.tabs');
     if (tabsContainer) {
@@ -1038,7 +1073,7 @@ window.debugSwitchTab = function (tabId, btn) {
     const container = document.getElementById('debug-tab-content');
     if (container) {
         container.querySelectorAll('.debug-tab-pane').forEach(p => {
-            p.style.display = 'none';
+            (p as HTMLElement).style.display = 'none';
             p.classList.remove('active');
         });
     }
@@ -1055,7 +1090,7 @@ window.debugSwitchTab = function (tabId, btn) {
 let modulesCache = null;
 let modulesFetchPromise = null;
 
-window.fetchModulesCached = async function (force = false) {
+window.fetchModulesCached = async function (force: boolean = false): Promise<unknown> {
     if (force || !modulesCache) {
         if (!modulesFetchPromise || force) {
             modulesFetchPromise = fetch('/api/modules')
@@ -1209,11 +1244,11 @@ window.loadModulesTab = async function () {
                         background: #FFD700;
                         color: #000;
                     }
-                    
+
                     .slot-info { flex: 1; }
                     .slot-title { font-size: 1.2rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.3rem; }
                     .slot-desc { font-size: 0.9rem; color: var(--text-secondary); }
-                    
+
                     .active-module-chip {
                         display: inline-flex;
                         align-items: center;
@@ -1276,7 +1311,7 @@ window.loadModulesTab = async function () {
                         align-items: center;
                         gap: 0.5rem;
                     }
-                    
+
                     /* FAB */
                     .fab-add-container { position: fixed; bottom: 2rem; right: 2rem; z-index: 100; }
                     .fab-add-btn {
@@ -1409,7 +1444,7 @@ window.loadModulesTab = async function () {
 
                 // Eject Button Logic
                 if (isFilled) {
-                    const btn = card.querySelector('.btn-eject');
+                    const btn = card.querySelector('.btn-eject') as HTMLElement;
                     if (btn) {
                         btn.onclick = (e) => {
                             e.stopPropagation();
@@ -1540,7 +1575,7 @@ window.loadModulesTab = async function () {
                     `;
         modulesTab.appendChild(fabContainer);
 
-    } catch (err) {
+    } catch (err: any) {
         console.error("Modules Tab Error:", err);
         modulesTab.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff6b6b;">Failed to load modules: ${err.message}</div>`;
     } finally {
@@ -1549,7 +1584,7 @@ window.loadModulesTab = async function () {
 };
 
 // Helper to remove active module
-window.removeActiveModule = async function (slot) {
+window.removeActiveModule = async function (slot: string): Promise<void> {
     try {
         const res = await fetch('/api/modules/active', {
             method: 'POST',
@@ -1565,8 +1600,9 @@ window.removeActiveModule = async function (slot) {
     }
 };
 
-window.installModule = async function (moduleId, repoUrl) {
-    const btn = event.target;
+window.installModule = async function (moduleId: string, repoUrl: string): Promise<void> {
+    const btn = event?.target as HTMLButtonElement;
+    if (!btn) return;
     const originalText = btn.textContent;
     btn.textContent = 'Installing...';
     btn.disabled = true;
@@ -1587,14 +1623,14 @@ window.installModule = async function (moduleId, repoUrl) {
             btn.textContent = originalText;
             btn.disabled = false;
         }
-    } catch (e) {
-        showToast('Installation error: ' + e.message, 'error');
+    } catch (e: any) {
+        showToast('Installation error: ' + (e.message || e), 'error');
         btn.textContent = originalText;
         btn.disabled = false;
     }
 };
 
-window.removeModule = async function (moduleId) {
+window.removeModule = async function (moduleId: string): Promise<void> {
     if (!confirm(`Are you sure you want to remove ${moduleId}?`)) return;
 
     try {
@@ -1608,13 +1644,13 @@ window.removeModule = async function (moduleId) {
         } else {
             showToast('Removal failed: ' + data.message, 'error');
         }
-    } catch (e) {
-        showToast('Removal error: ' + e.message, 'error');
+    } catch (e: any) {
+        showToast('Removal error: ' + (e.message || e), 'error');
     }
 };
 
 // Install Modal Functions
-window.showInstallModal = function () {
+window.showInstallModal = function (): void {
     // Remove existing modal if any
     const existing = document.getElementById('install-modal-overlay');
     if (existing) existing.remove();
@@ -1643,9 +1679,9 @@ window.showInstallModal = function () {
 
     document.body.appendChild(overlay);
 
-    const input = overlay.querySelector('#install-url-input');
-    const installBtn = overlay.querySelector('#confirm-install-btn');
-    const errorMsg = overlay.querySelector('#install-error-msg');
+    const input = overlay.querySelector('#install-url-input') as HTMLInputElement;
+    const installBtn = overlay.querySelector('#confirm-install-btn') as HTMLButtonElement;
+    const errorMsg = overlay.querySelector('#install-error-msg') as HTMLElement;
 
     // Focus input
     setTimeout(() => input.focus(), 50);
@@ -1673,7 +1709,7 @@ window.showInstallModal = function () {
                 body: JSON.stringify({ repo_url: url })
             });
 
-            const data = await window.safeJsonParse(await res.text(), {});
+            const data = await window.safeJsonParse(await res.text(), {}) as any;
 
             if (data.success) {
                 showToast(`Module installed successfully`, 'success');
@@ -1684,7 +1720,7 @@ window.showInstallModal = function () {
             } else {
                 throw new Error(data.error || 'Installation failed');
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Install error:", e);
             errorMsg.textContent = e.message || "Connection failed";
             errorMsg.style.display = 'block';
@@ -1695,11 +1731,11 @@ window.showInstallModal = function () {
     };
 
     installBtn.onclick = handleInstall;
-    input.onkeydown = (e) => {
+    input.onkeydown = (e: KeyboardEvent) => {
         if (e.key === 'Enter') handleInstall();
     };
 
-    overlay.onclick = (e) => {
+    overlay.onclick = (e: MouseEvent) => {
         if (e.target === overlay) overlay.remove();
     };
 };
@@ -1717,11 +1753,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     launcherLog('INFO', `Sidebar: ${!!sidebar}, Main area: ${!!mainArea}, Body: ${!!body}`);
 
     const navButtons = document.querySelectorAll('#sidebar .nav-btn[data-page]');
-    navButtons.forEach((btn) => {
+    navButtons.forEach((b) => {
+        const btn = b as HTMLElement;
         const pageId = btn.getAttribute('data-page');
         btn.onclick = null;
         btn.removeAttribute('onclick');
-        btn.addEventListener('click', function (e) {
+        btn.addEventListener('click', function (this: HTMLElement, e: Event) {
             e.preventDefault();
             e.stopPropagation();
             const pageId = this.getAttribute('data-page');
@@ -1824,17 +1861,17 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
             if (pageBtn && typeof window.showPage === 'function') {
-                window.showPage(pageParam, pageBtn);
+                window.showPage(pageParam, pageBtn as HTMLElement);
             } else if (typeof window.showPage === 'function') {
                 const homeBtn = document.querySelector('#sidebar .nav-btn[data-page="home"]');
                 if (homeBtn) {
-                    window.showPage('home', homeBtn);
+                    window.showPage('home', homeBtn as HTMLElement);
                 }
             }
         } else {
             const homeBtn = document.querySelector('#sidebar .nav-btn[data-page="home"]');
             if (homeBtn && typeof window.showPage === 'function') {
-                window.showPage('home', homeBtn);
+                window.showPage('home', homeBtn as HTMLElement);
             } else if (typeof window.showPage === 'function') {
                 window.showPage('home');
             }
@@ -1846,12 +1883,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (chatFileEl) {
         chatFileEl.addEventListener('change', () => {
             try {
-                const files = Array.from(chatFileEl.files || []);
+                const files = Array.from((chatFileEl as HTMLInputElement).files || []);
                 if (files.length) {
                     chatFiles.push(...files);
                     updateChatAttachmentsUI();
                 }
-                chatFileEl.value = '';
+                (chatFileEl as HTMLInputElement).value = '';
             } catch (e) { }
         });
     }
@@ -1906,8 +1943,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     parallelSteps.push(() => {
         try {
             if (typeof updateSystemStats === 'function') {
-                updateSystemStats();
-                setInterval(updateSystemStats, 2000);
+                window.updateSystemStats();
+                setInterval(window.updateSystemStats, 2000);
             }
         } catch (err) { }
     });
@@ -2000,7 +2037,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // Expanded state
                     sidebar.classList.remove('collapsed');
                     localStorage.setItem('sidebarState', 'expanded');
-                    localStorage.setItem('sidebarWidth', currentWidth);
+                    localStorage.setItem('sidebarWidth', String(currentWidth));
                 }
             }
         });
@@ -2015,7 +2052,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 .then(res => {
                     if (res.ok) {
                         badge.classList.remove('offline');
-                        const dot = badge.querySelector('.status-dot');
+                        const dot = badge.querySelector('.status-dot') as HTMLElement;
                         if (dot) {
                             dot.style.background = 'var(--success)';
                             dot.style.boxShadow = '0 0 8px var(--success)';
@@ -2049,7 +2086,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }, 2000);
 
-    window.safeJsonParse = function (text, defaultValue = {}) {
+    window.safeJsonParse = function (text: string, defaultValue = {}) {
         try {
             return text ? JSON.parse(text) : defaultValue;
         } catch (e) {
@@ -2059,15 +2096,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     // Safe fetch JSON helper
-    window.safeFetchJson = async function (url, options = {}) {
+    window.safeFetchJson = async function <T>(url: string, defaultValue: T, options?: RequestInit): Promise<T> {
         try {
             const res = await fetch(url, options);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const text = await res.text();
-            return window.safeJsonParse(text, {});
+            return window.safeJsonParse(text, defaultValue);
         } catch (e) {
             console.warn('Fetch JSON error:', e, 'URL:', url);
-            return {};
+            return defaultValue;
         }
     };
 
@@ -2076,12 +2113,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     flushLauncherLogs();
 
     try {
-        if (typeof require !== 'undefined') {
-            const { ipcRenderer } = require('electron');
-            if (ipcRenderer) {
-                ipcRenderer.send('launcher-ready');
-            }
-        }
+    // Electron IPC removed
+    try {
+        console.log('Launcher ready');
+    } catch (e) { }
     } catch (e) { }
 
     setTimeout(() => {
@@ -2108,7 +2143,8 @@ document.addEventListener('keydown', (e) => {
             loadTranslations().then(() => {
                 if (typeof applyTranslations === 'function') applyTranslations();
                 if (typeof loadSettings === 'function') loadSettings();
-                if (typeof loadModules === 'function') loadModules();
+                if (typeof loadSettings === 'function') loadSettings();
+                if (typeof window.loadModulesTab === 'function') window.loadModulesTab();
                 console.log('Soft refresh completed');
             }).catch(err => console.error('Soft refresh error:', err));
         }

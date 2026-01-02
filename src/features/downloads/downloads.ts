@@ -1,5 +1,16 @@
 ﻿
-let downloadsPoller = null;
+interface DownloadProgress {
+    percent?: number;
+    downloaded?: number;
+    total?: number;
+    speed?: number;
+    completed?: boolean;
+    error?: string;
+    label?: string;
+    active?: boolean;
+}
+
+let downloadsPoller: ReturnType<typeof setInterval> | null = null;
 
 function stopDownloadsPolling() {
     if (downloadsPoller) {
@@ -8,7 +19,7 @@ function stopDownloadsPolling() {
     }
 }
 
-function renderDownloadsProgress(progress = {}) {
+function renderDownloadsProgress(progress: DownloadProgress = {}) {
     const percent = Number(progress.percent || 0);
     const downloaded = Number(progress.downloaded || 0);
     const total = Number(progress.total || 0);
@@ -24,7 +35,7 @@ function renderDownloadsProgress(progress = {}) {
     const labelEl = document.getElementById('downloads-item-label');
     const statusEl = document.getElementById('downloads-status');
     const etaEl = document.getElementById('downloads-eta');
-    const mainCard = document.getElementById('downloads-main-card');
+    const mainCard = document.getElementById('downloads-main-card') as HTMLElement | null;
     const emptyText = document.getElementById('downloads-empty-text');
 
     // Check if there's an active download (simplified logic)
@@ -42,9 +53,9 @@ function renderDownloadsProgress(progress = {}) {
 
     // Show/hide main card and empty state
     const downloadsBody = document.getElementById('downloads-body');
-    const downloadsHeader = document.querySelector('.downloads-header');
+    const downloadsHeader = document.querySelector('.downloads-header') as HTMLElement | null;
     if (hasActive) {
-        mainCard.style.display = 'block';
+        if (mainCard) mainCard.style.display = 'block';
         if (downloadsBody) downloadsBody.classList.remove('empty-state');
         if (downloadsHeader) downloadsHeader.style.flex = '0';
 
@@ -52,7 +63,7 @@ function renderDownloadsProgress(progress = {}) {
         const downloadsContainer = document.getElementById('downloads-container');
         if (downloadsContainer) downloadsContainer.style.justifyContent = 'flex-start';
     } else {
-        mainCard.style.display = 'none';
+        if (mainCard) mainCard.style.display = 'none';
         if (downloadsBody) downloadsBody.classList.add('empty-state');
         if (downloadsHeader) downloadsHeader.style.flex = '1';
 
@@ -202,9 +213,9 @@ function loadDownloadSettings() {
 }
 
 // Save settings to localStorage
-window.saveDownloadSettings = function () {
-    const toggle = document.getElementById('download-speed-limit-toggle');
-    const slider = document.getElementById('download-speed-slider');
+window.saveDownloadSettings = function (): void {
+    const toggle = document.getElementById('download-speed-limit-toggle') as HTMLInputElement | null;
+    const slider = document.getElementById('download-speed-slider') as HTMLInputElement | null;
     const controls = document.getElementById('speed-limit-controls');
 
     if (toggle && slider) {
@@ -228,24 +239,25 @@ window.saveDownloadSettings = function () {
     }
 };
 
-window.updateSpeedDisplay = function (value) {
+window.updateSpeedDisplay = function (value: number | string): void {
     const display = document.getElementById('speed-limit-value');
-    const slider = document.getElementById('download-speed-slider');
-    if (display) display.textContent = value;
+    const slider = document.getElementById('download-speed-slider') as HTMLInputElement | null;
+    if (display) display.textContent = String(value);
 
     // Update slider background gradient
     if (slider) {
-        const percent = ((value - 1) / (200 - 1)) * 100;
+        const numValue = typeof value === 'string' ? parseInt(value) : value;
+        const percent = ((numValue - 1) / (200 - 1)) * 100;
         slider.style.background = `linear-gradient(to right, var(--primary) ${percent}%, var(--bg-light) ${percent}%)`;
     }
 };
 
-window.openDownloadSettings = function () {
+window.openDownloadSettings = function (): void {
     loadDownloadSettings();
 
     const overlay = document.getElementById('download-settings-overlay');
-    const toggle = document.getElementById('download-speed-limit-toggle');
-    const slider = document.getElementById('download-speed-slider');
+    const toggle = document.getElementById('download-speed-limit-toggle') as HTMLInputElement | null;
+    const slider = document.getElementById('download-speed-slider') as HTMLInputElement | null;
     const controls = document.getElementById('speed-limit-controls');
 
     if (toggle) {
@@ -253,8 +265,8 @@ window.openDownloadSettings = function () {
         toggle.style.background = toggle.checked ? 'var(--primary)' : 'var(--bg-light)';
     }
     if (slider) {
-        slider.value = downloadSettings.maxSpeed;
-        updateSpeedDisplay(downloadSettings.maxSpeed);
+        slider.value = String(downloadSettings.maxSpeed);
+        window.updateSpeedDisplay(String(downloadSettings.maxSpeed));
     }
     if (controls) {
         controls.style.opacity = downloadSettings.limitEnabled ? '1' : '0.5';
@@ -274,10 +286,11 @@ window.closeDownloadSettings = function () {
     }
 };
 
-window.closeDownloadSettingsOnOverlay = function (event) {
+window.closeDownloadSettingsOnOverlay = function (event: Event): void {
     // Close only if clicked on overlay itself, not on modal content
-    if (event.target.id === 'download-settings-overlay') {
-        closeDownloadSettings();
+    const target = event.target as HTMLElement;
+    if (target.id === 'download-settings-overlay') {
+        window.closeDownloadSettings();
     }
 };
 

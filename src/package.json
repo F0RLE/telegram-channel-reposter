@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri:dev": "cd .. && tauri dev --target x86_64-pc-windows-msvc",
-    "tauri:build": "cd .. && tauri build --target x86_64-pc-windows-msvc"
+    "tauri:dev": "cd .. && src\\node_modules\\.bin\\tauri dev --target x86_64-pc-windows-msvc",
+    "tauri:build": "cd .. && src\\node_modules\\.bin\\tauri build --target x86_64-pc-windows-msvc"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

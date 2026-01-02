@@ -15,10 +15,23 @@
         "resolveJsonModule": true,
         "isolatedModules": true,
         "noEmit": true,
-        /* Linting */
+        /* Allow JS files for gradual migration */
+        "allowJs": true,
+        "checkJs": false,
+        /* Path aliases */
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./*"],
+            "@lib/*": ["lib/*"],
+            "@features/*": ["features/*"],
+            "@components/*": ["components/*"]
+        },
+        /* TypeScript strictness - partial strict mode */
         "strict": true,
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
+        "noImplicitAny": false,
+        "strictNullChecks": false,
+        "noUnusedLocals": false,
+        "noUnusedParameters": false,
         "noFallthroughCasesInSwitch": true,
         /* Vite and Node types */
         "types": [
@@ -27,8 +40,11 @@
         ]
     },
     "include": [
-        "js/**/*",
-        "vite.config.ts",
+        "**/*.ts",
         "vite-env.d.ts"
+    ],
+    "exclude": [
+        "node_modules",
+        "dist"
     ]
 }

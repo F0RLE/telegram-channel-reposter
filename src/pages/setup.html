@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Launcher - Initial Setup</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
         @font-face {
             font-family: 'Monocraft';
             src: url('/fonts/Monocraft.otf') format('opentype'),
@@ -13,14 +15,13 @@
             font-style: normal;
             font-display: swap;
         }
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        
-        * { 
-            margin: 0; 
-            padding: 0; 
-            box-sizing: border-box; 
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'Monocraft', 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
@@ -34,7 +35,7 @@
             position: relative;
             overflow-x: hidden;
         }
-        
+
         /* Animated background particles */
         body::before {
             content: '';
@@ -43,14 +44,14 @@
             left: 0;
             width: 100%;
             height: 100%;
-            background: 
+            background:
                 radial-gradient(circle at 20% 50%, rgba(138, 43, 226, 0.1) 0%, transparent 50%),
                 radial-gradient(circle at 80% 80%, rgba(157, 78, 221, 0.1) 0%, transparent 50%),
                 radial-gradient(circle at 40% 20%, rgba(138, 43, 226, 0.05) 0%, transparent 50%);
             pointer-events: none;
             z-index: 0;
         }
-        
+
         .container {
             background: rgba(26, 25, 32, 0.95);
             backdrop-filter: blur(20px);
@@ -58,7 +59,7 @@
             padding: 48px;
             max-width: 700px;
             width: 100%;
-            box-shadow: 
+            box-shadow:
                 0 20px 60px rgba(0, 0, 0, 0.5),
                 0 0 0 1px rgba(138, 43, 226, 0.1),
                 inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -67,7 +68,7 @@
             z-index: 1;
             animation: fadeInUp 0.6s ease-out;
         }
-        
+
         @keyframes fadeInUp {
             from {
                 opacity: 0;
@@ -78,24 +79,24 @@
                 transform: translateY(0);
             }
         }
-        
+
         .header {
             text-align: center;
             margin-bottom: 40px;
         }
-        
+
         .logo {
             font-size: 48px;
             margin-bottom: 16px;
             display: block;
             animation: pulse 2s ease-in-out infinite;
         }
-        
+
         @keyframes pulse {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.05); }
         }
-        
+
         h1 {
             font-size: 32px;
             font-weight: 700;
@@ -106,18 +107,18 @@
             background-clip: text;
             letter-spacing: -0.5px;
         }
-        
+
         .subtitle {
             color: #a0a0b0;
             font-size: 15px;
             font-weight: 400;
             line-height: 1.6;
         }
-        
+
         .steps-container {
             margin-bottom: 32px;
         }
-        
+
         .step {
             background: linear-gradient(135deg, rgba(38, 37, 45, 0.8) 0%, rgba(30, 29, 37, 0.8) 100%);
             border-radius: 16px;
@@ -129,7 +130,7 @@
             overflow: hidden;
             backdrop-filter: blur(10px);
         }
-        
+
         .step::before {
             content: '';
             position: absolute;
@@ -141,48 +142,48 @@
             opacity: 0;
             transition: opacity 0.3s ease;
         }
-        
+
         .step:hover {
             transform: translateX(4px);
             border-color: rgba(138, 43, 226, 0.3);
             box-shadow: 0 4px 20px rgba(138, 43, 226, 0.1);
         }
-        
+
         .step.active::before {
             opacity: 1;
         }
-        
+
         .step.completed {
             border-color: rgba(40, 167, 69, 0.3);
         }
-        
+
         .step.completed::before {
             background: linear-gradient(180deg, #28a745 0%, #34ce57 100%);
             opacity: 1;
         }
-        
+
         .step.error {
             border-color: rgba(220, 53, 69, 0.3);
         }
-        
+
         .step.error::before {
             background: linear-gradient(180deg, #dc3545 0%, #e85d75 100%);
             opacity: 1;
         }
-        
+
         .step-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
             margin-bottom: 12px;
         }
-        
+
         .step-left {
             display: flex;
             align-items: center;
             gap: 16px;
         }
-        
+
         .step-icon {
             width: 40px;
             height: 40px;
@@ -196,48 +197,48 @@
             flex-shrink: 0;
             transition: all 0.3s ease;
         }
-        
+
         .step.active .step-icon {
             background: linear-gradient(135deg, #8a2be2 0%, #9d4edd 100%);
             color: white;
             box-shadow: 0 4px 12px rgba(138, 43, 226, 0.4);
             animation: iconPulse 1.5s ease-in-out infinite;
         }
-        
+
         @keyframes iconPulse {
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.1); }
         }
-        
+
         .step.completed .step-icon {
             background: linear-gradient(135deg, #28a745 0%, #34ce57 100%);
             color: white;
         }
-        
+
         .step.error .step-icon {
             background: linear-gradient(135deg, #dc3545 0%, #e85d75 100%);
             color: white;
         }
-        
+
         .step-title-group {
             display: flex;
             flex-direction: column;
             gap: 4px;
         }
-        
+
         .step-title {
             font-weight: 600;
             font-size: 16px;
             color: #e0e0e0;
             letter-spacing: -0.2px;
         }
-        
+
         .step-desc {
             color: #a0a0b0;
             font-size: 13px;
             line-height: 1.5;
         }
-        
+
         .step-status {
             font-size: 13px;
             padding: 6px 14px;
@@ -246,60 +247,60 @@
             white-space: nowrap;
             transition: all 0.3s ease;
         }
-        
-        .status-pending { 
-            background: rgba(49, 48, 58, 0.6); 
-            color: #a0a0b0; 
+
+        .status-pending {
+            background: rgba(49, 48, 58, 0.6);
+            color: #a0a0b0;
             border: 1px solid rgba(160, 160, 176, 0.2);
         }
-        
-        .status-checking { 
+
+        .status-checking {
             background: linear-gradient(135deg, #ffc107 0%, #ffb300 100%);
-            color: #000; 
+            color: #000;
             box-shadow: 0 2px 8px rgba(255, 193, 7, 0.3);
             animation: statusPulse 1.5s ease-in-out infinite;
         }
-        
+
         @keyframes statusPulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.8; }
         }
-        
-        .status-success { 
+
+        .status-success {
             background: linear-gradient(135deg, #28a745 0%, #34ce57 100%);
-            color: #fff; 
+            color: #fff;
             box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
         }
-        
-        .status-error { 
+
+        .status-error {
             background: linear-gradient(135deg, #dc3545 0%, #e85d75 100%);
-            color: #fff; 
+            color: #fff;
             box-shadow: 0 2px 8px rgba(220, 53, 69, 0.3);
         }
-        
+
         .progress-section {
             margin: 32px 0;
         }
-        
+
         .progress-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 12px;
         }
-        
+
         .progress-label {
             font-size: 14px;
             font-weight: 500;
             color: #a0a0b0;
         }
-        
+
         .progress-percent {
             font-size: 14px;
             font-weight: 600;
             color: #9d4edd;
         }
-        
+
         .progress-bar {
             width: 100%;
             height: 8px;
@@ -309,7 +310,7 @@
             position: relative;
             box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
         }
-        
+
         .progress-fill {
             height: 100%;
             background: linear-gradient(90deg, #8a2be2 0%, #9d4edd 50%, #c77dff 100%);
@@ -318,7 +319,7 @@
             position: relative;
             box-shadow: 0 0 20px rgba(138, 43, 226, 0.5);
         }
-        
+
         .progress-fill::after {
             content: '';
             position: absolute;
@@ -326,23 +327,23 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: linear-gradient(90deg, 
-                transparent 0%, 
-                rgba(255, 255, 255, 0.3) 50%, 
+            background: linear-gradient(90deg,
+                transparent 0%,
+                rgba(255, 255, 255, 0.3) 50%,
                 transparent 100%);
             animation: shimmer 2s infinite;
         }
-        
+
         @keyframes shimmer {
             0% { transform: translateX(-100%); }
             100% { transform: translateX(100%); }
         }
-        
+
         .message-container {
             margin-top: 24px;
             min-height: 50px;
         }
-        
+
         .error-msg, .success-msg {
             padding: 16px 20px;
             border-radius: 12px;
@@ -353,7 +354,7 @@
             gap: 12px;
             animation: slideIn 0.3s ease-out;
         }
-        
+
         @keyframes slideIn {
             from {
                 opacity: 0;
@@ -364,19 +365,19 @@
                 transform: translateY(0);
             }
         }
-        
+
         .error-msg {
             background: linear-gradient(135deg, rgba(220, 53, 69, 0.15) 0%, rgba(232, 93, 117, 0.1) 100%);
             color: #ff6b7a;
             border: 1px solid rgba(220, 53, 69, 0.3);
         }
-        
+
         .success-msg {
             background: linear-gradient(135deg, rgba(40, 167, 69, 0.15) 0%, rgba(52, 206, 87, 0.1) 100%);
             color: #4ade80;
             border: 1px solid rgba(40, 167, 69, 0.3);
         }
-        
+
         .btn {
             background: linear-gradient(135deg, #8a2be2 0%, #9d4edd 100%);
             color: white;
@@ -394,7 +395,7 @@
             box-shadow: 0 4px 20px rgba(138, 43, 226, 0.3);
             letter-spacing: 0.3px;
         }
-        
+
         .btn::before {
             content: '';
             position: absolute;
@@ -407,32 +408,32 @@
             transform: translate(-50%, -50%);
             transition: width 0.6s, height 0.6s;
         }
-        
+
         .btn:hover::before {
             width: 300px;
             height: 300px;
         }
-        
-        .btn:hover { 
+
+        .btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 30px rgba(138, 43, 226, 0.4);
         }
-        
+
         .btn:active {
             transform: translateY(0);
         }
-        
-        .btn:disabled { 
+
+        .btn:disabled {
             background: rgba(49, 48, 58, 0.6);
-            cursor: not-allowed; 
+            cursor: not-allowed;
             opacity: 0.6;
             box-shadow: none;
         }
-        
+
         .btn:disabled:hover {
             transform: none;
         }
-        
+
         .btn-text {
             position: relative;
             z-index: 1;
@@ -446,9 +447,9 @@
             <h1>Launcher Setup</h1>
             <div class="subtitle">Установка необходимых компонентов для первого запуска</div>
         </div>
-        
+
         <div class="steps-container" id="steps-container"></div>
-        
+
         <div class="progress-section">
             <div class="progress-header">
                 <span class="progress-label">Общий прогресс</span>
@@ -458,9 +459,9 @@
                 <div class="progress-fill" id="progress-fill"></div>
             </div>
         </div>
-        
+
         <div class="message-container" id="message-container"></div>
-        
+
         <button class="btn" id="install-btn" onclick="startInstallation()">
             <span class="btn-text">Начать установку</span>
         </button>
@@ -500,10 +501,10 @@
             const statusEl = document.getElementById(`status-${stepId}`);
             const stepEl = document.getElementById(`step-${stepId}`);
             if (!statusEl || !stepEl) return;
-            
+
             // Remove all status classes
             stepEl.classList.remove('active', 'completed', 'error');
-            
+
             statusEl.className = `step-status status-${status}`;
             const statusText = {
                 'pending': 'Ожидание',
@@ -512,7 +513,7 @@
                 'error': '✗ Ошибка'
             };
             statusEl.textContent = statusText[status] || status;
-            
+
             // Add appropriate class to step
             if (status === 'checking') {
                 stepEl.classList.add('active');
@@ -521,7 +522,7 @@
             } else if (status === 'error') {
                 stepEl.classList.add('error');
             }
-            
+
             if (message) {
                 const descEl = stepEl.querySelector('.step-desc');
                 if (descEl) descEl.textContent = message;
@@ -548,7 +549,7 @@
         async function startInstallation() {
             if (installationInProgress) return;
             installationInProgress = true;
-            
+
             const btn = document.getElementById('install-btn');
             const btnText = btn.querySelector('.btn-text');
             btn.disabled = true;
@@ -558,17 +559,17 @@
             // Step 1: Install Python packages
             updateStepStatus('packages', 'checking');
             updateProgress(10);
-            
+
             try {
                 const packagesRes = await fetch('/api/setup/check_packages');
                 const packagesData = await packagesRes.json();
-                
+
                 if (packagesData.missing && packagesData.missing.length > 0) {
                     updateStepStatus('packages', 'checking', `Установка ${packagesData.missing.length} пакетов...`);
-                    
+
                     const installRes = await fetch('/api/setup/install_packages', { method: 'POST' });
                     const installData = await installRes.json();
-                    
+
                     if (installData.success) {
                         updateStepStatus('packages', 'success');
                         updateProgress(20);
@@ -596,11 +597,11 @@
             // Step 2: Check Python
             updateStepStatus('python', 'checking');
             updateProgress(40);
-            
+
             try {
                 const pythonRes = await fetch('/api/setup/check_python');
                 const pythonData = await pythonRes.json();
-                
+
                 if (pythonData.installed) {
                     updateStepStatus('python', 'success');
                 } else {
@@ -623,11 +624,11 @@
             // Step 3: Check Git
             updateStepStatus('git', 'checking');
             updateProgress(60);
-            
+
             try {
                 const gitRes = await fetch('/api/setup/check_git');
                 const gitData = await gitRes.json();
-                
+
                 if (gitData.installed) {
                     updateStepStatus('git', 'success');
                 } else {
@@ -642,11 +643,11 @@
             // Step 4: Install Ollama
             updateStepStatus('ollama', 'checking');
             updateProgress(80);
-            
+
             try {
                 const ollamaRes = await fetch('/api/setup/install_ollama', { method: 'POST' });
                 const ollamaData = await ollamaRes.json();
-                
+
                 if (ollamaData.success) {
                     updateStepStatus('ollama', 'success');
                 } else {
@@ -661,11 +662,11 @@
             // Step 5: Install Bot Dependencies
             updateStepStatus('bot', 'checking');
             updateProgress(95);
-            
+
             try {
                 const botRes = await fetch('/api/setup/install_bot', { method: 'POST' });
                 const botData = await botRes.json();
-                
+
                 if (botData.success) {
                     updateStepStatus('bot', 'success');
                 } else {
@@ -677,7 +678,7 @@
 
             updateProgress(100);
             showMessage('Установка завершена! Закрытие окна установки и открытие лаунчера...', 'success');
-            
+
             // Notify backend that installation is complete
             fetch('/api/setup/complete', { method: 'POST' })
                 .then(() => {

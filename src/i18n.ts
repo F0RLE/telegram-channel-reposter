@@ -1,9 +1,12 @@
-﻿let translations = {};
-let currentLang = 'en';
-window.currentLang = currentLang; // Expose to window for other modules
-let langModalShown = false;
+﻿import type { TranslationDictionary } from './lib/types';
+import { invoke, isTauri } from './lib/tauri';
 
-async function getSystemLanguage() {
+let translations: TranslationDictionary = {};
+// Initialize global currentLang
+window.currentLang = 'en';
+let langModalShown: boolean = false;
+
+async function getSystemLanguage(): Promise<string> {
     try {
         const res = await fetch('/api/system_language');
         const data = await res.json();
@@ -15,14 +18,14 @@ async function getSystemLanguage() {
 }
 window.getSystemLanguage = getSystemLanguage;
 
-async function loadTranslations(lang = null) {
+async function loadTranslations(lang: string | null = null): Promise<void> {
     try {
-        const langToLoad = lang || currentLang;
+        const langToLoad = lang || window.currentLang;
 
         // Native Tauri path if available
-        if (window.__TAURI__) {
+        if (isTauri) {
             try {
-                translations = await window.__TAURI__.core.invoke('get_translations', { lang: langToLoad });
+                translations = await invoke('get_translations', { lang: langToLoad });
             } catch (e) {
                 console.error("Native translation load failed", e);
                 // Fallback?
@@ -45,17 +48,17 @@ async function loadTranslations(lang = null) {
             }
         }
 
-        currentLang = langToLoad;
+        window.currentLang = langToLoad;
 
         if (lang) {
             // Save to localStorage
             localStorage.setItem('web_launcher_language', lang);
 
             // Update Backend Settings
-            if (window.__TAURI__) {
+            if (isTauri) {
                 try {
-                    await window.__TAURI__.core.invoke('save_setting', { key: 'LANGUAGE', value: lang });
-                    await window.__TAURI__.core.invoke('save_setting', { key: 'BOT_LANGUAGE', value: '' });
+                    await invoke('save_setting', { key: 'LANGUAGE', value: lang });
+                    await invoke('save_setting', { key: 'BOT_LANGUAGE', value: '' });
                 } catch (e) { console.error("Native settings save failed", e); }
             } else {
                 try {
@@ -78,8 +81,8 @@ async function loadTranslations(lang = null) {
         applyTranslations();
         initEmojiFlags();
         updateLangButtons();
-        if (typeof updateCurrentLangFlag === 'function') {
-            updateCurrentLangFlag();
+        if (typeof window.updateCurrentLangFlag === 'function') {
+            window.updateCurrentLangFlag();
         }
     } catch (e) {
         console.error("Failed to load translations:", e);
@@ -89,17 +92,17 @@ async function loadTranslations(lang = null) {
 window.loadTranslations = loadTranslations;
 
 // Language Switcher Logic
-const langFlagClasses = { en: 'flag-gb', ru: 'flag-ru', zh: 'flag-cn' };
+const langFlagClasses: Record<string, string> = { en: 'flag-gb', ru: 'flag-ru', zh: 'flag-cn' };
 
 // Toggle sliding menu
-window.toggleLangMenu = function () {
+window.toggleLangMenu = function (): void {
     const menu = document.getElementById('lang-menu-items');
     if (menu) {
         menu.classList.toggle('open');
     }
 };
 
-window.toggleSidebarLangMenu = function () {
+window.toggleSidebarLangMenu = function (): void {
     const menu = document.getElementById('sidebar-lang-menu');
     if (menu) {
         menu.classList.toggle('open');
@@ -107,24 +110,25 @@ window.toggleSidebarLangMenu = function () {
 };
 
 // Close menu when clicking outside
-document.addEventListener('click', function (e) {
+document.addEventListener('click', function (e: Event): void {
+    const target = e.target as HTMLElement;
     // Top bar switcher
     const root = document.querySelector('.lang-switcher-root');
     const menu = document.getElementById('lang-menu-items');
-    if (menu && menu.classList.contains('open') && root && !root.contains(e.target)) {
+    if (menu && menu.classList.contains('open') && root && !root.contains(target)) {
         menu.classList.remove('open');
     }
 
     // Sidebar switcher
     const sidebarRoot = document.querySelector('.sidebar-lang-switcher');
     const sidebarMenu = document.getElementById('sidebar-lang-menu');
-    if (sidebarMenu && sidebarMenu.classList.contains('open') && sidebarRoot && !sidebarRoot.contains(e.target)) {
+    if (sidebarMenu && sidebarMenu.classList.contains('open') && sidebarRoot && !sidebarRoot.contains(target)) {
         sidebarMenu.classList.remove('open');
     }
 });
 
 // Update UI based on current language
-function updateLangSwitcherUI() {
+function updateLangSwitcherUI(): void {
     // Update Current Language Button Icon
     const triggerBtn = document.getElementById('current-lang-trigger');
     if (triggerBtn) {
@@ -133,28 +137,26 @@ function updateLangSwitcherUI() {
 
         // Create new flag span
         const span = document.createElement('span');
-        span.className = `flag-icon ${langFlagClasses[currentLang] || 'flag-gb'}`;
+        span.className = `flag-icon ${langFlagClasses[window.currentLang] || 'flag-gb'}`;
         triggerBtn.appendChild(span);
     }
 
-    // Highlight active in menu (optional, or just show others?)
-    // For now, let's just make sure the active one is styled if desired,
-    // but main requirement is "flags next to flags" in the menu.
-    // Hide current language in menu, show others
+    // Highlight active in menu
     document.querySelectorAll('.lang-menu-items .lang-btn').forEach(btn => {
+        const el = btn as HTMLElement;
         const lang = btn.getAttribute('data-lang');
-        if (lang === currentLang) {
-            btn.style.display = 'none';
+        if (lang === window.currentLang) {
+            el.style.display = 'none';
         } else {
-            btn.style.display = 'flex';
-            btn.style.opacity = '1';
+            el.style.display = 'flex';
+            el.style.opacity = '1';
         }
     });
 }
 
-window.setLanguage = async function (lang) {
+window.setLanguage = async function (lang: string): Promise<void> {
     // Optimistic UI update
-    currentLang = lang;
+    window.currentLang = lang;
     updateLangSwitcherUI();
 
     // Close menu after selection
@@ -173,12 +175,12 @@ window.updateCurrentLangFlag = function () {
 window.toggleLangDropdown = function () { };
 window.updateLangButtons = function () { updateLangSwitcherUI(); };
 
-function t(key, defaultText = '') {
+function t(key: string, defaultText: string = ''): string {
     return translations[key] || defaultText || key;
 }
 window.t = t;
 
-function applyTranslations() {
+function applyTranslations(): void {
     // Note: We don't need to store flags here because we restore them using String.fromCodePoint
     // which ensures consistent emoji display regardless of what was there before
 
@@ -188,8 +190,8 @@ function applyTranslations() {
             return;
         }
         const key = el.getAttribute('data-i18n');
-        const text = t(key, el.textContent);
-        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+        const text = t(key, el.textContent || '');
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
             if (el.type === 'password' || el.type === 'text') {
                 // Only update placeholder, not value
                 if (!el.value || el.value === el.getAttribute('data-original-value')) {
@@ -198,7 +200,7 @@ function applyTranslations() {
             } else {
                 el.placeholder = text;
             }
-        } else if (el.tagName === 'OPTION') {
+        } else if (el instanceof HTMLOptionElement) {
             // Don't change option text if it's already set
             if (!el.hasAttribute('data-i18n-set')) {
                 el.textContent = text;
@@ -246,13 +248,15 @@ function applyTranslations() {
     // Apply placeholders with data-i18n-placeholder
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         const key = el.getAttribute('data-i18n-placeholder');
-        el.placeholder = t(key, el.placeholder);
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+            el.placeholder = t(key, el.placeholder);
+        }
     });
 
     // Apply titles (tooltips) with data-i18n-title
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
         const key = el.getAttribute('data-i18n-title');
-        el.title = t(key, el.title);
+        (el as HTMLElement).title = t(key, (el as HTMLElement).title);
     });
 
     // Keep language button state in sync (flags are SVG, not emoji)
@@ -264,7 +268,7 @@ function updateLangButtonsHelper() {
     // Helper for legacy support if needed, but main logic is in updateLangSwitcherUI
 }
 
-function initEmojiFlags() {
+function initEmojiFlags(): void {
     // Backward-compat: older code calls this; our flags are SVG so we just sync state.
     updateLangButtons();
 }

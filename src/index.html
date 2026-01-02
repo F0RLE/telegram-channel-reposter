@@ -10,9 +10,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/main.css?v=4">
-    <link rel="stylesheet" href="css/inline-body-styles.css?v=4">
-    <link rel="stylesheet" href="css/styles-sysmon.css?v=1">
+    <link rel="stylesheet" href="styles/main.css?v=5">
+    <link rel="stylesheet" href="styles/inline-body-styles.css?v=5">
+    <link rel="stylesheet" href="styles/styles-sysmon.css?v=2">
 </head>
 
 <body>
@@ -379,7 +379,7 @@
                 </svg> <span data-i18n="ui.launcher.web.downloads">Загрузки</span></button>
         </div>
 
-        <!-- Sidebar footer removed -->
+
     </div>
 
     </div>
@@ -460,7 +460,7 @@
             </div>
         </div>
 
-        <!-- Console Page - Redirected to Debug -->
+
 
 
         <!-- Downloads Page -->
@@ -496,7 +496,7 @@
                         </svg>
                     </button>
 
-                    <!-- Test Controls Removed -->
+
 
 
                     <div id="downloads-body" class="downloads-layout" style="padding: 0 2rem 2rem 2rem; width: 100%;">
@@ -618,17 +618,17 @@
             </div>
         </div>
 
-        <script type="module" src="./js/ui/particles.js"></script>
-        <script type="module" src="./js/ui/sound-fx.js"></script>
-        <script type="module" src="./js/ui/sidebar.js"></script>
-        <script type="module" src="./js/ui/monitoring.js"></script>
+        <script type="module" src="./components/effects/particles.ts"></script>
+        <script type="module" src="./lib/utils/sound.ts"></script>
+        <script type="module" src="./components/sidebar/sidebar.ts"></script>
+        <script type="module" src="./features/monitoring/monitoring.ts"></script>
 
         <!-- Debug Page (Console) -->
         <div id="page-debug" class="page">
             <div class="debug-layout">
 
                 <!-- Page Header (Matches Settings Header) -->
-                <!-- Header removed by user request -->
+
 
                 <!-- Console Card (Matches Settings Card) -->
                 <div class="console-card">
@@ -670,7 +670,7 @@
                 style="padding: 2rem 2rem 2rem 2rem; max-width: 1600px; margin: 0 auto; width: 100%; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 1.5rem;">
 
                 <!-- Header -->
-                <!-- Header removed by user request -->
+
 
                 <!-- Settings Cards Grid -->
                 <div
@@ -696,7 +696,7 @@
                         </div>
                         <div style="margin-bottom: 1rem; flex: 1;">
                             <div id="taskbar-toggles" style="display: flex; flex-direction: column; gap: 0.5rem;">
-                                <!-- Will be populated by JS -->
+
                             </div>
                         </div>
                     </div>
@@ -722,7 +722,7 @@
                         </div>
                         <div style="margin-bottom: 0.5rem; flex: 1;">
                             <div id="monitor-toggles" style="display: flex; flex-direction: column; gap: 0.5rem;">
-                                <!-- Will be populated by JS -->
+
                             </div>
                         </div>
                     </div>
@@ -738,7 +738,7 @@
                     Над чем сосредоточен?</div>
 
                 <div id="chat-messages">
-                    <!-- messages -->
+
                 </div>
 
                 <!-- Clear chat button (floating, bottom-right) -->
@@ -822,7 +822,7 @@
                 <div id="module-settings-form-container" style="display: none;">
                     <form id="module-settings-form">
                         <div id="module-settings-fields">
-                            <!-- Fields will be generated dynamically -->
+
                         </div>
                     </form>
                 </div>
@@ -1015,7 +1015,7 @@
             <div id="module-settings-form-container"
                 style="display: none; flex: 1; overflow-y: auto; padding-right: 0.5rem;">
                 <div id="module-settings-fields">
-                    <!-- Fields injected here -->
+
                 </div>
             </div>
 
@@ -1088,17 +1088,17 @@
         </div>
     </div>
 
-    <script type="module" src="./js/core/tauri-bridge.js"></script>
-    <script type="module" src="./js/core/core.js?v=5"></script>
-    <script type="module" src="./js/ui/ui.js?v=5"></script>
-    <script type="module" src="./js/core/i18n.js?v=5"></script>
-    <script type="module" src="./js/features/downloads.js?v=5"></script>
-    <script type="module" src="./js/features/modules.js?v=5"></script>
-    <script type="module" src="./js/features/settings-ui.js?v=5"></script>
-    <script type="module" src="./js/data/settings-data.js?v=5"></script>
-    <script type="module" src="./js/features/debug.js?v=5"></script>
-    <script type="module" src="./js/core/window.js?v=5"></script>
-    <script type="module" src="./js/features/chat.js?v=5"></script>
+    <script type="module" src="./lib/tauri.ts"></script>
+    <script type="module" src="./lib/utils/dom.ts"></script>
+    <script type="module" src="./components/toast/toast.ts"></script>
+    <script type="module" src="./i18n.ts"></script>
+    <script type="module" src="./features/downloads/downloads.ts"></script>
+    <script type="module" src="./features/modules/modules.ts"></script>
+    <script type="module" src="./features/settings/settings.ts"></script>
+    <script type="module" src="./lib/data/settings.ts"></script>
+    <script type="module" src="./features/debug/debug.ts"></script>
+    <script type="module" src="./lib/window.ts"></script>
+    <script type="module" src="./features/chat/chat.ts"></script>
 </body>
 
 </html>

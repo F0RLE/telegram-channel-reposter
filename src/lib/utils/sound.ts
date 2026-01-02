@@ -1,11 +1,18 @@
+// Sound Effects Module
+
 class SoundFX {
+    ctx: AudioContext;
+    enabled: boolean;
+    lastHovered: Element | null;
+
     constructor() {
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-        this.enabled = true; // Could be linked to settings
+        this.ctx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+        this.enabled = true;
+        this.lastHovered = null;
         this.initListeners();
     }
 
-    playTone(freq, type, duration, vol = 0.05) {
+    playTone(freq: number, type: OscillatorType, duration: number, vol: number = 0.05): void {
         if (!this.enabled) return;
         if (this.ctx.state === 'suspended') this.ctx.resume();
 
@@ -33,13 +40,13 @@ class SoundFX {
     }
 
     // High tech but subtle 'blip' for hover
-    playHover() {
+    playHover(): void {
         // Very soft shine/triangle wave, muffled
         this.playTone(600, 'sine', 0.05, 0.015);
     }
 
     // Redesigned 'click' - Underwater/Muffled
-    playClick() {
+    playClick(): void {
         if (!this.enabled) return;
         if (this.ctx.state === 'suspended') this.ctx.resume();
 
@@ -71,7 +78,7 @@ class SoundFX {
     }
 
     // Toggle sound (rising/falling)
-    playToggle(state) {
+    playToggle(state: boolean): void {
         if (this.ctx.state === 'suspended') this.ctx.resume();
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
@@ -97,13 +104,13 @@ class SoundFX {
         osc.stop(now + 0.15);
     }
 
-    initListeners() {
+    initListeners(): void {
         // Attach to common UI elements
         this.lastHovered = null;
 
         document.addEventListener('mouseover', (e) => {
             // Use closest to find the main interactive container
-            const target = e.target.closest('button, .nav-btn, .toggle, .sidebar-toggle-btn, .taskbar-toggle-item, .monitor-toggle-btn');
+            const target = (e.target as HTMLElement).closest('button, .nav-btn, .toggle, .sidebar-toggle-btn, .taskbar-toggle-item, .monitor-toggle-btn');
 
             if (target) {
                 // Only play if we entered a NEW interactive element
@@ -125,7 +132,7 @@ class SoundFX {
         });
 
         document.addEventListener('mousedown', (e) => {
-            if (e.target.closest('button, .nav-btn, .toggle, .taskbar-toggle-item, .monitor-toggle-btn')) {
+            if ((e.target as HTMLElement).closest('button, .nav-btn, .toggle, .sidebar-toggle-btn, .taskbar-toggle-item, .monitor-toggle-btn')) {
                 this.playClick();
             }
         });

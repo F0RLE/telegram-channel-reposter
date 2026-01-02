@@ -1,7 +1,23 @@
+interface Particle {
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    size: number;
+    color: string;
+}
+
 class CyberpunkParticles {
+    private canvas: HTMLCanvasElement;
+    private ctx: CanvasRenderingContext2D;
+    private particles: Particle[] = [];
+    private mouse = { x: -100, y: -100 };
+    private width = 0;
+    private height = 0;
+
     constructor() {
         this.canvas = document.createElement('canvas');
-        this.ctx = this.canvas.getContext('2d');
+        this.ctx = this.canvas.getContext('2d')!;
         document.body.appendChild(this.canvas);
 
         this.canvas.style.position = 'fixed';
@@ -13,8 +29,6 @@ class CyberpunkParticles {
         this.canvas.style.zIndex = '-1'; // Behind everything
         this.canvas.style.filter = 'blur(4px)'; // underwater/dreamy effect
 
-        this.particles = [];
-        this.mouse = { x: -100, y: -100 };
         this.resize();
         this.init();
 

@@ -1,6 +1,27 @@
 ﻿// Window control functions for Tauri desktop application
-let isClosing = false;
-window.minimizeWindow = async function () {
+
+declare function showToast(message: string, type: string, duration?: number): void;
+declare function t(key: string, fallback?: string): string;
+declare function loadTranslations(lang: string): Promise<void>;
+declare function applyTranslations(): void;
+declare function initEmojiFlags(): void;
+declare function updateLangButtons(): void;
+declare function updateState(): Promise<void>;
+declare function loadSettings(): void;
+declare function control(action: string, service: string): Promise<void>;
+declare function getSystemLanguage(): Promise<string>;
+declare function hideCloseConfirmModal(): void;
+declare function confirmClose(): void;
+declare function hideLlmStartModal(): void;
+declare function hideReinstallSdModal(): void;
+declare function hideSdInstallModal(): void;
+declare function showSdReinstallProgress(): void;
+declare function hideSdReinstallProgress(): void;
+declare function updateMaximizeIcon(isMaximized: boolean): void;
+declare let langModalShown: boolean;
+
+let isClosing: boolean = false;
+window.minimizeWindow = async function (): Promise<void> {
     if (window.__TAURI__) {
         try {
             await window.__TAURI__.core.invoke('minimize_window');
@@ -14,7 +35,7 @@ window.minimizeWindow = async function () {
     }
 };
 
-window.toggleMaximizeWindow = async function () {
+window.toggleMaximizeWindow = async function (): Promise<void> {
     if (window.__TAURI__) {
         try {
             // Let backend handle the toggle state
@@ -31,7 +52,7 @@ window.toggleMaximizeWindow = async function () {
 };
 
 // Update maximize icon based on window state (global function for Electron)
-window.updateMaximizeIcon = function (isMaximized) {
+window.updateMaximizeIcon = function (isMaximized: boolean): void {
     const maximizeIcon = document.getElementById('maximize-icon');
     if (!maximizeIcon) return;
 
@@ -44,7 +65,7 @@ window.updateMaximizeIcon = function (isMaximized) {
     }
 };
 
-window.showCloseConfirmModal = function () {
+window.showCloseConfirmModal = function (): void {
     const modal = document.getElementById('close-confirm-modal');
     if (!modal) return;
 
@@ -60,7 +81,7 @@ window.showCloseConfirmModal = function () {
     };
 };
 
-window.hideCloseConfirmModal = function () {
+window.hideCloseConfirmModal = function (): void {
     const modal = document.getElementById('close-confirm-modal');
     if (!modal) return;
     document.body.classList.remove('launcher-blur');
@@ -68,13 +89,13 @@ window.hideCloseConfirmModal = function () {
 };
 
 
-window.confirmCloseFromModal = function () {
+window.confirmCloseFromModal = function (): void {
     try { hideCloseConfirmModal(); } catch (e) { }
     // Proceed with actual shutdown flow
     confirmClose();
 };
 
-window.confirmClose = async function () {
+window.confirmClose = async function (): Promise<void> {
     isClosing = true;
 
     // Use backend command to close (exit(0))
@@ -93,8 +114,8 @@ window.confirmClose = async function () {
     }
 };
 
-window.changeLanguage = async function (lang) {
-    currentLang = lang;
+window.changeLanguage = async function (lang: string): Promise<void> {
+    window.currentLang = lang;
     // Save to localStorage immediately
     localStorage.setItem('web_launcher_language', lang);
 
@@ -140,17 +161,17 @@ window.changeLanguage = async function (lang) {
     showToast(t('ui.launcher.web.language_changed', 'Language changed'), 'success');
 };
 
-window.selectLangInModal = function (lang) {
+window.selectLangInModal = function (lang: string): void {
     document.querySelectorAll('.lang-option').forEach(opt => opt.classList.remove('selected'));
     const option = document.querySelector(`.lang-option[data-lang="${lang}"]`);
     if (option) {
         option.classList.add('selected');
     }
-    currentLang = lang;
+    window.currentLang = lang;
 };
 
-window.confirmLanguage = async function () {
-    await loadTranslations(currentLang);
+window.confirmLanguage = async function (): Promise<void> {
+    await loadTranslations(window.currentLang);
     applyTranslations();
     initEmojiFlags();
     updateLangButtons();
@@ -163,7 +184,7 @@ window.confirmLanguage = async function () {
         await fetch('/api/settings', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ key: 'LANGUAGE', value: currentLang })
+            body: JSON.stringify({ key: 'LANGUAGE', value: window.currentLang })
         });
         // Clear BOT_LANGUAGE so bot uses LANGUAGE (launcher language)
         await fetch('/api/settings', {
@@ -180,13 +201,13 @@ window.confirmLanguage = async function () {
     showToast(t('ui.launcher.web.language_changed', 'Language changed'), 'success');
 }
 
-window.checkFirstLaunch = async function () {
+window.checkFirstLaunch = async function (): Promise<void> {
     // First, try to load saved user language
     const savedLang = localStorage.getItem('web_launcher_language');
 
     if (savedLang && (savedLang === 'en' || savedLang === 'ru')) {
         // User has previously selected a language, use it
-        currentLang = savedLang;
+        window.currentLang = savedLang;
         await loadTranslations(savedLang);
         return;
     }
@@ -196,7 +217,7 @@ window.checkFirstLaunch = async function () {
         const res = await fetch('/api/settings');
         const data = await res.json();
         if (data.BOT_LANGUAGE && (data.BOT_LANGUAGE === 'en' || data.BOT_LANGUAGE === 'ru')) {
-            currentLang = data.BOT_LANGUAGE;
+            window.currentLang = data.BOT_LANGUAGE;
             await loadTranslations(data.BOT_LANGUAGE);
             localStorage.setItem('web_launcher_language', data.BOT_LANGUAGE);
             return;
@@ -212,7 +233,7 @@ window.checkFirstLaunch = async function () {
     localStorage.setItem('web_launcher_language', systemLang);
 };
 
-window.hideSplashScreen = function () {
+window.hideSplashScreen = function (): void {
     const splash = document.getElementById('splash-screen');
     if (splash) {
         splash.style.opacity = '0';
@@ -251,7 +272,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 /**
  * @deprecated SD settings moved to module-settings.html
  */
-function updateSdSettingsLock(installed) {
+function updateSdSettingsLock(installed: boolean): void {
     // SD settings moved to module-settings.html, this function is no longer needed
     return;
 }
@@ -259,12 +280,12 @@ function updateSdSettingsLock(installed) {
 /**
  * @deprecated SD install check no longer needed
  */
-async function checkSdInstalled() {
+async function checkSdInstalled(): Promise<void> {
     // SD install check disabled - no longer needed
     return;
 }
 
-window.showSdInstallModal = function () {
+window.showSdInstallModal = function (): void {
     const modal = document.getElementById('sd-install-modal');
     if (modal) {
         modal.style.display = 'flex';
@@ -272,7 +293,7 @@ window.showSdInstallModal = function () {
     }
 };
 
-window.hideSdInstallModal = function () {
+window.hideSdInstallModal = function (): void {
     const modal = document.getElementById('sd-install-modal');
     if (modal) {
         modal.style.display = 'none';
@@ -282,7 +303,7 @@ window.hideSdInstallModal = function () {
     localStorage.setItem('sd_install_dismissed', 'true');
 };
 
-window.confirmReinstallSd = function () {
+window.confirmReinstallSd = function (): void {
     const modal = document.getElementById('reinstall-sd-modal');
     if (modal) {
         modal.style.display = 'flex';
@@ -290,7 +311,7 @@ window.confirmReinstallSd = function () {
     }
 };
 
-window.hideReinstallSdModal = function () {
+window.hideReinstallSdModal = function (): void {
     const modal = document.getElementById('reinstall-sd-modal');
     if (modal) {
         modal.style.display = 'none';
@@ -298,8 +319,8 @@ window.hideReinstallSdModal = function () {
     }
 };
 
-let sdReinstallPoll = null;
-window.showSdReinstallProgress = function () {
+let sdReinstallPoll: ReturnType<typeof setInterval> | null = null;
+window.showSdReinstallProgress = function (): void {
     const modal = document.getElementById('sd-reinstall-progress-modal');
     if (modal) {
         modal.style.display = 'flex';
@@ -327,7 +348,7 @@ window.showSdReinstallProgress = function () {
     }, 5000);
 };
 
-window.hideSdReinstallProgress = function () {
+window.hideSdReinstallProgress = function (): void {
     const modal = document.getElementById('sd-reinstall-progress-modal');
     if (modal) {
         modal.style.display = 'none';
@@ -339,7 +360,7 @@ window.hideSdReinstallProgress = function () {
     }
 };
 
-window.confirmReinstallSdAction = async function () {
+window.confirmReinstallSdAction = async function (): Promise<void> {
     hideReinstallSdModal();
     showSdReinstallProgress();
     showToast(t('ui.launcher.web.reinstall_sd_starting', 'Начало переустановки SD...'), 'info', 2000);
@@ -352,7 +373,7 @@ window.confirmReinstallSdAction = async function () {
     }
 };
 
-window.confirmSdInstall = async function () {
+window.confirmSdInstall = async function (): Promise<void> {
     hideSdInstallModal();
     showToast(t('ui.launcher.web.sd_install_starting', 'Запуск установки Stable Diffusion...'), 'success');
     // Start SD installation
@@ -365,8 +386,8 @@ window.confirmSdInstall = async function () {
 };
 
 // LLM Start Modal
-let llmStartModalResolve = null;
-window.showLlmStartModal = function () {
+let llmStartModalResolve: ((value: boolean) => void) | null = null;
+window.showLlmStartModal = function (): Promise<boolean> {
     return new Promise((resolve) => {
         llmStartModalResolve = resolve;
         const modal = document.getElementById('llm-start-modal');
@@ -377,7 +398,7 @@ window.showLlmStartModal = function () {
     });
 };
 
-window.hideLlmStartModal = function () {
+window.hideLlmStartModal = function (): void {
     const modal = document.getElementById('llm-start-modal');
     if (modal) {
         modal.style.display = 'none';
@@ -389,7 +410,7 @@ window.hideLlmStartModal = function () {
     }
 };
 
-window.confirmLlmStart = function () {
+window.confirmLlmStart = function (): void {
     hideLlmStartModal();
     if (llmStartModalResolve) {
         llmStartModalResolve(true);

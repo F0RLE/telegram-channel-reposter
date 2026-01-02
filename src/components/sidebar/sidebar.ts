@@ -30,18 +30,18 @@ function initSidebar() {
         btn.addEventListener('click', () => {
             const pageId = btn.getAttribute('data-page');
             if (pageId && typeof window.showPage === 'function') {
-                window.showPage(pageId, btn);
+                window.showPage(pageId);
             }
         });
     });
 }
 
-function initDragResize(sidebar, handle) {
+function initDragResize(sidebar: HTMLElement, handle: HTMLElement): void {
     let isDragging = false;
     let startX = 0;
     let startWidth = 0;
 
-    handle.addEventListener('mousedown', (e) => {
+    handle.addEventListener('mousedown', (e: MouseEvent) => {
         isDragging = true;
         startX = e.clientX;
         startWidth = sidebar.getBoundingClientRect().width;
@@ -84,7 +84,7 @@ function initDragResize(sidebar, handle) {
             document.body.classList.add('snapping');
 
             setSidebarWidth(finalWidth);
-            localStorage.setItem('sidebar_width', finalWidth);
+            localStorage.setItem('sidebar_width', String(finalWidth));
 
             // Remove animation class after transition
             setTimeout(() => {
@@ -95,9 +95,11 @@ function initDragResize(sidebar, handle) {
 }
 
 // Set Sidebar Width Function
-function setSidebarWidth(width) {
+function setSidebarWidth(width: number): void {
     // Toggle compact class based on width
     const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+
     if (width < 100) { // Threshold for compact mode
         if (!sidebar.classList.contains('collapsed')) {
             sidebar.classList.add('collapsed');

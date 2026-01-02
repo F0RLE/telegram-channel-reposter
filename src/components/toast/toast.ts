@@ -1,7 +1,7 @@
 ﻿
 // Enhanced Toast System
-let toastQueue = [];
-function showToast(message, type = 'info', duration = 3000, title = null) {
+let toastQueue: HTMLElement[] = [];
+function showToast(message: string, type: string = 'info', duration: number = 3000, title: string | null = null): void {
     let container = document.getElementById('toast-container');
     if (!container) {
         container = document.createElement('div');
@@ -23,6 +23,7 @@ function showToast(message, type = 'info', duration = 3000, title = null) {
     container.appendChild(toast);
     toastQueue.push(toast);
 
+
     setTimeout(() => {
         toast.classList.add('leaving');
         setTimeout(() => {
@@ -31,9 +32,11 @@ function showToast(message, type = 'info', duration = 3000, title = null) {
         }, 300);
     }, duration);
 }
+(window as any).showToast = showToast;
+
 
 // Action Feedback
-function showActionFeedback(type = 'success') {
+function showActionFeedback(type: string = 'success'): void {
     let feedback = document.getElementById('action-feedback');
     if (!feedback) {
         feedback = document.createElement('div');
@@ -50,13 +53,16 @@ function showActionFeedback(type = 'success') {
     }
     feedback.classList.add('show');
 
+
     setTimeout(() => {
         feedback.classList.remove('show');
     }, 600);
 }
+(window as any).showActionFeedback = showActionFeedback;
+
 
 // Skeleton Loaders
-function showSkeletonLoaders(containerId, count = 3) {
+function showSkeletonLoaders(containerId: string, count: number = 3): void {
     const container = document.getElementById(containerId);
     if (!container) return;
 
@@ -68,7 +74,7 @@ function showSkeletonLoaders(containerId, count = 3) {
     }
 }
 
-function hideSkeletonLoaders(containerId, count = 3) {
+function hideSkeletonLoaders(containerId: string, count: number = 3): void {
     for (let i = 1; i <= count; i++) {
         const skeleton = document.getElementById(`${containerId}-skeleton-${i}`);
         if (skeleton) {
@@ -78,7 +84,7 @@ function hideSkeletonLoaders(containerId, count = 3) {
 }
 
 // Button Loading State
-function setButtonLoading(button, loading = true) {
+function setButtonLoading(button: HTMLButtonElement, loading: boolean = true): void {
     if (loading) {
         button.classList.add('loading');
         button.disabled = true;
@@ -89,27 +95,28 @@ function setButtonLoading(button, loading = true) {
 }
 
 
-window.showPromptTab = function (tab, btn) {
-    document.querySelectorAll('.prompt-tab-content').forEach(t => t.style.display = 'none');
+window.showPromptTab = function (tab: string, btn: HTMLElement | null): void {
+    document.querySelectorAll('.prompt-tab-content').forEach(t => (t as HTMLElement).style.display = 'none');
     const targetTab = document.getElementById('prompt-tab-' + tab);
     if (targetTab) {
         targetTab.style.display = 'block';
     }
     if (btn && btn.parentElement) {
         btn.parentElement.querySelectorAll('button').forEach(b => {
-            b.style.background = 'var(--surface)';
-            b.style.color = 'var(--text-secondary)';
+            (b as HTMLElement).style.background = 'var(--surface)';
+            (b as HTMLElement).style.color = 'var(--text-secondary)';
         });
         btn.style.background = 'var(--primary)';
         btn.style.color = 'white';
     }
 };
 
-function updateTokenCount() {
-    const text = document.getElementById('field-llm-sys')?.value || '';
+function updateTokenCount(): void {
+    const el = document.getElementById('field-llm-sys') as HTMLTextAreaElement | null;
+    const text = el?.value || '';
     const count = Math.floor(text.length / 4);
-    const el = document.getElementById('token-count-sys');
-    if (el) el.innerText = count;
+    const countEl = document.getElementById('token-count-sys');
+    if (countEl) countEl.innerText = String(count);
 }
 // Add event listener after DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
@@ -148,37 +155,40 @@ async function updateDiagnostics() {
     }
 }
 
-window.applyPreset = function (name) {
-    const presets = {
+window.applyPreset = function (name: string): void {
+    const presets: Record<string, { w: number; h: number; s: number; c: number }> = {
         portrait: { w: 896, h: 1152, s: 30, c: 7.0 },
         landscape: { w: 1152, h: 896, s: 30, c: 7.0 },
         telegram: { w: 1024, h: 1024, s: 25, c: 6.5 }
     };
     const p = presets[name];
     if (p) {
-        document.getElementById('field-sd-w').value = p.w;
-        document.getElementById('field-sd-h').value = p.h;
-        document.getElementById('field-sd-steps').value = p.s;
-        document.getElementById('field-sd-cfg').value = p.c;
-        document.getElementById('val-sd-steps').innerText = p.s;
-        document.getElementById('val-sd-cfg').innerText = p.c.toFixed(1);
-        saveSetting('sd_width', p.w, true);
-        saveSetting('sd_height', p.h, true);
-        saveSetting('sd_steps', p.s, true);
-        saveSetting('sd_cfg', p.c, true);
+        const sdW = document.getElementById('field-sd-w') as HTMLInputElement | null;
+        const sdH = document.getElementById('field-sd-h') as HTMLInputElement | null;
+        const sdSteps = document.getElementById('field-sd-steps') as HTMLInputElement | null;
+        const sdCfg = document.getElementById('field-sd-cfg') as HTMLInputElement | null;
+        if (sdW) sdW.value = String(p.w);
+        if (sdH) sdH.value = String(p.h);
+        if (sdSteps) sdSteps.value = String(p.s);
+        if (sdCfg) sdCfg.value = String(p.c);
+        const valSteps = document.getElementById('val-sd-steps');
+        const valCfg = document.getElementById('val-sd-cfg');
+        if (valSteps) valSteps.innerText = String(p.s);
+        if (valCfg) valCfg.innerText = p.c.toFixed(1);
     }
 };
 
-window.setAspect = function (w, h) {
-    document.getElementById('field-sd-w').value = w;
-    document.getElementById('field-sd-h').value = h;
-    saveSetting('sd_width', w, true);
-    saveSetting('sd_height', h, true);
+window.setAspect = function (w: number, h: number): void {
+    const sdW = document.getElementById('field-sd-w') as HTMLInputElement | null;
+    const sdH = document.getElementById('field-sd-h') as HTMLInputElement | null;
+    if (sdW) sdW.value = String(w);
+    if (sdH) sdH.value = String(h);
 }
 
-function toggleAdZones() {
-    const enabled = document.getElementById('field-ad-enabled').checked;
+function toggleAdZones(): void {
+    const enabledEl = document.getElementById('field-ad-enabled') as HTMLInputElement | null;
+    const enabled = enabledEl?.checked ?? false;
     document.querySelectorAll('.ad-zone-card input[type="checkbox"], .ad-zone-card input[type="range"]').forEach(el => {
-        el.disabled = !enabled;
+        (el as HTMLInputElement).disabled = !enabled;
     });
 }

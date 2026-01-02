@@ -1,16 +1,35 @@
-﻿let launcherLogBuffer = [];
-let launcherLogFlushTimeout = null;
+﻿// DOM Utilities
 
-function launcherLog(level, message) {
+declare function hideModuleSettingsModal(): void;
+declare function stopDownloadsPolling(): void;
+declare function startDownloadsPolling(): void;
+declare function getRandomChatQuestion(): string;
+declare function loadSettings(): void;
+declare function loadSdModels(): void;
+declare function loadLlmModels(): void;
+declare function initDebugPage(): void;
+declare function loadModulesTab(): void;
+
+interface LauncherLogEntry {
+    level: string;
+    message: string;
+    timestamp: string;
+}
+
+// let launcherLogBuffer: LauncherLogEntry[] = []; // use window.launcherLogBuffer from vite-env
+window.launcherLogBuffer = window.launcherLogBuffer || [];
+let launcherLogFlushTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function launcherLog(level: string, message: string): void {
     // Also log to console for debugging
     const consoleMethod = level === 'ERROR' ? console.error : level === 'WARN' ? console.warn : console.log;
     consoleMethod(`[LAUNCHER] ${message}`);
 
     // Add to buffer
-    launcherLogBuffer.push({ level, message, timestamp: new Date().toISOString() });
+    window.launcherLogBuffer.push({ level, message, timestamp: new Date().toISOString() });
 
     // Flush buffer every 500ms or immediately for errors
-    if (level === 'ERROR' || launcherLogBuffer.length >= 10) {
+    if (level === 'ERROR' || window.launcherLogBuffer.length >= 10) {
         flushLauncherLogs();
     } else {
         if (launcherLogFlushTimeout) clearTimeout(launcherLogFlushTimeout);
@@ -18,14 +37,14 @@ function launcherLog(level, message) {
     }
 }
 
-function flushLauncherLogs() {
-    if (launcherLogBuffer.length === 0) return;
+function flushLauncherLogs(): void {
+    if (window.launcherLogBuffer.length === 0) return;
 
-    const logs = [...launcherLogBuffer];
-    launcherLogBuffer = [];
+    const logs = [...window.launcherLogBuffer];
+    window.launcherLogBuffer = [];
 
     // Send logs to server
-    logs.forEach(log => {
+    logs.forEach((log: any) => {
         fetch('/api/log', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -34,12 +53,12 @@ function flushLauncherLogs() {
     });
 }
 
-function deleteLauncherLog() {
+function deleteLauncherLog(): void {
     fetch('/api/log/delete', { method: 'POST' }).catch(err => console.error('[LAUNCHER] Failed to delete log:', err));
 }
 
 launcherLog('INFO', 'Defining showPage function...');
-window.showPage = function (pageId, btn) {
+window.showPage = function (pageId: string, btn?: HTMLElement | null): void {
     try {
         if (!pageId) {
             return;
@@ -172,7 +191,7 @@ if (typeof showPage === 'undefined') {
 // #region agent log
 const __AGENT_SESSION_ID = 'debug-session';
 const __AGENT_RUN_ID = `ui_${Date.now()}`;
-function agentLog(hypothesisId, location, message, data = {}) {
+function agentLog(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}): void {
     try {
         fetch('http://127.0.0.1:7242/ingest/3a11dd2d-0e69-46e3-9211-e035eadedf0b', {
             method: 'POST',

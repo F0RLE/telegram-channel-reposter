@@ -5,31 +5,26 @@
  * This replaces polling via setInterval + invoke.
  */
 
+import type { SystemStats } from '../types';
+
 // Callback storage for system stats updates
-let systemStatsCallback = null;
-let unlistenFn = null;
+type StatsCallback = (stats: SystemStats) => void;
+let systemStatsCallback: StatsCallback | null = null;
+let unlistenFn: (() => void) | null = null;
 
 /**
  * Subscribe to system stats events
- * @param {Function} callback - Called with stats object on each update
- * @returns {Promise<Function>} Unsubscribe function
- *
- * @example
- * const unsub = await subscribeToSystemStats((stats) => {
- *     console.log('CPU:', stats.cpu.percent);
- *     console.log('RAM:', stats.ram.percent);
- * });
- *
- * // Later: unsub();
+ * @param callback - Called with stats object on each update
+ * @returns Unsubscribe function
  */
-export async function subscribeToSystemStats(callback) {
+export async function subscribeToSystemStats(callback: StatsCallback): Promise<() => void> {
     systemStatsCallback = callback;
 
     // Use Tauri's listen API
     if (window.__TAURI__) {
         const { listen } = await import('@tauri-apps/api/event');
 
-        unlistenFn = await listen('system_stats', (event) => {
+        unlistenFn = await listen<SystemStats>('system_stats', (event) => {
             if (systemStatsCallback) {
                 systemStatsCallback(event.payload);
             }
@@ -45,7 +40,7 @@ export async function subscribeToSystemStats(callback) {
 /**
  * Unsubscribe from system stats events
  */
-export function unsubscribeFromSystemStats() {
+export function unsubscribeFromSystemStats(): void {
     systemStatsCallback = null;
     if (unlistenFn) {
         unlistenFn();
@@ -56,12 +51,13 @@ export function unsubscribeFromSystemStats() {
 /**
  * Fallback polling for non-Tauri environments (testing)
  */
-async function fallbackPolling(callback) {
+async function fallbackPolling(callback: StatsCallback): Promise<() => void> {
     const pollInterval = setInterval(async () => {
         try {
-            let stats;
+            let stats: SystemStats | null = null;
+
             if (window.__TAURI__) {
-                stats = await window.__TAURI__.invoke('get_system_stats');
+                stats = await window.__TAURI__.core.invoke<SystemStats>('get_system_stats');
             } else {
                 // Fetch from bridge interceptor (Mock Mode)
                 const res = await fetch('/api/system_stats');
@@ -85,9 +81,9 @@ async function fallbackPolling(callback) {
  * Get current system stats (one-time, for compatibility)
  * Prefer subscribeToSystemStats for continuous updates
  */
-export async function getSystemStatsOnce() {
+export async function getSystemStatsOnce(): Promise<SystemStats | null> {
     if (window.__TAURI__) {
-        return await window.__TAURI__.invoke('get_system_stats');
+        return await window.__TAURI__.core.invoke<SystemStats>('get_system_stats');
     }
     return null;
 }

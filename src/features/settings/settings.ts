@@ -1,5 +1,5 @@
 ﻿// Close modal on Escape key
-document.addEventListener('keydown', (e) => {
+document.addEventListener('keydown', (e: KeyboardEvent): void => {
     if (e.key === 'Escape') {
         const modal = document.getElementById('module-settings-modal');
         if (modal && modal.classList.contains('show')) {
@@ -8,8 +8,17 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-function generateModuleSettingsForm(settings) {
+declare function hideModuleSettingsModal(): void;
+declare function loadModulesTab(): void;
+declare function showToast(message: string, type: string, duration?: number, title?: string): void;
+declare function initTaskbarToggles(): void;
+declare function initMonitorToggles(): void;
+declare function toggleNavItem(pageId: string, enabled: boolean): void;
+declare function toggleMonitorItem(monitorId: string, enabled: boolean): void;
+
+function generateModuleSettingsForm(settings: Record<string, any>): void {
     const container = document.getElementById('module-settings-fields');
+    if (!container) return;
     container.innerHTML = '';
 
     if (Object.keys(settings).length === 0) {
@@ -48,7 +57,7 @@ function generateModuleSettingsForm(settings) {
             fieldHtml = `
                         <div class="form-group" style="margin-bottom: 1.5rem;">
                             <label class="form-label" for="field-${key}">${formatKey(key)}</label>
-                            <textarea id="field-${key}" name="${key}" class="form-input" style="width: 100%; padding: 0.75rem; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary); min-height: 100px; font-family: 'Monocraft', 'Consolas', 'Monaco', monospace;">${value.join('\n')}</textarea>
+                            <textarea id="field-${key}" name="${key}" class="form-input" style="width: 100%; padding: 0.75rem; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary); min-height: 100px; font-family: 'Monocraft', 'Consolas', 'Monaco', monospace;">${(value as unknown[]).join('\n')}</textarea>
                             <div class="helper-text">Каждое значение на новой строке</div>
                         </div>
                     `;
@@ -58,8 +67,8 @@ function generateModuleSettingsForm(settings) {
                         <div class="form-group" style="margin-bottom: 1.5rem;">
                             <label class="form-label" for="field-${key}">${formatKey(key)}</label>
                             ${isLong
-                    ? `<textarea id="field-${key}" name="${key}" class="form-input" style="width: 100%; padding: 0.75rem; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary); min-height: 100px; font-family: 'Monocraft', 'Consolas', 'Monaco', monospace;">${escapeHtml(value || '')}</textarea>`
-                    : `<input type="text" id="field-${key}" name="${key}" value="${escapeHtml(value || '')}" class="form-input" style="width: 100%; padding: 0.75rem; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary);">`
+                    ? `<textarea id="field-${key}" name="${key}" class="form-input" style="width: 100%; padding: 0.75rem; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary); min-height: 100px; font-family: 'Monocraft', 'Consolas', 'Monaco', monospace;">${escapeHtml((value as string) || '')}</textarea>`
+                    : `<input type="text" id="field-${key}" name="${key}" value="${escapeHtml((value as string) || '')}" class="form-input" style="width: 100%; padding: 0.75rem; background: var(--bg-light); border: 1px solid var(--border-color); border-radius: 10px; color: var(--text-primary);">`
                 }
                         </div>
                     `;
@@ -69,15 +78,15 @@ function generateModuleSettingsForm(settings) {
     });
 }
 
-function populateModuleSettingsForm(settings) {
+function populateModuleSettingsForm(settings: Record<string, any>): void {
     Object.keys(settings).forEach(key => {
-        const field = document.getElementById(`field-${key}`);
+        const field = document.getElementById(`field-${key}`) as HTMLInputElement | HTMLTextAreaElement | null;
         if (!field) return;
 
         const value = settings[key];
 
-        if (field.type === 'checkbox') {
-            field.checked = !!value;
+        if ((field as HTMLInputElement).type === 'checkbox') {
+            (field as HTMLInputElement).checked = !!value;
         } else if (field.type === 'number') {
             field.value = value;
         } else if (field.tagName === 'TEXTAREA') {
@@ -92,7 +101,7 @@ function populateModuleSettingsForm(settings) {
     });
 }
 
-function formatKey(key) {
+function formatKey(key: string): string {
     return key
         .replace(/_/g, ' ')
         .replace(/([A-Z])/g, ' $1')
@@ -100,7 +109,7 @@ function formatKey(key) {
         .trim();
 }
 
-function escapeHtml(text) {
+function escapeHtml(text: string): string {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
@@ -108,9 +117,9 @@ function escapeHtml(text) {
 
 // Handle form submission
 document.addEventListener('DOMContentLoaded', () => {
-    const form = document.getElementById('module-settings-form');
+    const form = document.getElementById('module-settings-form') as HTMLFormElement | null;
     if (form) {
-        form.addEventListener('submit', async (e) => {
+        form.addEventListener('submit', async (e: Event): Promise<void> => {
             e.preventDefault();
 
             if (!currentModuleId) return;
@@ -120,23 +129,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Collect form data
             for (const [key, value] of formData.entries()) {
-                const field = document.getElementById(`field-${key}`);
+                const field = document.getElementById(`field-${key}`) as HTMLInputElement | HTMLTextAreaElement | null;
 
-                if (field && field.type === 'checkbox') {
-                    settings[key] = field.checked;
-                } else if (field && field.type === 'number') {
-                    settings[key] = parseFloat(value) || 0;
+                if (field instanceof HTMLInputElement && field.type === 'checkbox') {
+                    settings[key] = (field as HTMLInputElement).checked;
+                } else if (field instanceof HTMLInputElement && field.type === 'number') {
+                    settings[key] = parseFloat(value as string) || 0;
                 } else {
-                    if (value.includes('\n')) {
-                        settings[key] = value.split('\n').filter(v => v.trim());
+                    const strValue = value as string;
+                    if (strValue.includes('\n')) {
+                        settings[key] = strValue.split('\n').filter(v => v.trim());
                     } else {
-                        settings[key] = value;
+                        settings[key] = strValue;
                     }
                 }
             }
 
             // Save settings
-            const saveBtn = document.getElementById('module-settings-save-btn');
+            const saveBtn = document.getElementById('module-settings-save-btn') as HTMLButtonElement;
             const originalText = saveBtn.innerHTML;
             saveBtn.disabled = true;
             saveBtn.innerHTML = '<svg class="icon"><use href="#icon-save"></use></svg> <span>Сохранение...</span>';
@@ -165,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     saveBtn.innerHTML = originalText;
                 }
             } catch (e) {
-                showToast('Ошибка: ' + e.message, 'error');
+                showToast('Ошибка: ' + (e as Error).message, 'error');
                 saveBtn.disabled = false;
                 saveBtn.innerHTML = originalText;
             }
@@ -174,9 +184,9 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 
-window.showSettingsSection = function (sectId, btn) {
+window.showSettingsSection = function (sectId: string, btn: HTMLElement | null): void {
     // Get current active section
-    const currentSection = document.querySelector('.settings-section.active');
+    const currentSection = document.querySelector('.settings-section.active') as HTMLElement;
     const targetSection = document.getElementById('sect-' + sectId);
 
     if (!targetSection) {
@@ -228,19 +238,19 @@ window.showSettingsSection = function (sectId, btn) {
             if (typeof initMonitorToggles === 'function') {
                 initMonitorToggles();
             }
-            if (typeof loadCardWidths === 'function') {
-                loadCardWidths();
+            if (typeof window.loadCardWidths === 'function') {
+                window.loadCardWidths();
             }
         }, 100);
     }
 };
-window.setTab = function (tab, btn) {
+window.setTab = function (tab: string, btn: HTMLElement | null): void {
     // Tabs removed - no filtering
 };
 
 // Card width management
-window.setCardWidth = function (btn, width) {
-    const card = btn.closest('.hardware-card');
+window.setCardWidth = function (btn: HTMLElement, width: string): void {
+    const card = btn.closest('.hardware-card') as HTMLElement;
     if (!card) return;
 
     card.setAttribute('data-card-width', width);
@@ -249,16 +259,16 @@ window.setCardWidth = function (btn, width) {
     const buttons = card.querySelectorAll('.btn');
     buttons.forEach(b => {
         if (b === btn) {
-            b.style.background = 'var(--primary)';
-            b.style.color = 'white';
+            (b as HTMLElement).style.background = 'var(--primary)';
+            (b as HTMLElement).style.color = 'white';
         } else {
-            b.style.background = 'var(--bg-light)';
-            b.style.color = 'var(--text-secondary)';
+            (b as HTMLElement).style.background = 'var(--bg-light)';
+            (b as HTMLElement).style.color = 'var(--text-secondary)';
         }
     });
 
     // Update grid layout
-    const container = card.closest('[style*="grid-template-columns"]');
+    const container = card.closest('[style*="grid-template-columns"]') as HTMLElement;
     if (container) {
         if (width === 'full') {
             container.style.gridTemplateColumns = '1fr';
@@ -269,8 +279,7 @@ window.setCardWidth = function (btn, width) {
 };
 
 // Taskbar visibility management
-// Taskbar visibility management
-window.toggleNavItem = function (pageId, enabled) {
+window.toggleNavItem = function (pageId: string, enabled: boolean): void {
     const navBtn = document.querySelector(`#sidebar .nav-btn[data-page="${pageId}"]`);
     if (!navBtn) return;
 
@@ -295,7 +304,7 @@ window.toggleNavItem = function (pageId, enabled) {
             navBtn.classList.remove('hidden');
 
             // Force reflow
-            void navBtn.offsetHeight;
+            void (navBtn as HTMLElement).offsetHeight;
 
             // Animate in
             navBtn.classList.remove('nav-item-hiding');
@@ -322,7 +331,7 @@ window.toggleNavItem = function (pageId, enabled) {
 };
 
 // Initialize taskbar toggles - NEW SELECTABLE CARD DESIGN
-window.initTaskbarToggles = function () {
+window.initTaskbarToggles = function (): void {
     const container = document.getElementById('taskbar-toggles');
     if (!container) return;
 
@@ -359,7 +368,7 @@ window.initTaskbarToggles = function () {
         const isActive = !isHidden;
         const labelKey = `ui.launcher.settings.toggle_${item.id}`;
         return `
-            <div class="taskbar-toggle-item ${isActive ? 'active' : ''}" 
+            <div class="taskbar-toggle-item ${isActive ? 'active' : ''}"
                  data-page-id="${item.id}"
                  onclick="toggleTaskbarItem('${item.id}')"
                  title="${item.label}">
@@ -383,7 +392,7 @@ window.initTaskbarToggles = function () {
 };
 
 // Toggle taskbar item handler
-window.toggleTaskbarItem = function (pageId) {
+window.toggleTaskbarItem = function (pageId: string): void {
     const item = document.querySelector(`.taskbar-toggle-item[data-page-id="${pageId}"]`);
     if (!item) return;
 
@@ -398,7 +407,7 @@ window.toggleTaskbarItem = function (pageId) {
 };
 
 // Monitor visibility management
-window.toggleMonitorItem = function (monitorId, enabled) {
+window.toggleMonitorItem = function (monitorId: string, enabled: boolean): void {
     const monitorStat = document.querySelector(`#system-monitor .sysmon-stat[data-monitor-id="${monitorId}"]`);
     if (!monitorStat) return;
 
@@ -423,7 +432,7 @@ window.toggleMonitorItem = function (monitorId, enabled) {
         // Remove hidden to put element back in layout
         monitorStat.classList.remove('hidden');
         // Force reflow
-        void monitorStat.offsetHeight;
+        void (monitorStat as HTMLElement).offsetHeight;
         // Remove hiding to trigger fade-in animation
         monitorStat.classList.remove('hiding');
     } else {
@@ -436,7 +445,7 @@ window.toggleMonitorItem = function (monitorId, enabled) {
         // After animation completes, add hidden to remove from layout
         setTimeout(() => {
             monitorStat.classList.add('hidden');
-            updateMonitorPanelVisibility();
+            window.updateMonitorPanelVisibility();
         }, 250);
     }
 
@@ -445,11 +454,11 @@ window.toggleMonitorItem = function (monitorId, enabled) {
     // Update divider and panel visibility
     updateMonitorDivider();
     if (enabled) {
-        updateMonitorPanelVisibility();
+        window.updateMonitorPanelVisibility();
     }
 };
 
-window.updateMonitorPanelVisibility = function () {
+window.updateMonitorPanelVisibility = function (): void {
     const monitorPanel = document.getElementById('system-monitor');
     if (!monitorPanel) return;
 
@@ -480,7 +489,7 @@ window.updateMonitorPanelVisibility = function () {
     }
 };
 
-function updateMonitorDivider() {
+function updateMonitorDivider(): void {
     const divider = document.querySelector('.sysmon-divider');
     if (!divider) return;
 
@@ -499,14 +508,14 @@ function updateMonitorDivider() {
 
     // Hide divider if either all above OR all below are hidden
     if (allAboveHidden || allBelowHidden) {
-        divider.style.display = 'none';
+        (divider as HTMLElement).style.display = 'none';
     } else {
-        divider.style.display = '';
+        (divider as HTMLElement).style.display = '';
     }
 }
 
 // Initialize monitor toggles - NEW GRID BUTTON DESIGN
-window.initMonitorToggles = function () {
+window.initMonitorToggles = function (): void {
     const container = document.getElementById('monitor-toggles');
     if (!container) return;
 
@@ -536,7 +545,7 @@ window.initMonitorToggles = function () {
         const isActive = !hiddenMonitors.includes(item.id);
         const labelKey = `ui.launcher.settings.monitor_${item.id}`;
         return `
-            <button class="monitor-toggle-btn ${isActive ? 'active' : ''}" 
+            <button class="monitor-toggle-btn ${isActive ? 'active' : ''}"
                     data-monitor-id="${item.id}"
                     onclick="toggleMonitorBtn('${item.id}')"
                     title="${item.label}">
@@ -552,7 +561,7 @@ window.initMonitorToggles = function () {
     hiddenMonitors.forEach(monitorId => {
         const monitorStat = document.querySelector(`#system-monitor .sysmon-stat[data-monitor-id="${monitorId}"]`);
         if (monitorStat) {
-            monitorStat.classList.add('hidden');
+            (monitorStat as HTMLElement).classList.add('hidden');
         }
     });
 
@@ -561,7 +570,7 @@ window.initMonitorToggles = function () {
 };
 
 // Toggle monitor button handler
-window.toggleMonitorBtn = function (monitorId) {
+window.toggleMonitorBtn = function (monitorId: string): void {
     const btn = document.querySelector(`.monitor-toggle-btn[data-monitor-id="${monitorId}"]`);
     if (!btn) return;
 
@@ -576,7 +585,15 @@ window.toggleMonitorBtn = function (monitorId) {
 };
 
 // Card resize management
-let resizeState = {
+interface ResizeState {
+    isResizing: boolean;
+    card: HTMLElement | null;
+    startX: number;
+    startWidth: string;
+    hasSwitched: boolean;
+}
+
+window.resizeState = {
     isResizing: false,
     card: null,
     startX: 0,
@@ -584,10 +601,10 @@ let resizeState = {
     hasSwitched: false
 };
 
-window.startResize = function (e, handle) {
+window.startResize = function (e: MouseEvent, handle: HTMLElement): void {
     e.preventDefault();
     resizeState.isResizing = true;
-    resizeState.card = handle.closest('.resizable-card');
+    resizeState.card = handle.closest('.resizable-card') as HTMLElement;
     resizeState.startX = e.clientX;
     resizeState.startWidth = resizeState.card.dataset.cardWidth || 'full';
     resizeState.hasSwitched = false;
@@ -609,13 +626,13 @@ window.startResize = function (e, handle) {
 };
 
 // --- Responsive Helper ---
-function observeToggleGrid(containerId) {
+function observeToggleGrid(containerId: string): void {
     const container = document.getElementById(containerId);
     if (!container) return;
 
     // Disconnect existing if any (stored on element)
-    if (container._resizeObserver) {
-        container._resizeObserver.disconnect();
+    if ((container as any)._resizeObserver) {
+        (container as any)._resizeObserver.disconnect();
     }
 
     const observer = new ResizeObserver(entries => {
@@ -639,18 +656,18 @@ function observeToggleGrid(containerId) {
     });
 
     observer.observe(container);
-    container._resizeObserver = observer;
+    (container as any)._resizeObserver = observer;
 }
 
 // Hook into initializations
 const originalInitTaskbar = window.initTaskbarToggles;
-window.initTaskbarToggles = function () {
+window.initTaskbarToggles = function (): void {
     if (originalInitTaskbar) originalInitTaskbar();
     observeToggleGrid('taskbar-toggles');
 };
 
 const originalInitMonitor = window.initMonitorToggles;
-window.initMonitorToggles = function () {
+window.initMonitorToggles = function (): void {
     if (originalInitMonitor) originalInitMonitor();
     observeToggleGrid('monitor-toggles');
 };
@@ -694,22 +711,22 @@ document.addEventListener('mouseup', () => {
     }
 });
 
-function saveCardWidths() {
+function saveCardWidths(): void {
     const widths = {};
     document.querySelectorAll('.resizable-card').forEach(card => {
-        const id = card.dataset.cardId;
+        const id = (card as HTMLElement).dataset.cardId;
         if (id) {
-            widths[id] = card.dataset.cardWidth;
+            widths[id] = (card as HTMLElement).dataset.cardWidth;
         }
     });
     localStorage.setItem('settings_card_widths', JSON.stringify(widths));
 }
 
-window.loadCardWidths = function () {
+window.loadCardWidths = function (): void {
     try {
         const widths = JSON.parse(localStorage.getItem('settings_card_widths') || '{}');
         Object.keys(widths).forEach(id => {
-            const card = document.querySelector(`.resizable-card[data-card-id="${id}"]`);
+            const card = document.querySelector(`.resizable-card[data-card-id="${id}"]`) as HTMLElement;
             if (card) {
                 card.dataset.cardWidth = widths[id];
             }

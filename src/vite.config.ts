@@ -18,6 +18,16 @@ export default defineConfig({
         },
     },
 
+    // Path aliases
+    resolve: {
+        alias: {
+            '@': fileURLToPath(new URL('./', import.meta.url)),
+            '@lib': fileURLToPath(new URL('./lib', import.meta.url)),
+            '@features': fileURLToPath(new URL('./features', import.meta.url)),
+            '@components': fileURLToPath(new URL('./components', import.meta.url)),
+        }
+    },
+
     // to access the Tauri environment variables set by the CLI with information about the current target
     envPrefix: ['VITE_', 'TAURI_'],
 
@@ -33,9 +43,10 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: fileURLToPath(new URL('./index.html', import.meta.url)),
-                setup: fileURLToPath(new URL('./setup.html', import.meta.url)),
-                moduleSettings: fileURLToPath(new URL('./module-settings.html', import.meta.url)),
+                setup: fileURLToPath(new URL('./pages/setup.html', import.meta.url)),
+                moduleSettings: fileURLToPath(new URL('./pages/module-settings.html', import.meta.url)),
             },
         },
     },
 })
+
