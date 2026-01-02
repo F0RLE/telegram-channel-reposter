@@ -1,6 +1,6 @@
 [package]
 name = "flux-platform"
-version = "0.0.9"
+version = "0.0.10"
 description = "Flux Platform"
 authors = ["F0RLE"]
 edition = "2021"
