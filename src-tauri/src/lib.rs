@@ -4,6 +4,9 @@ pub mod models;
 pub mod services;
 pub mod utils;
 
+#[cfg(test)]
+mod tests;
+
 use commands::*;
 use tauri::{
     menu::{Menu, MenuItem},
