@@ -1,4 +1,4 @@
-name: "auto-release"
+name: "Release"
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
     paths-ignore:
       - "README.md"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,7 +27,7 @@ jobs:
       - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: lts/*
+          node-version: 20
 
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -37,16 +38,21 @@ jobs:
         working-directory: ./src
         run: npm install
 
-      - name: build frontend
-        working-directory: ./src
-        run: npm run build
+      # - name: build frontend
+      #   working-directory: ./src
+      #   run: npm run build
+      #   Note: tauri build runs the beforeBuildCommand which runs npm run build, so this is redundant unless we want to separate them.
+      #   We'll let tauri handle it.
 
       - name: Bump Version
         id: bump
+        shell: pwsh
         run: |
           node scripts/utils/bump-version.js > version_output.txt
-          $NEW_VERSION = (Get-Content src/package.json | ConvertFrom-Json).version
+          $json = Get-Content src/package.json | ConvertFrom-Json
+          $NEW_VERSION = $json.version
           echo "NEW_VERSION=$NEW_VERSION" >> $env:GITHUB_ENV
+          Write-Host "New version: $NEW_VERSION"
 
       - name: Commit and Push Version Bump
         run: |
