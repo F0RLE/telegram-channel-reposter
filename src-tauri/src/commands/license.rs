@@ -1,8 +1,8 @@
 // use tauri::command;
 
-use crate::services::license;
-use crate::services::license::types::LicenseStatus;
-use crate::models::LicenseStatusResponse;
+use crate::domain::license;
+use crate::domain::license::models::LicenseStatusResponse;
+use crate::domain::license::LicenseStatus;
 
 #[tauri::command]
 pub fn get_license_status() -> LicenseStatusResponse {

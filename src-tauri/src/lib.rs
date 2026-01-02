@@ -1,8 +1,7 @@
 pub mod commands;
 pub mod domain; // NEW: Domain-driven structure
 pub mod errors;
-pub mod models;
-pub mod services;
+pub mod infra; // [NEW] Infrastructure implementations
 pub mod utils;
 
 #[cfg(test)]
@@ -95,35 +94,53 @@ pub fn run() {
             window_settings::save_maximized_state,
             window_settings::save_zoom_level,
             // Chat commands
-            services::chat::save_chat_message,
-            services::chat::get_chat_history,
-            services::chat::clear_chat_history,
-            services::chat::send_message,
+            domain::chat::handlers::save_chat_message,
+            domain::chat::handlers::get_chat_history,
+            domain::chat::handlers::clear_chat_history,
+            domain::chat::handlers::send_message,
         ])
         .setup(|app| {
             // Initialize directories
             crate::utils::paths::init_filesystem().ok();
 
-            // Initialize Chat Manager
-            let chat_manager = services::chat::ChatManager::new(app.handle());
-            app.manage(services::chat::ChatState(std::sync::Mutex::new(
-                chat_manager,
-            )));
+            // [Hexagonal Architecture] Wire up Chat Domain
+            let app_handle = app.handle();
+            let app_dir = app_handle
+                .path()
+                .app_data_dir()
+                .expect("failed to get app data dir");
+            std::fs::create_dir_all(&app_dir).expect("failed to create app data dir");
+            let db_path = app_dir.join("chat.db");
+
+            // 1. Create Adapters (Infra)
+            let storage =
+                infra::sqlite::SqliteChatStorage::new(db_path).expect("failed to init chat db");
+            let ai_client =
+                infra::ai_python::PythonAiClient::new("http://127.0.0.1:5000".to_string());
+
+            // 2. Inject into Domain Service
+            let chat_manager =
+                domain::chat::service::ChatManager::new(Box::new(storage), Box::new(ai_client));
+
+            // 3. Manage State
+            app.manage(domain::chat::service::ChatState(
+                tauri::async_runtime::Mutex::new(chat_manager),
+            ));
             log::info!("✅ Chat Manager initialized");
 
             // Initialize Download Manager
-            let download_manager = services::downloader::DownloadManager::new(app.handle().clone());
+            let download_manager = domain::downloads::DownloadManager::new(app.handle().clone());
             app.manage(download_manager);
 
             // Initialize process group (Windows Job Objects)
             crate::utils::process::init_process_group();
 
             // Start system monitoring with events
-            services::system_monitor::start_monitoring(app.handle().clone(), 1000);
+            domain::monitoring::start_monitoring(app.handle().clone(), 1000);
 
             // Apply window settings (zoom, size, position)
             if let Some(window) = app.get_webview_window("main") {
-                let settings = services::window_settings::load_window_settings();
+                let settings = domain::settings::window::load_window_settings();
 
                 // Apply zoom
                 let _ = window.set_zoom(settings.zoom_level);
@@ -167,7 +184,7 @@ fn setup_system_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>>
         .on_menu_event(|app, event| match event.id.as_ref() {
             "quit" => {
                 // Graceful shutdown
-                services::system_monitor::stop_monitoring();
+                domain::monitoring::stop_monitoring();
                 app.exit(0);
             }
             _ => {}

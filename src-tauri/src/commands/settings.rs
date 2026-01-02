@@ -1,5 +1,5 @@
-use crate::services::settings::{self};
-use crate::models::AppSettings;
+use crate::domain::settings::models::AppSettings;
+use crate::domain::settings::{self};
 use crate::errors::AppError;
 
 #[tauri::command]

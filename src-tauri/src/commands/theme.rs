@@ -1,4 +1,4 @@
-use crate::services::theme;
+use crate::domain::settings::theme;
 use std::collections::HashMap;
 
 #[tauri::command]

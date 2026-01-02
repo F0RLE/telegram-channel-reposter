@@ -17,7 +17,7 @@ import {
     cpuDisplay,
     ramDisplay
 } from '@core/state';
-import type { SystemStats } from '@shared/types/generated';
+import type { SystemStats } from '@types';
 
 // ============================================================================
 // DOM Element Cache (for performance)

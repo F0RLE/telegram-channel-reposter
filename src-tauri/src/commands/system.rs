@@ -1,5 +1,5 @@
-use crate::models::SystemStats;
-use crate::services::system_monitor::{self};
+use crate::domain::monitoring::models::SystemStats;
+use crate::domain::monitoring::{self as system_monitor};
 
 #[tauri::command]
 pub fn get_system_stats() -> SystemStats {

@@ -1,5 +1,5 @@
+use super::models::AppSettings;
 use crate::errors::AppError;
-use crate::models::AppSettings;
 use crate::utils::paths::{FILE_ENV, FILE_GEN_CONFIG};
 use serde_json::Value;
 use std::fs;

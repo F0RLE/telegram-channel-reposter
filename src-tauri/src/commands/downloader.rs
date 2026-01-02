@@ -1,4 +1,4 @@
-use crate::services::downloader::DownloadManager;
+use crate::domain::downloads::DownloadManager;
 use tauri::State;
 
 #[tauri::command]

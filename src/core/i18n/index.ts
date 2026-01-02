@@ -1,5 +1,5 @@
-﻿import type { TranslationDictionary, AppSettings } from '@shared/types';
-import { invoke, isTauri } from '@shared/api/tauri';
+﻿import type { TranslationDictionary, AppSettings } from '@types';
+import { invoke, isTauri } from '@core/api/tauri';
 
 let translations: TranslationDictionary = {};
 // Initialize global currentLang
@@ -195,7 +195,9 @@ function updateLangSwitcherUI(): void {
     });
 }
 
-window.setLanguage = async function (lang: string): Promise<void> {
+window.setLanguage = async function (arg: string | HTMLElement): Promise<void> {
+    const lang = (arg instanceof HTMLElement) ? arg.getAttribute('data-lang') || 'en' : arg;
+
     // Optimistic UI update
     window.currentLang = lang;
     updateLangSwitcherUI();

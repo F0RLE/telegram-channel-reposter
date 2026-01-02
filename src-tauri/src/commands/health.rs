@@ -1,6 +1,6 @@
-use crate::services;
+use crate::domain::monitoring::health;
 
 #[tauri::command]
 pub fn get_health() -> String {
-    services::health::check()
+    health::check()
 }

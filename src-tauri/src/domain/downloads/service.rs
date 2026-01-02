@@ -49,7 +49,7 @@ impl DownloadManager {
                 Self::download_task(app_handle, download_id_clone.clone(), url, file_path).await
             {
                 // Emit error
-                let _ = crate::services::logs::add_log(
+                let _ = crate::domain::logs::add_log(
                     &format!("Download failed: {}", e),
                     "Downloader",
                     "error",
@@ -142,7 +142,7 @@ impl DownloadManager {
         };
         let _ = app.emit("download://progress", &progress);
 
-        crate::services::logs::add_log(
+        crate::domain::logs::add_log(
             &format!("Download completed: {}", path.display()),
             "Downloader",
             "success",

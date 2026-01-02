@@ -1,5 +1,11 @@
 ﻿let modulesLoading: boolean = false;
-import { invoke } from '../../shared/api/tauri';
+import { invoke } from '@core/api';
+
+declare function showActionFeedback(type: 'success' | 'error', message?: string): void;
+declare function setButtonLoading(btn: HTMLElement, loading: boolean): void;
+declare function showToast(message: string, type: string, duration?: number, title?: string): void;
+declare function showPage(pageId: string): void;
+
 async function loadModulesTab(): Promise<void> {
     const grid = document.getElementById('modules-grid');
     if (!grid) return;
@@ -356,7 +362,7 @@ window.installModule = async function (id: string) {
         const data = await invoke<ControlResponse>('control_module', {
             request: { module_id: id, action: 'install' }
         });
-        if (data && (data.success || data.ok)) {
+        if (data && data.success) {
             showActionFeedback('success');
             showToast(t('ui.launcher.web.module_installed', 'Модуль установлен'), 'success', 2000, 'Успешно');
             loadModulesTab();
@@ -384,7 +390,7 @@ window.uninstallModule = async function (id: string) {
          const data = await invoke<ControlResponse>('control_module', {
             request: { module_id: id, action: 'uninstall' }
         });
-        if (data && (data.success || data.ok)) {
+        if (data && data.success) {
             showActionFeedback('success');
             showToast(t('ui.launcher.web.module_removed', 'Модуль удалён'), 'success', 2000, 'Успешно');
             loadModulesTab();

@@ -43,30 +43,28 @@ Dev сервер Vite: `http://localhost:1420`
 ├── src-tauri/             # Rust Backend (ВСЯ БИЗНЕС-ЛОГИКА)
 │   ├── src/
 │   │   ├── lib.rs        # Точка входа, регистрация команд
-│   │   ├── commands/     # IPC слой (тонкий!) — валидация → services/
-│   │   ├── services/     # Вся логика:
-│   │   │   ├── system_monitor.rs  # Мониторинг + Tauri events
-│   │   │   ├── chat.rs            # SQLite история + Python AI API
-│   │   │   ├── downloader.rs      # Async загрузка с прогрессом
-│   │   │   ├── settings.rs        # Чтение/запись .env
-│   │   │   ├── module_controller.rs
+│   │   ├── commands/     # IPC слой (тонкий!) — валидация → domain/
+│   │   ├── domain/       # Вся логика (DDD):
+│   │   │   ├── monitoring/        # Мониторинг + Tauri events
+│   │   │   ├── chat/              # SQLite история + Python AI API
+│   │   │   ├── downloads/         # Async загрузка с прогрессом
+│   │   │   ├── settings/          # Чтение/запись .env
+│   │   │   ├── modules/           # Управление модулями
 │   │   │   ├── license/           # Лицензирование
 │   │   │   └── ...
-│   │   ├── models/       # DTO (AppSettings, SystemStats...)
+│   │   ├── errors.rs     # IPC ошибки
 │   │   └── utils/        # paths.rs, process.rs, windows.rs
 │   └── tauri.conf.json
 │
 ├── src/                   # WebView (ТОЛЬКО UI!)
+│   ├── core/              # API, State, i18n, Events
 │   ├── features/          # UI-модули (подписка на events + рендеринг)
 │   │   ├── chat/         # chat.ts (вызов invoke, обновление DOM)
 │   │   ├── monitoring/   # monitoring.ts (подписка на system_stats)
 │   │   └── ...
-│   ├── shared/
-│   │   ├── api/tauri.ts  # Мост к Tauri (invoke, listen)
-│   │   ├── lib/events/   # Подписки на Tauri events
-│   │   └── types/        # TypeScript интерфейсы
+│   ├── pages/             # Routing
 │   ├── styles/            # CSS
-│   └── i18n.ts
+│   └── types/             # TypeScript интерфейсы
 │
 └── scripts/               # Build скрипты
 ```
@@ -77,10 +75,10 @@ Dev сервер Vite: `http://localhost:1420`
 
 ## Добавление новой команды
 
-### 1. Создать сервис (services/)
+### 1. Создать домен (domain/)
 
 ```rust
-// services/example.rs
+// domain/example.rs
 pub fn do_work(param: &str) -> Result<String, String> {
     // Вся бизнес-логика здесь
     if param.is_empty() {
@@ -94,11 +92,11 @@ pub fn do_work(param: &str) -> Result<String, String> {
 
 ```rust
 // commands/example.rs
-use crate::services::example;
+use crate::domain::example;
 
 #[tauri::command]
 pub fn my_command(param: String) -> Result<String, String> {
-    // Только валидация + вызов сервиса
+    // Только валидация + вызов доменного сервиса
     example::do_work(&param)
 }
 ```
@@ -118,14 +116,14 @@ pub fn my_command(param: String) -> Result<String, String> {
 // commands/mod.rs
 pub mod example;
 
-// services/mod.rs
+// domain/mod.rs
 pub mod example;
 ```
 
 ### 5. Вызвать из TypeScript
 
 ```typescript
-import { invoke } from "@shared/api/tauri";
+import { invoke } from "@core/api/tauri";
 
 const result = await invoke<string>("my_command", { param: "test" });
 ```
@@ -153,9 +151,9 @@ const result = await invoke<string>("my_command", { param: "test" });
 Вместо polling используй события:
 
 ```typescript
-// src/shared/lib/events/system.ts
+// src/core/events/system.ts
 import { listen } from "@tauri-apps/api/event";
-import type { SystemStats } from "../types"; // Пример
+import type { SystemStats } from "../../types"; // Пример
 
 export async function subscribeToSystemStats(
     callback: (stats: SystemStats) => void
@@ -166,7 +164,7 @@ export async function subscribeToSystemStats(
 }
 
 // Использование (например, в features/monitoring/monitoring.ts)
-import { subscribeToSystemStats } from "@shared/lib/events/system";
+import { subscribeToSystemStats } from "@core/events/system";
 
 const unsub = await subscribeToSystemStats((stats) => {
     console.log("CPU:", stats.cpu.percent);
@@ -180,7 +178,7 @@ unsub();
 
 ## Локализация
 
-Файлы: см. `src/i18n.ts` и `src-tauri/src/services/translations.rs` (если есть).
+Файлы: см. `src/i18n.ts` и `src-tauri/src/domain/translations.rs` (если есть).
 В текущей версии локализация управляется через `src/i18n.ts` (Frontend) или системные настройки.
 
 | Файл      | Язык    |
@@ -262,10 +260,11 @@ cargo build
 
 ### Добавление нового типа
 
-1. Добавить `specta::Type` derive к struct:
+### 1. Добавить `specta::Type` derive к struct:
 
 ```rust
 use specta::Type;
+use serde::Serialize;
 
 #[derive(Debug, Serialize, Type)]
 pub struct MyNewType {
@@ -287,7 +286,7 @@ cd src-tauri
 cargo run --bin export-types
 ```
 
-Результат: `src/shared/types/generated.ts`
+Результат: `src/types/generated.ts`
 
 ### Типы с поддержкой specta
 

@@ -54,7 +54,7 @@
     <!-- Native API Facade -->
     <script type="module">
         import { NativeAPI } from '/features/platform/native-api.ts';
-        import { initializeI18n } from '/i18n.ts';
+        import { initializeI18n } from '/core/i18n/index.ts';
         window.NativeAPI = NativeAPI;
         NativeAPI.registerShortcuts();
 
@@ -62,7 +62,8 @@
         initializeI18n();
     </script>
     <!-- Event delegation for CSP compliance -->
-    <script type="module" src="./shared/lib/event-handlers.ts"></script>
+    <script type="module" src="./core/utils/event-handlers.ts"></script>
+
 
     <div id="sidebar">
         <div id="sidebar-drag-handle"></div>
@@ -222,7 +223,7 @@
     </div>
 
     <!-- App Header (Glass Panel) -->
-    <header id="app-header">
+    <header id="app-header" data-tauri-drag-region>
         <!-- Left: Language Switcher -->
         <div class="lang-switcher-root">
             <!-- Sliding Menu Items (Other Languages) -->
@@ -453,9 +454,9 @@
             </div>
         </div>
 
-        <script type="module" src="./shared/components/effects/particles.ts"></script>
-        <script type="module" src="./shared/lib/utils/sound.ts"></script>
-        <script type="module" src="./shared/components/sidebar/sidebar.ts"></script>
+        <!-- <script type="module" src="./shared/components/effects/particles.ts"></script> -->
+        <script type="module" src="./core/utils/sound.ts"></script>
+        <!-- <script type="module" src="./shared/components/sidebar/sidebar.ts"></script> -->
         <script type="module" src="./features/monitoring/monitoring.ts"></script>
 
         <!-- Debug Page (Console) -->
@@ -923,16 +924,18 @@
         </div>
     </div>
 
-    <script type="module" src="./shared/api/tauri.ts"></script>
-    <script type="module" src="./shared/lib/utils/dom.ts"></script>
-    <script type="module" src="./shared/components/toast/toast.ts"></script>
-    <script type="module" src="./i18n.ts"></script>
+    <script type="module" src="./core/api/tauri.ts"></script>
+    <script type="module" src="./core/utils/dom.ts"></script>
+    <!-- <script type="module" src="./shared/components/toast/toast.ts"></script> -->
+    <!-- <script type="module" src="./i18n.ts"></script> -->
     <script type="module" src="./features/downloads/downloads.ts"></script>
     <script type="module" src="./features/modules/modules.ts"></script>
     <script type="module" src="./features/settings/settings.ts"></script>
-    <script type="module" src="./shared/lib/data/settings.ts"></script>
+    <!-- <script type="module" src="./shared/lib/data/settings.ts"></script> -->
     <script type="module" src="./features/debug/debug.ts"></script>
-    <script type="module" src="./shared/lib/window.ts"></script>
+    <script type="module" src="./core/app/window.ts"></script>
+    <script type="module" src="./core/app/navigation.ts"></script>
+    <script type="module" src="./core/ui/sidebar.ts"></script>
     <script type="module" src="./features/chat/chat.ts"></script>
 </body>
 

@@ -14,7 +14,7 @@
  */
 
 import { signal, computed, effect, batch } from '@preact/signals-core';
-import type { SystemStats } from '@shared/types/generated';
+import type { SystemStats } from '@types';
 
 // ============================================================================
 // System Monitoring Signals

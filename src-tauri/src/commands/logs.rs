@@ -1,4 +1,4 @@
-use crate::services::logs::{self, LogEntry};
+use crate::domain::logs::{self, LogEntry};
 
 #[tauri::command]
 pub fn get_logs(since: f64) -> Vec<LogEntry> {

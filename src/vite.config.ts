@@ -22,10 +22,11 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': fileURLToPath(new URL('./', import.meta.url)),
-            '@app': fileURLToPath(new URL('./app', import.meta.url)),
+            '@app': fileURLToPath(new URL('./core/app', import.meta.url)),
             '@core': fileURLToPath(new URL('./core', import.meta.url)),
+            '@ui': fileURLToPath(new URL('./ui', import.meta.url)),
             '@features': fileURLToPath(new URL('./features', import.meta.url)),
-            '@shared': fileURLToPath(new URL('./shared', import.meta.url)),
+            '@types': fileURLToPath(new URL('./types', import.meta.url)),
         }
     },
 

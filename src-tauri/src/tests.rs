@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::models::AppSettings;
+    use crate::domain::settings::models::AppSettings;
 
     /// Test default settings values
     #[test]
@@ -108,7 +108,7 @@ mod tests {
 
 #[cfg(test)]
 mod log_tests {
-    use crate::services::logs::{add_log, clear_logs, get_logs_since};
+    use crate::domain::logs::{add_log, clear_logs, get_logs_since};
 
     #[test]
     #[ignore] // Flaky due to shared static LOG_STORE - run with cargo test -- --ignored
@@ -155,7 +155,9 @@ mod log_tests {
 
 #[cfg(test)]
 mod system_stats_tests {
-    use crate::models::{CpuStats, DiskStats, NetworkStats, RamStats, SystemStats};
+    use crate::domain::monitoring::models::{
+        CpuStats, DiskStats, NetworkStats, RamStats, SystemStats,
+    };
 
     #[test]
     fn test_system_stats_creation() {
@@ -237,7 +239,7 @@ mod system_stats_tests {
 
 #[cfg(test)]
 mod chat_model_tests {
-    use crate::services::chat::{ChatApiReply, ChatApiResponse, ChatAttachment, ChatMessage};
+    use crate::domain::chat::models::{ChatApiReply, ChatApiResponse, ChatAttachment, ChatMessage};
 
     #[test]
     fn test_chat_message_creation() {

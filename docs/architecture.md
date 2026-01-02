@@ -18,7 +18,7 @@ Flux Platform — десктопное приложение на **Tauri v2** + 
 │  │    WebView (UI)     │◄──►│            Rust Backend                 │ │
 │  │                     │ IPC│                                         │ │
 │  │  • HTML/CSS/TS      │    │  ┌─────────────┐  ┌─────────────────┐   │ │
-│  │  • Подписки events  │    │  │  commands/  │  │    services/    │   │ │
+│  │  • Подписки events  │    │  │  commands/  │  │     domain/     │   │ │
 │  │  • Рендеринг DOM    │    │  │ (IPC слой)  │──│ (бизнес-логика) │   │ │
 │  │  • НЕТ вычислений   │    │  └─────────────┘  └────────┬────────┘   │ │
 │  │  • НЕТ валидаций    │    │                           │             │ │
@@ -32,20 +32,30 @@ Flux Platform — десктопное приложение на **Tauri v2** + 
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Core Plugins (lib.rs)
+
+-   **shell**: Открытие ссылок, запуск процессов.
+-   **notification**: Системные уведомления.
+-   **global-shortcut**: Глобальные хоткеи (Ctrl+Space).
+-   **dialog**: Нативные диалоги (открытие файлов).
+-   **single-instance**: Запрет запуска второй копии.
+
+---
+
 ---
 
 ## Архитектурные принципы
 
 > Эти правила предотвращают архитектурный дрейф со временем.
 
-| Правило                                 | Пояснение                                                                 |
-| --------------------------------------- | ------------------------------------------------------------------------- |
-| **Вся бизнес-логика — только в Rust**   | Frontend не содержит вычислений или валидаций                             |
-| **IPC команды — тонкий слой**           | `commands/` только валидирует и вызывает `services/`                      |
-| **services/ не знают о Tauri**          | Сервисы не импортируют `tauri::*` (за исключением `AppHandle` для events) |
-| **Нет глобального состояния**           | `services/` не используют глобальное состояние без явной инициализации    |
-| **UI не знает о внутреннем устройстве** | Frontend получает готовые данные, не детали реализации                    |
-| **Event-driven где возможно**           | System monitor использует события, а не polling                           |
+| Правило                                 | Пояснение                                                                  |
+| --------------------------------------- | -------------------------------------------------------------------------- |
+| **Вся бизнес-логика — только в Rust**   | Frontend: только UX-валидация (required, length). Backend: бизнес-правила. |
+| **IPC команды — тонкий слой**           | `commands/` только валидирует и вызывает `domain/`                         |
+| **domain/ не знают о Tauri**            | Доменная логика изолирована (за исключением `AppHandle` для events)        |
+| **Нет глобального состояния**           | `domain/` не используют глобальное состояние без явной инициализации       |
+| **UI не знает о внутреннем устройстве** | Frontend получает готовые данные, не детали реализации                     |
+| **Event-driven где возможно**           | System monitor использует события, а не polling                            |
 
 ---
 
@@ -70,42 +80,34 @@ Flux Platform — десктопное приложение на **Tauri v2** + 
 
 ```
 src-tauri/src/
-├── lib.rs                 # Точка входа, регистрация команд и сервисов
-├── commands/              # IPC слой (тонкий!) — валидация → вызов services/
-│   ├── system.rs          # get_system_stats, get_gpu_info
-│   ├── modules.rs         # get_modules, control_module
-│   ├── settings.rs        # get_settings, save_settings
-│   ├── license.rs         # get_license_status, activate_license
-│   ├── window_settings.rs # save_window_size, save_zoom_level
-│   ├── downloader.rs      # start_download, cancel_download
+├── bin/                   # Вспомогательные бинарники (export-types)
+├── commands/              # IPC слой — валидация → вызов domain/
+│   ├── health.rs
+│   ├── system.rs
+│   ├── modules.rs
+│   ├── settings.rs
+│   ├── license.rs
 │   └── ...
 │
-├── services/              # ВCСЯ БИЗНЕС-ЛОГИКА
-│   ├── system_monitor.rs  # [252 строк] Мониторинг CPU/RAM/GPU/Disk/Network + events
-│   ├── chat.rs            # [220 строк] SQLite история + API клиент для Python AI
-│   ├── downloader.rs      # [161 строк] Async загрузка с прогрессом
-│   ├── settings.rs        # [80 строк] Чтение/запись .env конфига
-│   ├── module_controller.rs # Запуск/остановка модулей
-│   ├── module_lifecycle.rs  # Trait для плагинов
-│   ├── window_settings.rs # Сохранение размера/позиции окна
-│   ├── theme.rs           # Динамические темы
-│   ├── translations.rs    # i18n из JSON файлов
-│   ├── logs.rs            # Централизованное логирование
-│   └── license/           # Лицензирование
-│       ├── types.rs
-│       ├── verifier.rs
-│       └── storage.rs
+├── domain/                # ВСЯ БИЗНЕС-ЛОГИКА (Domain-Driven Design)
+│   ├── chat/              # Пример домена
+│   │   ├── mod.rs
+│   │   ├── models.rs      # DTO и типы данных
+│   │   └── service.rs     # Логика
+│   ├── monitoring/
+│   ├── settings/
+│   ├── modules/
+│   ├── license/
+│   └── ...
 │
-├── models/                # DTO (Data Transfer Objects)
-│   ├── settings.rs        # AppSettings (theme, language, api_base_url...)
-│   ├── system.rs          # SystemStats, CpuStats, RamStats, GpuStats...
-│   ├── modules.rs         # Module, ModuleStatus
-│   └── license.rs         # LicenseInfo, LicenseStatus
+├── utils/                 # Общие утилиты
+│   ├── paths.rs
+│   ├── process.rs
+│   └── windows.rs
 │
-└── utils/                 # Хелперы
-    ├── paths.rs           # APPDATA_ROOT, CONFIG_DIR, FILE_ENV...
-    ├── process.rs         # Управление процессами (Job Objects)
-    └── windows.rs         # Windows API (detect_system_language)
+├── errors.rs              # AppError и IpcError (Централизованная обработка ошибок)
+├── lib.rs                 # Точка входа библиотеки (Tauri Builder)
+└── main.rs                # Точка входа бинарника
 ```
 
 ## Структура Frontend (WebView)
@@ -115,36 +117,36 @@ src-tauri/src/
 
 ```
 src/
+├── core/                  # Ядро приложения
+│   ├── api/               # Tauri bridge & mocks
+│   ├── app/               # Lifecycle & init
+│   ├── events/            # Global event bus
+│   ├── i18n/              # Локализация
+│   ├── state/             # Global Store (Signals)
+│   └── utils/             # Helpers
+│
 ├── features/              # UI-модули (подписка на события + рендеринг)
-│   ├── chat/              # UI чата (отправка → invoke, отображение ← events)
-│   │   ├── chat.ts        # DOM-манипуляции, вызов invoke('send_message')
-│   │   └── voice-input.ts # Голосовой ввод
-│   ├── monitoring/        # Виджеты мониторинга (только updateUI)
-│   │   └── monitoring.ts  # Подписка на 'system_stats', обновление DOM
-│   ├── settings/          # UI настроек
-│   ├── downloads/         # Progress bar загрузок
+│   ├── chat/              # Логика и UI чата
+│   ├── monitoring/        # Виджеты мониторинга
+│   ├── settings/          # Экраны настроек
+│   ├── downloads/         # Менеджер загрузок
 │   └── ...
 │
-├── shared/
-│   ├── api/
-│   │   └── tauri.ts       # Мост к Tauri (invoke, listen, mock для браузера)
-│   ├── lib/
-│   │   ├── events/        # Подписки на Tauri events
-│   │   └── utils/         # DOM-утилиты, форматирование
-│   └── types/             # TypeScript интерфейсы (зеркало models/)
-│
+├── pages/                 # Страницы (Routing)
 ├── styles/                # CSS (дизайн-система)
-└── i18n.ts                # Загрузка переводов из Rust
+├── types/                 # Global Types (DTO)
+├── assets/                # Static files
+└── index.html             # Entry point
 ```
 
-### Что делает Frontend:
+### Слои Frontend:
 
-| Разрешено                           | Запрещено                            |
-| ----------------------------------- | ------------------------------------ |
-| ✅ Подписка на события Tauri        | ❌ Вычисления (форматы — исключение) |
-| ✅ Обновление DOM                   | ❌ Валидация данных                  |
-| ✅ Вызов `invoke()` команд          | ❌ Прямые HTTP-запросы               |
-| ✅ Локальное форматирование (bytes) | ❌ Хранение состояния (кроме UI)     |
+1.  **Core**: Базовая инфраструктура (API, Events, State, i18n). Не зависит от UI.
+2.  **Features**: Самодостаточные модули функциональности.
+3.  **Pages**: Компоновка фич в страницы.
+4.  **UI/Styles**: Визуальный слой.
+
+---
 
 ---
 
@@ -175,7 +177,7 @@ pub enum AppError {
 
 **Правила:**
 
--   `services/` возвращают `Result<T, AppError>`
+-   `domain/` возвращают `Result<T, AppError>`
 -   `commands/` мапят `AppError` → `IpcError` для UI
 -   UI получает `{ code: "VALIDATION", message: "..." }`
 
@@ -205,11 +207,11 @@ pub fn do_something(id: String) -> Result<Data, String> {
         return Err("id is required".to_string());
     }
 
-    // 2. Вызов сервиса
-    services::example::process(&id)
+    // 2. Вызов доменной логики
+    domain::example::process(&id)
 }
 
-// services/example.rs
+// domain/example.rs
 pub fn process(id: &str) -> Result<Data, String> {
     // Вся логика здесь
     // ...
@@ -257,13 +259,13 @@ pub fn process(id: &str) -> Result<Data, String> {
 
 | Слой          | Подход                                |
 | ------------- | ------------------------------------- |
-| **services/** | Unit-тесты (`#[cfg(test)]`)           |
+| **domain/**   | Unit-тесты (`#[cfg(test)]`)           |
 | **commands/** | Не тестируются напрямую (тонкий слой) |
 | **models/**   | Unit-тесты для валидации              |
 | **Frontend**  | Ручное тестирование в dev режиме      |
 
 ```rust
-// services/example.rs
+// domain/example.rs
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,23 +282,46 @@ mod tests {
 
 ## IPC Команды
 
-| Команда              | Сервис              | Описание                |
-| -------------------- | ------------------- | ----------------------- |
-| `get_system_stats`   | `system_monitor`    | CPU, RAM, Disk, Network |
-| `get_gpu_info`       | `system`            | Детальная инфо о GPU    |
-| `get_modules`        | `modules`           | Список модулей          |
-| `control_module`     | `module_controller` | Start/stop/install      |
-| `get_license_status` | `license`           | Статус лицензии         |
-| `check_feature`      | `license`           | Проверка прав доступа   |
-| `get_settings`       | `settings`          | Настройки пользователя  |
-| `save_settings`      | `settings`          | Сохранение настроек     |
-| `get_logs`           | `logs`              | Получение логов         |
-| `start_download`     | `downloader`        | Скачивание файлов       |
-| `minimize_window`    | `window`            | Управление окном        |
-| `get_chat_history`   | `chat`              | История сообщений       |
-| `save_chat_message`  | `chat`              | Сохранение сообщения    |
-| `clear_chat_history` | `chat`              | Очистка истории         |
-| `send_message`       | `chat`              | Отправка сообщения (AI) |
+| Команда                | Группа            | Описание                      |
+| ---------------------- | ----------------- | ----------------------------- |
+| **System**             |                   |                               |
+| `get_health`           | `health`          | Проверка здоровья бэкенда     |
+| `get_system_stats`     | `system`          | CPU, RAM, Disk, Network       |
+| `get_gpu_info`         | `system`          | Детальная инфо о GPU          |
+| `get_system_language`  | `settings`        | Язык системы (Auto-detect)    |
+| **Modules**            |                   |                               |
+| `get_modules`          | `modules`         | Список модулей                |
+| `control_module`       | `modules`         | Lifecycle: Start/stop/install |
+| **Settings**           |                   |                               |
+| `get_settings`         | `settings`        | Настройки приложения          |
+| `save_settings`        | `settings`        | Сохранение настроек           |
+| `get_theme_colors`     | `theme`           | Цветовая палитра              |
+| **Window**             |                   |                               |
+| `minimize_window`      | `window`          | Свернуть окно                 |
+| `maximize_window`      | `window`          | Развернуть/восстановить       |
+| `close_window`         | `window`          | Скрыть в трей / закрыть       |
+| `get_window_settings`  | `window_settings` | Размер, позиция, зум          |
+| `save_window_size`     | `window_settings` | Сохранение размера            |
+| `save_window_position` | `window_settings` | Сохранение позиции            |
+| `save_maximized_state` | `window_settings` | Сохранение состояния          |
+| `save_zoom_level`      | `window_settings` | Сохранение масштаба           |
+| **Features**           |                   |                               |
+| `get_license_status`   | `license`         | Статус лицензии               |
+| `activate_license`     | `license`         | Активация ключа               |
+| `deactivate_license`   | `license`         | Сброс привязки                |
+| `check_feature`        | `license`         | Проверка прав доступа         |
+| `start_download`       | `downloader`      | Скачивание файлов             |
+| `cancel_download`      | `downloader`      | Отмена загрузки               |
+| **Logs**               |                   |                               |
+| `get_logs`             | `logs`            | Получение буфера логов        |
+| `add_log`              | `logs`            | Запись лога с фронта          |
+| `clear_logs`           | `logs`            | Очистка логов                 |
+| **Chat**               |                   |                               |
+| `get_chat_history`     | `chat`            | История сообщений             |
+| `save_chat_message`    | `chat`            | Сохранение сообщения          |
+| `clear_chat_history`   | `chat`            | Очистка истории               |
+| `send_message`         | `chat`            | Отправка сообщения (AI)       |
+| `get_translations`     | `translations`    | i18n строки                   |
 
 ---
 
@@ -313,10 +338,10 @@ mod tests {
 
 ```rust
 // Запуск мониторинга (вызывается в setup)
-services::system_monitor::start_monitoring(app.handle().clone(), 1000);
+domain::monitoring::start_monitoring(app.handle().clone(), 1000);
 
 // Остановка мониторинга (при закрытии приложения)
-services::system_monitor::stop_monitoring();
+domain::monitoring::stop_monitoring();
 ```
 
 ### Правила именования
@@ -407,3 +432,41 @@ API_BASE_URL=http://127.0.0.1:5000
 -   `send_message` — сохраняет user + assistant сообщения автоматически
 -   `get_chat_history` — возвращает N последних сообщений
 -   `clear_chat_history` — очищает всю историю
+
+---
+
+## Evolution & Roadmap (Vision)
+
+Архитектура проекта эволюционирует в сторону **Hexagonal Architecture (Ports and Adapters)**.
+
+### 1. Изоляция домена (Ports)
+
+Текущее внедрение `AppHandle` в домен — прагматичный компромисс.
+**Цель:** Полная отвязка `domain/` от `tauri`.
+
+```rust
+// Вместо прямого использования Tauri events:
+trait EventPublisher {
+    fn publish(&self, event: DomainEvent);
+}
+
+// Реализация в infrastructure layer:
+struct TauriEventPublisher { app: AppHandle }
+```
+
+### 2. Inference Layer
+
+Текущая схема `IPC -> HTTP -> Python` является временным решением для быстрого прототипирования.
+**Цель:** Переход на **In-Process Inference** (Rust bindings для `llama.cpp` / `rwkv`).
+
+### 3. IPC Versioning
+
+По мере роста API будет введено явное версионирование:
+
+-   DTO суффиксы: `ChatMessageV1`, `ChatMessageV2`
+-   Команда: `invoke("chat.send_message_v2")`
+
+### 4. Enterprise Quality
+
+-   **Diagnostics**: `get_health` превратится в полноценный `Self-Diagnostic Report`.
+-   **Observability**: Структурированные логи и метрики производительности.

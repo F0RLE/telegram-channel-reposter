@@ -32,7 +32,8 @@ The platform was designed with enterprise requirements in mind: strict process i
 -   **WebView for UI Only**: Frontend is purely presentational — no logic, validation, or HTTP calls.
 -   **Tauri v2 IPC**: Optimized async bridge for low-latency state sync via commands and events.
 -   **Event-Driven**: Real-time updates via Tauri events instead of polling.
--   **Modular Services**: 11+ Rust services: `system_monitor`, `chat`, `downloader`, `settings`, `license`, etc.
+-   **Domain-Driven Design**: Logic organized into strict domains (`chat`, `monitoring`) instead of flat services.
+-   **Rust Domains**: `monitoring`, `chat`, `downloads`, `settings`, `license`, etc.
 
 ### Monitoring System
 
@@ -47,7 +48,8 @@ The platform implements a proprietary telemetry engine for real-time analysis:
 
 -   **Vite Architecture**: Instant Hot Module Replacement (HMR) and optimized asset bundling.
 -   **Vanilla TypeScript**: The core dashboard avoids heavy frameworks (React/Vue) to minimize initialization time and runtime overhead.
--   **Custom Design System**: Bespoke CSS architecture ensures consistent rendering and efficient updates.
+-   **Layered Architecture**: Organized into `Core` (State, API), `Features` (Logic), and `UI` (Components) for maintainability.
+-   **Custom Design System**: Bespoke CSS architecture with Elastic Interactions (e.g., fluid sidebar) ensures premium UX.
 
 ### Security
 
@@ -107,7 +109,8 @@ The `./dev.ps1` script automates dependency checks, compilation, and debug launc
 -   **WebView только для UI**: Frontend исключительно для отображения — никакой логики.
 -   **Tauri v2 IPC**: Асинхронный мост для обмена данными через команды и события.
 -   **Event-Driven**: Обновления в реальном времени через Tauri events.
--   **11+ Rust сервисов**: `system_monitor`, `chat`, `downloader`, `settings`, `license` и др.
+-   **Domain-Driven Design**: Логика организована в строгие домены (`chat`, `monitoring`) вместо плоских сервисов.
+-   **Rust Domains**: `monitoring`, `chat`, `downloads`, `settings`, `license` и др.
 
 ### Система мониторинга
 
@@ -122,7 +125,8 @@ The `./dev.ps1` script automates dependency checks, compilation, and debug launc
 
 -   **Архитектура Vite**: Мгновенный HMR и оптимизированная сборка ассетов.
 -   **Vanilla TypeScript**: Отказ от тяжелых фреймворков в ядре дашборда минимизирует время инициализации.
--   **Дизайн-система**: Уникальная CSS-архитектура для стабильного рендеринга и плавных анимаций.
+-   **Слоистая Архитектура (Layered)**: Разделение на `Core`, `Features` и `UI` для улучшения поддержки кода.
+-   **Дизайн-система**: Уникальная CSS-архитектура с "Эластичными" взаимодействиями (например, fluid sidebar).
 
 ### Безопасность
 

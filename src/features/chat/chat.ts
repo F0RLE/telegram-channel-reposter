@@ -1,5 +1,5 @@
 ﻿// Chat Feature - Model Management, Voice Input, System Stats
-import { removeQuotes } from '../../shared/lib/utils/string';
+import { removeQuotes } from '@core/utils/string';
 import { invoke } from '@core/api';
 
 declare function showToast(message: string, type: string, duration?: number, title?: string): void;

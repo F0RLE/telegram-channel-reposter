@@ -1,6 +1,6 @@
+use crate::domain::modules::models::{ControlRequest, ControlResponse, ModuleItem};
+use crate::domain::modules::{self as module_controller, ModuleAction};
 use crate::errors::AppError;
-use crate::models::{ControlRequest, ControlResponse, ModuleItem};
-use crate::services::module_controller::{self, ModuleAction};
 use tauri::AppHandle;
 
 #[tauri::command]

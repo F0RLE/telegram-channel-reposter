@@ -2,6 +2,7 @@
 //!
 //! System resource monitoring: CPU, RAM, GPU, Disk, Network.
 
+pub mod health;
 pub mod models;
 pub mod service;
 

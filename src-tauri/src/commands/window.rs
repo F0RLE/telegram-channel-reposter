@@ -1,4 +1,4 @@
-use crate::services::system_monitor;
+use crate::domain::monitoring::{self as system_monitor};
 use tauri::Manager;
 
 #[tauri::command]

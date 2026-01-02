@@ -2,6 +2,7 @@
 //!
 //! License verification and feature gating.
 
+pub mod models;
 pub mod storage;
 pub mod types;
 pub mod verifier;

@@ -1,7 +1,7 @@
 // Window settings commands for frontend
 
+use crate::domain::settings::window::{self as window_settings, WindowSettings};
 use crate::errors::AppError;
-use crate::services::window_settings::{self, WindowSettings};
 
 #[tauri::command]
 pub fn get_window_settings() -> WindowSettings {

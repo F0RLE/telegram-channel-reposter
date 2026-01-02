@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 
 fn main() {
-    let output_path = Path::new("../src/shared/types/generated.ts");
+    let output_path = Path::new("../src/types/generated.ts");
 
     // Manual type definitions (specta::ts module requires additional features)
     // For now, generate types manually or use tauri-specta in lib.rs

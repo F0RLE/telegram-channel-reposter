@@ -5,7 +5,7 @@
  * Maps legacy Electron/HTTP API calls to Tauri v2 Commands
  */
 
-import type { SystemStats, AppSettings, Module, TranslationDictionary } from '../types';
+import type { SystemStats, AppSettings, Module, TranslationDictionary } from '@types';
 
 // Type definitions for Tauri API
 interface TauriInvoke {

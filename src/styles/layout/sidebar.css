@@ -14,6 +14,7 @@
     overflow-x: hidden;
     /* РґР°С‘Рј РІРѕР·РјРѕР¶РЅРѕСЃС‚СЊ РїРµСЂРµС‚Р°СЃРєРёРІР°С‚СЊ РѕРєРЅРѕ Р·Р° СЃРІРѕР±РѕРґРЅС‹Рµ РјРµСЃС‚Р° СЃР°Р№РґР±Р°СЂР° РІ Electron */
     -webkit-app-region: drag;
+    white-space: nowrap;
 }
 
 body.snapping #sidebar {
@@ -28,7 +29,7 @@ body.snapping #sidebar {
     position: absolute;
     top: 0;
     right: 0;
-    width: 4px;
+    width: 12px;
     height: 100%;
     cursor: col-resize;
     z-index: 10;
@@ -336,7 +337,8 @@ body.snapping #sidebar {
     /* Transition for hide/show animation */
     transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1), max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s ease, margin 0.5s ease, padding 0.5s ease;
     max-height: 40px;
-    /* Approximate height of nav btn */
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 .nav-btn.nav-item-hiding {
@@ -459,7 +461,7 @@ body.snapping #sidebar {
     position: absolute;
     top: 0;
     right: -4px;
-    width: 8px;
+    width: 12px;
     height: 100%;
     cursor: col-resize;
     z-index: 1001;

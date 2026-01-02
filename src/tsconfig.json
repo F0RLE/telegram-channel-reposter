@@ -21,12 +21,11 @@
         /* Path aliases */
         "baseUrl": ".",
         "paths": {
-            "@/*": ["./*"],
-            "@app/*": ["app/*"],
-            "@core": ["core/index.ts"],
-            "@core/*": ["core/*"],
-            "@features/*": ["features/*"],
-            "@shared/*": ["shared/*"]
+            "@core/*": ["./core/*"],
+            "@ui/*": ["./ui/*"],
+            "@features/*": ["./features/*"],
+            "@types": ["./types/index.ts"],
+            "@types/*": ["./types/*"]
         },
         /* TypeScript strictness - partial strict mode */
         "strict": true,
