@@ -48,13 +48,14 @@ Dev сервер Vite: `http://localhost:1420`
 │   │   └── utils/         # Хелперы
 │   └── tauri.conf.json
 │
-├── src/                   # Vite + JS
-│   ├── js/
-│   │   ├── core/          # core.js, i18n.js, tauri-bridge.js
-│   │   ├── features/      # chat.js, modules.js, settings-ui.js
-│   │   ├── events/        # Подписки на Tauri events
-│   │   └── ui/            # sidebar.js, particles.js
-│   ├── css/               # Модульные стили
+├── src/                   # Vite + TypeScript
+│   ├── assets/            # Статические ресурсы
+│   ├── features/          # Функциональные модули (chat, monitoring, etc.)
+│   ├── pages/             # Компоненты страниц
+│   ├── shared/            # Общие компоненты и утилиты
+│   ├── styles/            # CSS стили
+│   ├── i18n.ts            # Локализация
+│   ├── index.html         # Точка входа
 │   └── vite.config.ts
 │
 └── scripts/               # Build скрипты
@@ -109,9 +110,9 @@ pub mod example;
 pub mod example;
 ```
 
-### 5. Вызвать из JS
+### 5. Вызвать из TypeScript
 
-```javascript
+```typescript
 const result = await window.__TAURI__.invoke("my_command", {
     param: "test",
 });
@@ -123,22 +124,27 @@ const result = await window.__TAURI__.invoke("my_command", {
 
 Вместо polling используй события:
 
-```javascript
-// js/events/system.js
+```typescript
+// src/shared/lib/events/system.ts
 import { listen } from "@tauri-apps/api/event";
+import type { SystemStats } from "../types"; // Пример
 
-export async function subscribeToSystemStats(callback) {
-    return await listen("system_stats", (event) => {
+export async function subscribeToSystemStats(
+    callback: (stats: SystemStats) => void
+) {
+    return await listen<SystemStats>("system_stats", (event) => {
         callback(event.payload);
     });
 }
 
-// Использование
+// Использование (например, в features/monitoring/monitoring.ts)
+import { subscribeToSystemStats } from "@shared/lib/events/system";
+
 const unsub = await subscribeToSystemStats((stats) => {
     console.log("CPU:", stats.cpu.percent);
 });
 
-// При выходе
+// При выходе (cleanup)
 unsub();
 ```
 
@@ -146,7 +152,8 @@ unsub();
 
 ## Локализация
 
-Файлы: `src-tauri/resources/locales/`
+Файлы: см. `src/i18n.ts` и `src-tauri/src/services/translations.rs` (если есть).
+В текущей версии локализация управляется через `src/i18n.ts` (Frontend) или системные настройки.
 
 | Файл      | Язык    |
 | --------- | ------- |
@@ -158,13 +165,13 @@ unsub();
 
 1. Добавить ключ во все JSON
 2. В HTML: `data-i18n="key.path"`
-3. В JS: `i18n.t('key.path')`
+3. В TypeScript: `i18n.t('key.path')`
 
 ---
 
 ## Лицензирование
 
-```javascript
+```typescript
 // Проверка статуса
 const status = await invoke("get_license_status");
 // { status: "Free" | "Pro" | "Enterprise", email: null }

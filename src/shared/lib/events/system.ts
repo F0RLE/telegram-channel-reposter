@@ -5,7 +5,7 @@
  * This replaces polling via setInterval + invoke.
  */
 
-import type { SystemStats } from '../types';
+import type { SystemStats } from '@shared/types';
 
 // Callback storage for system stats updates
 type StatsCallback = (stats: SystemStats) => void;

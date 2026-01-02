@@ -22,9 +22,9 @@
         "baseUrl": ".",
         "paths": {
             "@/*": ["./*"],
-            "@lib/*": ["lib/*"],
+            "@app/*": ["app/*"],
             "@features/*": ["features/*"],
-            "@components/*": ["components/*"]
+            "@shared/*": ["shared/*"]
         },
         /* TypeScript strictness - partial strict mode */
         "strict": true,

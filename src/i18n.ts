@@ -1,5 +1,5 @@
-﻿import type { TranslationDictionary } from './lib/types';
-import { invoke, isTauri } from './lib/tauri';
+﻿import type { TranslationDictionary } from '@shared/types';
+import { invoke, isTauri } from '@shared/api/tauri';
 
 let translations: TranslationDictionary = {};
 // Initialize global currentLang

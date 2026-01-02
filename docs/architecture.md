@@ -15,7 +15,7 @@ Flux Platform — десктопное приложение на **Tauri v2** + 
 │  ┌─────────────────────┐    ┌─────────────────────────────┐ │
 │  │    WebView (UI)     │◄──►│      Rust Backend           │ │
 │  │                     │ IPC│                             │ │
-│  │  - HTML/CSS/JS      │    │  - src/services/ (логика)   │ │
+│  │  - HTML/CSS/TypeScript│    │  - src/services/ (логика)   │ │
 │  │  - Подписки events  │    │  - src/commands/ (IPC слой) │ │
 │  │  - Нет вычислений   │    │  - Вся бизнес-логика        │ │
 │  └─────────────────────┘    └─────────────────────────────┘ │
@@ -87,6 +87,23 @@ src-tauri/src/
     ├── paths.rs           # Пути к файлам конфигурации
     ├── process.rs         # Управление процессами
     └── windows.rs         # Windows API (язык системы)
+```
+
+## Structure Frontend
+
+```
+src/
+├── assets/                # Статические ресурсы (изображения, шрифты)
+├── features/              # Функциональные модули
+│   ├── chat/              # Логика чата
+│   ├── monitoring/        # Виджеты мониторинга
+│   └── ...
+├── shared/                # Общий код
+│   ├── components/        # UI компоненты (Sidebar, Particles)
+│   ├── lib/               # Утилиты (events, sound)
+│   └── types/             # TypeScript интерфейсы
+├── styles/                # Глобальные и модульные стили
+└── i18n.ts                # Конфигурация локализации
 ```
 
 ---
@@ -226,10 +243,16 @@ mod tests {
 | Команда              | Сервис              | Описание                |
 | -------------------- | ------------------- | ----------------------- |
 | `get_system_stats`   | `system_monitor`    | CPU, RAM, Disk, Network |
+| `get_gpu_info`       | `system`            | Детальная инфо о GPU    |
 | `get_modules`        | `modules`           | Список модулей          |
 | `control_module`     | `module_controller` | Start/stop/install      |
-| `get_license_status` | `license::verifier` | Статус лицензии         |
+| `get_license_status` | `license`           | Статус лицензии         |
+| `check_feature`      | `license`           | Проверка прав доступа   |
 | `get_settings`       | `settings`          | Настройки пользователя  |
+| `save_settings`      | `settings`          | Сохранение настроек     |
+| `get_logs`           | `logs`              | Получение логов         |
+| `start_download`     | `downloader`        | Скачивание файлов       |
+| `minimize_window`    | `window`            | Управление окном        |
 
 ---
 

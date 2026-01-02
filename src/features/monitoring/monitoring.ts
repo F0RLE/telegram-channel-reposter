@@ -1,6 +1,6 @@
 
-import { subscribeToSystemStats } from '../../lib/events/system';
-import type { SystemStats } from '../../lib/types';
+import { subscribeToSystemStats } from '@shared/lib/events/system';
+import type { SystemStats } from '@shared/types';
 
 function initMonitoring(): void {
     console.log("[Monitoring] Initializing...");
