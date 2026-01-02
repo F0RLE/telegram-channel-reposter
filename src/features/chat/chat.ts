@@ -1,4 +1,5 @@
 ﻿// Chat Feature - Model Management, Voice Input, System Stats
+import { removeQuotes } from '../../shared/lib/data/settings';
 
 declare function showToast(message: string, type: string, duration?: number, title?: string): void;
 declare function t(key: string, fallback?: string): string;
