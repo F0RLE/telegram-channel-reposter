@@ -134,8 +134,8 @@ body.snapping #sidebar {
     /* animation: fadeIn 0.3s ease; Removed, logic in #sidebar.collapsed rule if needed, or keeping it but adding inner svg anim */
 }
 
-/* Ensure it shows when collapsed - usually handled by #sidebar.collapsed rule further down or in JS toggling class on wrapper? 
-   Actually the rule is likely: #sidebar.collapsed .sidebar-logo-icon { display: block; } 
+/* Ensure it shows when collapsed - usually handled by #sidebar.collapsed rule further down or in JS toggling class on wrapper?
+   Actually the rule is likely: #sidebar.collapsed .sidebar-logo-icon { display: block; }
    found elsewhere. But here we define base style. */
 
 .sidebar-logo-icon svg {

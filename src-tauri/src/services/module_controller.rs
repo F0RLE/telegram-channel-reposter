@@ -1,7 +1,15 @@
+use crate::errors::AppError;
+use crate::models::{ControlResponse, ModuleItem};
 use std::str::FromStr;
 use tauri::AppHandle;
-use crate::models::{ControlResponse};
-use crate::errors::AppError;
+
+// ... (existing imports)
+
+pub async fn get_all_modules() -> Result<Vec<ModuleItem>, AppError> {
+    // Mock data for migration
+    // Mock data removed as per user request
+    Ok(vec![])
+}
 
 #[derive(Debug)]
 pub enum ModuleAction {

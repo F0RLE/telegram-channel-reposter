@@ -11,8 +11,14 @@
         "core:window:allow-start-dragging",
         "core:window:allow-close",
         "core:window:allow-is-maximized",
+        "core:webview:allow-set-webview-zoom",
         "core:path:default",
         "core:event:default",
-        "shell:allow-open"
+        "core:event:default",
+        "shell:allow-open",
+        "notification:default",
+        "global-shortcut:allow-register",
+        "global-shortcut:allow-is-registered",
+        "dialog:default"
     ]
 }

@@ -274,7 +274,7 @@
                 </svg>
                 Настройки модуля
             </h1>
-            <button class="back-btn" onclick="goBack()">
+            <button class="back-btn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M19 12H5M12 19l-7-7 7-7"/>
                 </svg>
@@ -299,7 +299,7 @@
                     <!-- Fields will be generated dynamically -->
                 </div>
                 <div class="form-actions">
-                    <button type="button" class="btn btn-secondary" onclick="goBack()">Отмена</button>
+                    <button type="button" class="btn btn-secondary">Отмена</button>
                     <button type="submit" class="btn btn-primary" id="save-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
@@ -317,7 +317,7 @@
         // Get module ID from URL
         const urlParams = new URLSearchParams(window.location.search);
         const moduleId = urlParams.get('module');
-        
+
         if (!moduleId) {
             showError('Модуль не указан');
             document.getElementById('loading').style.display = 'none';
@@ -332,7 +332,7 @@
                 const data = await res.json();
                 const modules = data.items || data.available || [];
                 const module = modules.find(m => m.id === moduleId);
-                
+
                 if (module) {
                     document.getElementById('module-name').textContent = module.name || moduleId;
                     document.getElementById('module-description').textContent = module.description || 'Нет описания';
@@ -351,7 +351,7 @@
                     const settingsHtml = await uiRes.text();
                     const container = document.getElementById('settings-fields');
                     container.innerHTML = settingsHtml;
-                    
+
                     // Execute any scripts in the loaded HTML
                     const scripts = container.querySelectorAll('script');
                     scripts.forEach(oldScript => {
@@ -366,7 +366,7 @@
                     // Fallback: generate form from settings data
                     const res = await fetch(`/api/modules/${moduleId}/settings`);
                     const data = await res.json();
-                    
+
                     if (!data.success) {
                         showError(data.message || 'Не удалось загрузить настройки');
                         document.getElementById('loading').style.display = 'none';
@@ -376,15 +376,15 @@
                     const settings = data.settings || {};
                     generateSettingsForm(settings);
                 }
-                
+
                 // Load settings values to populate the form
                 const res = await fetch(`/api/modules/${moduleId}/settings`);
                 const data = await res.json();
-                
+
                 if (data.success && data.settings) {
                     populateFormFields(data.settings);
                 }
-                
+
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('settings-form').style.display = 'block';
             } catch (e) {
@@ -392,15 +392,15 @@
                 document.getElementById('loading').style.display = 'none';
             }
         }
-        
+
         function populateFormFields(settings) {
             // Populate all form fields with settings values
             Object.keys(settings).forEach(key => {
                 const field = document.getElementById(`field-${key}`);
                 if (!field) return;
-                
+
                 const value = settings[key];
-                
+
                 if (field.type === 'checkbox') {
                     field.checked = !!value;
                 } else if (field.type === 'range') {
@@ -434,7 +434,7 @@
             // Try to get schema from module (if available)
             // For now, generate form from existing settings
             const fields = Object.keys(settings);
-            
+
             if (fields.length === 0) {
                 container.innerHTML = '<div style="text-align: center; padding: 2rem; color: var(--text-muted);">Нет доступных настроек. Настройки будут созданы при первом сохранении.</div>';
                 return;
@@ -481,9 +481,9 @@
                 categoryFields.forEach(key => {
                     const value = settings[key];
                     const fieldType = typeof value;
-                    
+
                     let fieldHtml = '';
-                    
+
                     if (fieldType === 'boolean') {
                         fieldHtml = `
                             <div class="form-group">
@@ -503,7 +503,7 @@
                             fieldHtml = `
                                 <div class="form-group">
                                     <label for="field-${key}" class="form-label">${formatKey(key)}: <span id="val-${key}">${value}</span></label>
-                                    <input type="range" id="field-${key}" name="${key}" min="${min}" max="${max}" step="${step}" value="${value}" class="form-input" oninput="document.getElementById('val-${key}').textContent = parseFloat(this.value).toFixed(${step === 0.01 ? 2 : 1})">
+                                    <input type="range" id="field-${key}" name="${key}" min="${min}" max="${max}" step="${step}" value="${value}" class="form-input">
                                 </div>
                             `;
                         } else {
@@ -537,7 +537,7 @@
                             </div>
                         `;
                     }
-                    
+
                     container.innerHTML += fieldHtml;
                 });
             });
@@ -567,23 +567,35 @@
             toast.className = `toast ${type}`;
             toast.textContent = message;
             document.body.appendChild(toast);
-            
+
             setTimeout(() => {
                 toast.style.animation = 'slideIn 0.3s ease-out reverse';
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
 
+        // Event delegation for range inputs
+        document.getElementById('settings-fields').addEventListener('input', (e) => {
+            if (e.target.tagName === 'INPUT' && e.target.type === 'range') {
+                const key = e.target.name;
+                const valSpan = document.getElementById(`val-${key}`);
+                if (valSpan) {
+                    const step = parseFloat(e.target.step) || 0.1;
+                    valSpan.textContent = parseFloat(e.target.value).toFixed(step === 0.01 ? 2 : 1);
+                }
+            }
+        });
+
         document.getElementById('module-settings-form').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const formData = new FormData(e.target);
             const settings = {};
-            
+
             // Collect form data
             for (const [key, value] of formData.entries()) {
                 const field = document.getElementById(`field-${key}`);
-                
+
                 if (field.type === 'checkbox') {
                     settings[key] = field.checked;
                 } else if (field.type === 'number') {
@@ -597,21 +609,21 @@
                     }
                 }
             }
-            
+
             // Save settings
             const saveBtn = document.getElementById('save-btn');
             saveBtn.disabled = true;
             saveBtn.textContent = 'Сохранение...';
-            
+
             try {
                 const res = await fetch(`/api/modules/${moduleId}/settings`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(settings)
                 });
-                
+
                 const data = await res.json();
-                
+
                 if (data.success) {
                     showToast('Настройки сохранены', 'success');
                     setTimeout(() => goBack(), 1000);
@@ -639,6 +651,15 @@
                     Сохранить
                 `;
             }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add listeners for back buttons
+            document.querySelectorAll('.back-btn, .btn-secondary').forEach(btn => {
+                if (btn.textContent.includes('Назад') || btn.textContent.includes('Отмена')) {
+                    btn.addEventListener('click', goBack);
+                }
+            });
         });
 
         function goBack() {

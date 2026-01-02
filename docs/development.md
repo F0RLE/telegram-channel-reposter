@@ -40,26 +40,38 @@ Dev сервер Vite: `http://localhost:1420`
 ## Структура проекта
 
 ```
-├── src-tauri/             # Rust + Tauri
+├── src-tauri/             # Rust Backend (ВСЯ БИЗНЕС-ЛОГИКА)
 │   ├── src/
-│   │   ├── commands/      # IPC слой (тонкий!)
-│   │   ├── services/      # Бизнес-логика
-│   │   ├── models/        # DTO (Data Transfer Objects)
-│   │   └── utils/         # Хелперы
+│   │   ├── lib.rs        # Точка входа, регистрация команд
+│   │   ├── commands/     # IPC слой (тонкий!) — валидация → services/
+│   │   ├── services/     # Вся логика:
+│   │   │   ├── system_monitor.rs  # Мониторинг + Tauri events
+│   │   │   ├── chat.rs            # SQLite история + Python AI API
+│   │   │   ├── downloader.rs      # Async загрузка с прогрессом
+│   │   │   ├── settings.rs        # Чтение/запись .env
+│   │   │   ├── module_controller.rs
+│   │   │   ├── license/           # Лицензирование
+│   │   │   └── ...
+│   │   ├── models/       # DTO (AppSettings, SystemStats...)
+│   │   └── utils/        # paths.rs, process.rs, windows.rs
 │   └── tauri.conf.json
 │
-├── src/                   # Vite + TypeScript
-│   ├── assets/            # Статические ресурсы
-│   ├── features/          # Функциональные модули (chat, monitoring, etc.)
-│   ├── pages/             # Компоненты страниц
-│   ├── shared/            # Общие компоненты и утилиты
-│   ├── styles/            # CSS стили
-│   ├── i18n.ts            # Локализация
-│   ├── index.html         # Точка входа
-│   └── vite.config.ts
+├── src/                   # WebView (ТОЛЬКО UI!)
+│   ├── features/          # UI-модули (подписка на events + рендеринг)
+│   │   ├── chat/         # chat.ts (вызов invoke, обновление DOM)
+│   │   ├── monitoring/   # monitoring.ts (подписка на system_stats)
+│   │   └── ...
+│   ├── shared/
+│   │   ├── api/tauri.ts  # Мост к Tauri (invoke, listen)
+│   │   ├── lib/events/   # Подписки на Tauri events
+│   │   └── types/        # TypeScript интерфейсы
+│   ├── styles/            # CSS
+│   └── i18n.ts
 │
 └── scripts/               # Build скрипты
 ```
+
+> **Важно:** Frontend не содержит бизнес-логики. Все вычисления, валидация, HTTP-запросы — в Rust.
 
 ---
 
@@ -113,10 +125,26 @@ pub mod example;
 ### 5. Вызвать из TypeScript
 
 ```typescript
-const result = await window.__TAURI__.invoke("my_command", {
-    param: "test",
-});
+import { invoke } from "@shared/api/tauri";
+
+const result = await invoke<string>("my_command", { param: "test" });
 ```
+
+---
+
+## Основные команды (IPC)
+
+| Команда              | Сервис              | Описание                        |
+| -------------------- | ------------------- | ------------------------------- |
+| `get_system_stats`   | `system_monitor`    | CPU/RAM/GPU/Disk/Network        |
+| `get_settings`       | `settings`          | Настройки (тема, язык, API URL) |
+| `save_settings`      | `settings`          | Сохранение в .env               |
+| `get_chat_history`   | `chat`              | История из SQLite               |
+| `send_message`       | `chat`              | Отправка сообщения через AI API |
+| `clear_chat_history` | `chat`              | Очистка истории                 |
+| `start_download`     | `downloader`        | Загрузка файла                  |
+| `get_license_status` | `license`           | Статус лицензии                 |
+| `control_module`     | `module_controller` | start/stop/install              |
 
 ---
 

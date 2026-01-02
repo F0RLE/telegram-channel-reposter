@@ -14,9 +14,18 @@ pub struct ControlResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Module {
+pub struct ModuleItem {
     pub id: String,
-    pub name: String,
-    pub version: String,
-    pub status: String,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub description: Option<String>,
+    pub r#type: Option<String>,
+    pub kind: Option<String>,
+    pub status: Option<String>,
+    pub installed: Option<bool>,
+    pub icon: Option<String>,
+    pub removable: Option<bool>,
+    pub recommended: Option<bool>,
+    pub repo: Option<String>,
+    pub custom: Option<bool>,
 }

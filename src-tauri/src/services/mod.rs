@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod license;
 pub mod logs;
 pub mod module_controller;
@@ -14,8 +15,4 @@ pub mod health {
     }
 }
 
-pub mod downloader {
-    pub fn start(id: &str) {
-        crate::services::logs::add_log(&format!("Download started: {}", id), "Downloader", "info");
-    }
-}
+pub mod downloader;

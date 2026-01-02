@@ -419,7 +419,90 @@ window.confirmLlmStart = function (): void {
 };
 
 // Zoom Support (Ctrl + Scroll)
-// Zoom Support removed to ensure responsive browser-like behavior
+let currentZoom = 1.0;
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+
+// Disable default context menu in Tauri
+if (window.__TAURI__) {
+    window.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+    }, { capture: true });
+}
+
+async function applyZoom(level: number) {
+    currentZoom = level;
+
+    if (window.__TAURI__) {
+        try {
+            // Use the most direct way to set zoom in Tauri v2
+            // window.getCurrentWebview().setZoomLevel is standard for v2
+            const webview = window.__TAURI__.webview.getCurrentWebview();
+            await webview.setZoom(currentZoom);
+
+            // Persist zoom level
+            await window.__TAURI__.core.invoke('save_zoom_level', { zoom: currentZoom });
+        } catch (e) {
+            console.warn("[Zoom] Standard setZoom failed, trying invoke:", e);
+            try {
+                // Fallback to direct invoke
+                await window.__TAURI__.core.invoke('plugin:webview|set_webview_zoom', {
+                    zoom: currentZoom
+                });
+            } catch(e2) {
+                console.error("[Zoom] All zoom methods failed", e2);
+            }
+        }
+    }
+}
+
+// Load saved zoom on startup
+async function initZoom() {
+    if (window.__TAURI__) {
+        try {
+            const settings: any = await window.__TAURI__.core.invoke('get_window_settings');
+            if (settings && settings.zoom_level) {
+                currentZoom = settings.zoom_level;
+                await applyZoom(currentZoom);
+            }
+        } catch (e) {
+            console.error("Failed to load zoom settings:", e);
+        }
+    }
+}
+
+// Global zoom handler
+window.addEventListener('wheel', (e) => {
+    if (window.__TAURI__ && e.ctrlKey) {
+        e.preventDefault();
+
+        const currentIndex = ZOOM_STEPS.indexOf(currentZoom);
+        let nextIndex = currentIndex;
+
+        if (e.deltaY > 0) {
+            if (currentIndex > 0) nextIndex = currentIndex - 1;
+            else if (currentIndex === -1) {
+                nextIndex = ZOOM_STEPS.findIndex(s => s >= currentZoom) - 1;
+                if (nextIndex < 0) nextIndex = 0;
+            }
+        } else {
+            if (currentIndex < ZOOM_STEPS.length - 1) nextIndex = currentIndex + 1;
+            else if (currentIndex === -1) {
+                nextIndex = ZOOM_STEPS.findIndex(s => s > currentZoom);
+                if (nextIndex === -1) nextIndex = ZOOM_STEPS.length - 1;
+            }
+        }
+
+        const nextZoom = ZOOM_STEPS[nextIndex];
+        if (nextZoom !== currentZoom) {
+            applyZoom(nextZoom);
+        }
+    }
+}, { passive: false });
+
+// Initialize zoom on DOM load
+document.addEventListener('DOMContentLoaded', () => {
+    initZoom();
+});
 
 // Sync maximize icon on resize (handle external snaps or backend toggles)
 window.addEventListener('resize', async () => {
@@ -427,7 +510,9 @@ window.addEventListener('resize', async () => {
        try {
            const appWindow = window.__TAURI__.window.getCurrentWindow();
            const isMaximized = await appWindow.isMaximized();
-           updateMaximizeIcon(isMaximized);
+           if (window.updateMaximizeIcon) {
+                window.updateMaximizeIcon(isMaximized);
+           }
        } catch(e) {}
    }
 });

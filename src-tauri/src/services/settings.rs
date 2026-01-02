@@ -23,6 +23,7 @@ pub fn get_settings() -> Result<AppSettings, AppError> {
                 "THEME" => settings.theme = value.to_string(),
                 "USE_GPU" => settings.use_gpu = value.parse().unwrap_or(true),
                 "DEBUG_MODE" => settings.debug_mode = value.parse().unwrap_or(false),
+                "API_BASE_URL" => settings.api_base_url = value.to_string(),
                 _ => {}
             }
         }
@@ -33,8 +34,12 @@ pub fn get_settings() -> Result<AppSettings, AppError> {
 
 pub fn save_settings(settings: AppSettings) -> Result<(), AppError> {
     let content = format!(
-        "LANGUAGE={}\nTHEME={}\nUSE_GPU={}\nDEBUG_MODE={}\n",
-        settings.language, settings.theme, settings.use_gpu, settings.debug_mode
+        "LANGUAGE={}\nTHEME={}\nUSE_GPU={}\nDEBUG_MODE={}\nAPI_BASE_URL={}\n",
+        settings.language,
+        settings.theme,
+        settings.use_gpu,
+        settings.debug_mode,
+        settings.api_base_url
     );
 
     fs::write(&*FILE_ENV, content).map_err(|e| AppError::Io(e))

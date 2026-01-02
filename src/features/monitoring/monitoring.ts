@@ -16,23 +16,7 @@ function initMonitoring(): void {
         updateUI(stats);
     });
 
-    if (!window.__TAURI__) {
-        const titleEl = document.querySelector('[data-card-id="monitoring"] .card-title');
-        if (titleEl) {
-            const warningCallback = () => {
-                const badge = document.createElement('span');
-                badge.textContent = "(Demo Data)";
-                badge.style.color = "var(--warning)";
-                badge.style.fontSize = "0.8rem";
-                badge.style.marginLeft = "0.5rem";
-                badge.style.fontWeight = "bold";
-                const titleText = titleEl.querySelector('[data-i18n]');
-                if (titleText) titleText.appendChild(badge);
-            };
-            // Wait slightly for i18n to settle
-            setTimeout(warningCallback, 500);
-        }
-    }
+
 }
 
 // Ensure init runs even if DOMContentLoaded missed

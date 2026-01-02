@@ -15,16 +15,27 @@
         "windows": [
             {
                 "title": "Flux Platform",
-                "width": 1280,
-                "height": 800,
+                "width": 1440,
+                "height": 900,
                 "resizable": true,
                 "fullscreen": false,
                 "decorations": false,
-                "transparent": false
+                "transparent": false,
+                "backgroundColor": "#111015",
+                "zoomHotkeysEnabled": true
             }
         ],
         "security": {
-            "csp": null,
+            "csp": {
+                "default-src": "'self' ipc: http://ipc.localhost",
+                "script-src": "'self' 'unsafe-eval' asset: http://asset.localhost",
+                "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
+                "font-src": "'self' https://fonts.gstatic.com",
+                "img-src": "'self' asset: http://asset.localhost blob: data:",
+                "connect-src": "'self' ipc: http://ipc.localhost http://localhost:11434 https://github.com",
+                "object-src": "'none'",
+                "base-uri": "'self'"
+            },
             "capabilities": [
                 "default"
             ]

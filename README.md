@@ -28,10 +28,11 @@ The platform was designed with enterprise requirements in mind: strict process i
 
 ### Core Architecture
 
--   **Rust Backend**: Business logic is implemented in pure Rust, ensuring memory safety and thread safety without Garbage Collection overhead.
--   **Tauri v2 IPC**: Utilizes an optimized asynchronous Inter-Process Communication bridge for low-latency state synchronization.
--   **Zero-Overhead Abstractions**: Critical services (LicenseVerifier, SystemMonitor) execute on isolated threads to prevent UI blocking.
--   **Modular Design**: The core architecture was designed from the ground up to support a modular service lifecycle and strict component isolation.
+-   **Rust Backend**: All business logic (monitoring, chat, downloads, licensing) runs in pure Rust — memory safe, GC-free.
+-   **WebView for UI Only**: Frontend is purely presentational — no logic, validation, or HTTP calls.
+-   **Tauri v2 IPC**: Optimized async bridge for low-latency state sync via commands and events.
+-   **Event-Driven**: Real-time updates via Tauri events instead of polling.
+-   **Modular Services**: 11+ Rust services: `system_monitor`, `chat`, `downloader`, `settings`, `license`, etc.
 
 ### Monitoring System
 
@@ -56,10 +57,18 @@ The platform implements a proprietary telemetry engine for real-time analysis:
 
 ### Stack
 
--   **Backend**: Rust (Tokio, Serde, Tauri, Sysinfo, NVML-Wrapper)
--   **Frontend**: TypeScript, Vite, CSS
+-   **Backend**: Rust (Tokio, Serde, Tauri, Sysinfo, NVML-Wrapper, Reqwest, rusqlite)
+-   **Frontend**: TypeScript, Vite, CSS (UI only — no logic)
+-   **Data**: SQLite (chat history), .env files (config)
 -   **Build**: Cargo, NPM, PowerShell Automation
 -   **Installer**: WiX Toolset (MSI), NSIS (EXE)
+
+### Chat & AI Integration
+
+-   **SQLite History**: Chat messages stored locally in `chat.db`
+-   **Python AI Backend**: Rust calls external AI API via `reqwest`
+-   **Configurable URL**: `API_BASE_URL` in `.env` file
+-   **Commands**: `send_message`, `get_chat_history`, `clear_chat_history`
 
 ### Quick Start (Development)
 

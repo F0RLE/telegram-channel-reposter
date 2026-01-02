@@ -1,8 +1,7 @@
 ﻿// DOM Utilities
 
 declare function hideModuleSettingsModal(): void;
-declare function stopDownloadsPolling(): void;
-declare function startDownloadsPolling(): void;
+
 declare function getRandomChatQuestion(): string;
 declare function loadSettings(): void;
 declare function loadSdModels(): void;
@@ -134,9 +133,7 @@ window.showPage = function (pageId: string, btn?: HTMLElement | null): void {
             }
         }
 
-        if (typeof stopDownloadsPolling === 'function') {
-            stopDownloadsPolling();
-        }
+
 
         if (pageId === 'chat') {
             const questionEl = document.getElementById('chat-header-question');
@@ -155,11 +152,7 @@ window.showPage = function (pageId: string, btn?: HTMLElement | null): void {
                 loadLlmModels();
             }
         }
-        if (pageId === 'downloads') {
-            if (typeof startDownloadsPolling === 'function') {
-                startDownloadsPolling();
-            }
-        }
+
         if (pageId === 'debug') {
             if (typeof initDebugPage === 'function') {
                 initDebugPage();

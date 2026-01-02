@@ -1,5 +1,18 @@
 ﻿
+import { listen } from '@tauri-apps/api/event';
+
+interface DownloadProgressPayload {
+    id: string;
+    current: number;
+    total: number;
+    speed: number;
+    percent: number;
+    completed: boolean;
+    error: string | null;
+}
+
 interface DownloadProgress {
+    id?: string;
     percent?: number;
     downloaded?: number;
     total?: number;
@@ -10,14 +23,8 @@ interface DownloadProgress {
     active?: boolean;
 }
 
-let downloadsPoller: ReturnType<typeof setInterval> | null = null;
-
-function stopDownloadsPolling() {
-    if (downloadsPoller) {
-        clearInterval(downloadsPoller);
-        downloadsPoller = null;
-    }
-}
+// Store unlisten function
+let unlisten: (() => void) | null = null;
 
 function renderDownloadsProgress(progress: DownloadProgress = {}) {
     const percent = Number(progress.percent || 0);
@@ -45,16 +52,22 @@ function renderDownloadsProgress(progress: DownloadProgress = {}) {
             (percent > 0 || downloaded > 0) &&
             !progress.completed &&
             !progress.error &&
-            total > 0 &&
-            (progress.label && progress.label.trim() !== '')
+            total > 0
         ) ||
-        (completed && progress.label && progress.label.trim() !== '')
+        (completed && !error) // Keep showing completed state until dismissed or new one starts (logic to be decided)
     );
 
-    // Show/hide main card and empty state
+    // For now, if completed, show for a moment then maybe we should rely on user action?
+    // Current logic: if completed, hasActive is true if label exists.
+    // Adapting to event: event comes in, we render.
+
+    // Show/hide main card and empty state - simplified for event stream
+    const showCard = hasActive || (completed && !error);
+
     const downloadsBody = document.getElementById('downloads-body');
     const downloadsHeader = document.querySelector('.downloads-header') as HTMLElement | null;
-    if (hasActive) {
+
+    if (showCard) {
         if (mainCard) mainCard.style.display = 'block';
         if (downloadsBody) downloadsBody.classList.remove('empty-state');
         if (downloadsHeader) downloadsHeader.style.flex = '0';
@@ -72,7 +85,7 @@ function renderDownloadsProgress(progress: DownloadProgress = {}) {
         if (downloadsContainer) downloadsContainer.style.justifyContent = 'center';
     }
     if (emptyText) {
-        if (hasActive) {
+        if (showCard) {
             emptyText.classList.add('hidden');
         } else {
             emptyText.classList.remove('hidden');
@@ -124,9 +137,12 @@ function renderDownloadsProgress(progress: DownloadProgress = {}) {
 
     // Update label
     if (labelEl) {
-        const label = progress.label || '';
-        labelEl.textContent = label || 'Нет активных загрузок';
-        labelEl.title = label || '';
+        // Label logic needs to come from somewhere. For now, use ID or generic.
+        // In fully event based, we might want to pass label in event or look it up.
+        // Downloads.rs event sends ID.
+        const label = progress.label || progress.id || 'Downloading...'; // Fallback
+        labelEl.textContent = label;
+        labelEl.title = label;
     }
 
     // Update status
@@ -138,7 +154,7 @@ function renderDownloadsProgress(progress: DownloadProgress = {}) {
         } else if (error) {
             statusEl.textContent = 'Ошибка';
             statusEl.classList.add('error');
-        } else if (hasActive) {
+        } else if (percent < 100) {
             statusEl.textContent = 'В процессе';
             statusEl.classList.add('active');
         } else {
@@ -168,29 +184,44 @@ function renderDownloadsProgress(progress: DownloadProgress = {}) {
     }
 }
 
-async function refreshDownloadsProgress() {
-    try {
-        const data = await window.safeFetchJson('/api/download_progress', {});
-        renderDownloadsProgress(data || {});
-    } catch (e) {
-        console.warn('[Downloads] progress fetch failed', e);
+async function startDownloadsListener() {
+    if (unlisten) {
+        unlisten();
+        unlisten = null;
     }
-}
 
-function startDownloadsPolling() {
-    stopDownloadsPolling();
-
-    // Initialize with empty state to prevent flickering
+    // Initialize with empty state
     const downloadsBody = document.getElementById('downloads-body');
     const mainCard = document.getElementById('downloads-main-card');
     const emptyText = document.getElementById('downloads-empty-text');
+    // Don't hide everything by default, allows persistent last state if we wanted,
+    // but for now let's reset to clean state on load.
     if (mainCard) mainCard.style.display = 'none';
     if (downloadsBody) downloadsBody.classList.add('empty-state');
     if (emptyText) emptyText.classList.remove('hidden');
-    renderDownloadsProgress({});
-    refreshDownloadsProgress();
-    downloadsPoller = setInterval(refreshDownloadsProgress, 1200);
+
+    unlisten = await listen<DownloadProgressPayload>('download://progress', (event) => {
+        const payload = event.payload;
+        // Map Rust payload to UI interface
+        const uiProgress: DownloadProgress = {
+            percent: payload.percent,
+            downloaded: payload.current,
+            total: payload.total,
+            speed: payload.speed,
+            completed: payload.completed,
+            error: payload.error || undefined,
+            label: payload.id, // Using ID as label for now
+            active: !payload.completed && !payload.error
+        };
+        renderDownloadsProgress(uiProgress);
+    });
+
+    console.log('[Downloads] Event listener started');
 }
+
+
+// Start listening when module loads (or you can call it from main)
+startDownloadsListener();
 
 
 

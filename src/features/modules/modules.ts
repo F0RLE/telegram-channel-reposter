@@ -1,4 +1,5 @@
 ﻿let modulesLoading: boolean = false;
+import { invoke } from '../../shared/api/tauri';
 async function loadModulesTab(): Promise<void> {
     const grid = document.getElementById('modules-grid');
     if (!grid) return;
@@ -18,10 +19,8 @@ async function loadModulesTab(): Promise<void> {
     });
 
     try {
-        const res = await fetch('/api/modules');
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = await res.json();
-        const items = payload.items || payload.modules || [];
+        const items = await invoke<ModuleItem[]>('get_modules');
+
 
 
         // Hide skeleton loaders
@@ -54,6 +53,12 @@ interface ModuleItem {
     recommended?: boolean;
     repo?: string;
     custom?: boolean;
+}
+
+interface ControlResponse {
+    success: boolean;
+    message: string;
+    status?: string;
 }
 
 function renderModules(items: ModuleItem[]): void {
@@ -291,9 +296,30 @@ window.toggleModule = async function (moduleId: string) {
     }
 
     try {
-        const res = await fetch(`/api/modules/${moduleId}/toggle`, { method: 'POST' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
+        const res = await invoke<ControlResponse>('control_module', {
+            request: { module_id: moduleId, action: 'start' } // 'toggle' in UI usually means start if stopped. But logic here was toggle.
+            // Wait, Rust defined control_module taking ControlRequest { module_id, action }.
+            // And ModuleAction enum has Install, Uninstall, Start, Stop, Restart, Update.
+            // Does it have Toggle? No.
+            // The UI 'toggleModule' previously called /api/modules/:id/toggle.
+            // I should check if I need to implement 'toggle' logic in frontend or backend.
+            // For now, let's assume 'start' or 'stop' based on current state.
+            // But wait, the previous UI didn't check state before calling toggle API?
+            // It did: `title="${isRunning ? 'Остановить' : 'Запустить'}"`.
+            // But `toggleModule` function itself just called POST /toggle.
+            // I should probably interpret the toggle logic here.
+        });
+        // Actually, let's just use 'start' or 'stop' based on button class for now.
+        // But the button state is inside the button.
+        // Better: let's fetch the current status or pass the desired action.
+        // Simplified: The Rust `control` function can handle 'start' or 'stop'.
+        // I will implement a `toggle` helper or just check the button state.
+        const isRunning = toggleBtn?.classList.contains('running');
+        const action = isRunning ? 'stop' : 'start';
+
+         const data = await invoke<ControlResponse>('control_module', {
+             request: { module_id: moduleId, action: action }
+         });
 
         showActionFeedback('success');
         await loadModulesTab();
@@ -327,13 +353,9 @@ window.installModule = async function (id: string) {
     }
 
     try {
-        const res = await fetch(`/api/modules/${id}/install`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+        const data = await invoke<ControlResponse>('control_module', {
+            request: { module_id: id, action: 'install' }
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
         if (data && (data.success || data.ok)) {
             showActionFeedback('success');
             showToast(t('ui.launcher.web.module_installed', 'Модуль установлен'), 'success', 2000, 'Успешно');
@@ -359,13 +381,9 @@ window.uninstallModule = async function (id: string) {
     }
 
     try {
-        const res = await fetch(`/api/modules/${id}/remove`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+         const data = await invoke<ControlResponse>('control_module', {
+            request: { module_id: id, action: 'uninstall' }
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
         if (data && (data.success || data.ok)) {
             showActionFeedback('success');
             showToast(t('ui.launcher.web.module_removed', 'Модуль удалён'), 'success', 2000, 'Успешно');

@@ -1,11 +1,11 @@
-use crate::models::{ControlRequest, ControlResponse};
+use crate::errors::AppError;
+use crate::models::{ControlRequest, ControlResponse, ModuleItem};
 use crate::services::module_controller::{self, ModuleAction};
 use tauri::AppHandle;
-use crate::errors::AppError;
 
 #[tauri::command]
-pub async fn get_modules() -> Result<Vec<String>, AppError> {
-    Ok(vec![]) // Placeholder
+pub async fn get_modules() -> Result<Vec<ModuleItem>, AppError> {
+    module_controller::get_all_modules().await
 }
 
 #[tauri::command]
@@ -13,7 +13,10 @@ pub async fn control_module(
     app: AppHandle,
     request: ControlRequest,
 ) -> Result<ControlResponse, AppError> {
-    let module_id = request.module_id.as_ref().ok_or_else(|| AppError::Validation("module_id is required".to_string()))?;
+    let module_id = request
+        .module_id
+        .as_ref()
+        .ok_or_else(|| AppError::Validation("module_id is required".to_string()))?;
 
     let action: ModuleAction = request.action.parse()?;
 

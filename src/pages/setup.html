@@ -462,7 +462,7 @@
 
         <div class="message-container" id="message-container"></div>
 
-        <button class="btn" id="install-btn" onclick="startInstallation()">
+        <button class="btn" id="install-btn">
             <span class="btn-text">Начать установку</span>
         </button>
     </div>
@@ -710,6 +710,13 @@
         // Auto-start on load
         window.addEventListener('DOMContentLoaded', () => {
             renderSteps();
+
+            // Event Handlers
+            const installBtn = document.getElementById('install-btn');
+            if (installBtn) {
+                installBtn.addEventListener('click', startInstallation);
+            }
+
             // Check if installation is already complete
             fetch('/api/setup/check_packages')
                 .then(res => res.json())

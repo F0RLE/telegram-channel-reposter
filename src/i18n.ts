@@ -1,52 +1,82 @@
-﻿import type { TranslationDictionary } from '@shared/types';
+﻿import type { TranslationDictionary, AppSettings } from '@shared/types';
 import { invoke, isTauri } from '@shared/api/tauri';
 
 let translations: TranslationDictionary = {};
 // Initialize global currentLang
+// We will set this properly in initializeI18n
 window.currentLang = 'en';
 let langModalShown: boolean = false;
 
+export async function initializeI18n() {
+    const saved = localStorage.getItem('web_launcher_language');
+    if (saved) {
+        await loadTranslations(saved);
+    } else {
+        const sys = await getSystemLanguage();
+        await loadTranslations(sys);
+    }
+}
+
+// Fallback/Default English Translations
+// Removed: using public/locales/en.json now
+
 async function getSystemLanguage(): Promise<string> {
     try {
-        const res = await fetch('/api/system_language');
-        const data = await res.json();
-        return data.language || 'en';
+        // First try to get from backend if in Tauri (more accurate for system locale)
+        if (isTauri) {
+             const sysLang = await invoke<string>('get_system_language');
+             if (sysLang) return normalizeLang(sysLang);
+        }
+        // Fallback to browser
+        return normalizeLang(navigator.language);
     } catch (e) {
         console.error("Failed to get system language:", e);
         return 'en';
     }
 }
+
+function normalizeLang(lang: string): string {
+    const code = lang.toLowerCase().split(/[_-]/)[0];
+    if (['ru', 'en', 'zh'].includes(code)) return code;
+    return 'en';
+}
 window.getSystemLanguage = getSystemLanguage;
+
+import { en } from './locales/en';
+import { ru } from './locales/ru';
+import { zh } from './locales/zh';
+
+// Map of all available locales
+const LOCALES: Record<string, TranslationDictionary> = {
+    en,
+    ru,
+    zh,
+    'en-US': en,
+    'ru-RU': ru
+};
 
 async function loadTranslations(lang: string | null = null): Promise<void> {
     try {
         const langToLoad = lang || window.currentLang;
 
-        // Native Tauri path if available
-        if (isTauri) {
-            try {
-                translations = await invoke('get_translations', { lang: langToLoad });
-            } catch (e) {
-                console.error("Native translation load failed", e);
-                // Fallback?
-            }
+        // Initialize empty to reset previous state
+        translations = {};
+
+        // Direct import load
+        if (LOCALES[langToLoad]) {
+            translations = LOCALES[langToLoad];
         } else {
-            // Browser/Bridge path
-            const res = await fetch(`/api/translations?lang=${langToLoad}`);
-            if (!res.ok) {
-                console.warn(`Translation fetch failed: ${res.status}`);
-                if (langToLoad === 'ru') {
-                    translations = { "ui.launcher.button.cancel": "Отмена", "ui.launcher.button.close": "Закрыть" };
-                }
-            } else {
-                const text = await res.text();
-                try {
-                    translations = JSON.parse(text);
-                } catch (e) {
-                    console.error("Failed to parse translations JSON:", text.substring(0, 50));
-                }
-            }
+            // Fallback to English
+            console.warn(`Locale ${langToLoad} not found, falling back to English`);
+            translations = en;
         }
+
+        // Always merge with enTranslations if keys are missing (or if translations is empty)
+        // This ensures at least English text shows up instead of keys
+        if (langToLoad !== 'en' && langToLoad !== 'en-US') {
+             translations = { ...en, ...translations };
+        }
+
 
         window.currentLang = langToLoad;
 
@@ -57,8 +87,13 @@ async function loadTranslations(lang: string | null = null): Promise<void> {
             // Update Backend Settings
             if (isTauri) {
                 try {
-                    await invoke('save_setting', { key: 'LANGUAGE', value: lang });
-                    await invoke('save_setting', { key: 'BOT_LANGUAGE', value: '' });
+                    // Fetch current settings first
+                    const currentSettings = await invoke<AppSettings>('get_settings');
+                    if (currentSettings) {
+                        currentSettings.language = lang;
+                        // Save full object
+                        await invoke('save_settings', { settings: currentSettings });
+                    }
                 } catch (e) { console.error("Native settings save failed", e); }
             } else {
                 try {
@@ -67,26 +102,32 @@ async function loadTranslations(lang: string | null = null): Promise<void> {
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ key: 'LANGUAGE', value: lang })
                     });
-                    await fetch('/api/settings', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key: 'BOT_LANGUAGE', value: '' })
-                    });
+                     // BOT_LANGUAGE removed as it's not in AppSettings
                 } catch (e) {
                     console.error("Failed to save language setting:", e);
                 }
             }
         }
 
-        applyTranslations();
-        initEmojiFlags();
-        updateLangButtons();
-        if (typeof window.updateCurrentLangFlag === 'function') {
-            window.updateCurrentLangFlag();
+        try {
+            applyTranslations();
+        } catch (e) {
+            console.error("applyTranslations failed:", e);
         }
-    } catch (e) {
+
+        try {
+            initEmojiFlags();
+            updateLangButtons();
+            if (typeof window.updateCurrentLangFlag === 'function') {
+                window.updateCurrentLangFlag();
+            }
+        } catch (e) {
+             console.error("UI update failed:", e);
+        }
+    } catch (e: any) {
         console.error("Failed to load translations:", e);
-        showToast(t('ui.launcher.web.failed_load_translations', 'Failed to load translations'), 'error');
+        // Debug: show actual error
+        showToast(`Translation Error: ${e?.message || e}`, 'error', 5000);
     }
 }
 window.loadTranslations = loadTranslations;
@@ -189,8 +230,30 @@ function applyTranslations(): void {
         if (el.classList.contains('lang-option') || el.classList.contains('lang-dropdown-btn')) {
             return;
         }
+
+        // Save original English text on first pass
+        if (!el.hasAttribute('data-original-text')) {
+             if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                if (el.type !== 'password' && el.type !== 'text') {
+                    // Start of placeholder handling
+                }
+             } else if (el instanceof HTMLOptionElement) {
+                 el.setAttribute('data-original-text', el.textContent || '');
+             } else {
+                 // For text content, try to find the text node
+                 const textNodes = Array.from(el.childNodes).filter(n => n.nodeType === 3);
+                 if (textNodes.length > 0) {
+                     el.setAttribute('data-original-text', textNodes[0].textContent?.trim() || '');
+                 } else if (el.textContent?.trim()) {
+                     el.setAttribute('data-original-text', el.textContent.trim());
+                 }
+             }
+        }
+
         const key = el.getAttribute('data-i18n');
-        const text = t(key, el.textContent || '');
+        const originalText = el.getAttribute('data-original-text') || el.textContent || '';
+        const text = t(key, originalText);
+
         if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
             if (el.type === 'password' || el.type === 'text') {
                 // Only update placeholder, not value
@@ -201,11 +264,7 @@ function applyTranslations(): void {
                 el.placeholder = text;
             }
         } else if (el instanceof HTMLOptionElement) {
-            // Don't change option text if it's already set
-            if (!el.hasAttribute('data-i18n-set')) {
-                el.textContent = text;
-                el.setAttribute('data-i18n-set', 'true');
-            }
+             el.textContent = text;
         } else {
             // For text content, preserve structure but update text
             // Check if this element has children with data-i18n (they will be processed separately)
@@ -248,15 +307,27 @@ function applyTranslations(): void {
     // Apply placeholders with data-i18n-placeholder
     document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
         const key = el.getAttribute('data-i18n-placeholder');
+        if (!el.hasAttribute('data-original-placeholder')) {
+             if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+                 el.setAttribute('data-original-placeholder', el.placeholder);
+             }
+        }
+
         if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-            el.placeholder = t(key, el.placeholder);
+            const originalPh = el.getAttribute('data-original-placeholder') || el.placeholder;
+            el.placeholder = t(key, originalPh);
         }
     });
 
     // Apply titles (tooltips) with data-i18n-title
     document.querySelectorAll('[data-i18n-title]').forEach(el => {
         const key = el.getAttribute('data-i18n-title');
-        (el as HTMLElement).title = t(key, (el as HTMLElement).title);
+        const element = el as HTMLElement;
+        if (!element.hasAttribute('data-original-title')) {
+            element.setAttribute('data-original-title', element.title);
+        }
+        const originalTitle = element.getAttribute('data-original-title') || element.title;
+        element.title = t(key, originalTitle);
     });
 
     // Keep language button state in sync (flags are SVG, not emoji)

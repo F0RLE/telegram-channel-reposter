@@ -25,6 +25,7 @@ mod tests {
             language: "en".to_string(),
             use_gpu: false,
             debug_mode: true,
+            api_base_url: "http://localhost:5000".to_string(),
         };
 
         let json = serde_json::to_string(&settings).expect("Failed to serialize");
@@ -32,6 +33,7 @@ mod tests {
         assert!(json.contains("\"language\":\"en\""));
         assert!(json.contains("\"use_gpu\":false"));
         assert!(json.contains("\"debug_mode\":true"));
+        assert!(json.contains("\"api_base_url\":\"http://localhost:5000\""));
     }
 
     /// Test settings deserialization
