@@ -7,10 +7,11 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri:dev": "cd ../src-tauri && cargo tauri dev --target x86_64-pc-windows-msvc",
-    "tauri:build": "cd ../src-tauri && cargo tauri build --target x86_64-pc-windows-msvc"
+    "tauri:dev": "cd .. && tauri dev --target x86_64-pc-windows-msvc",
+    "tauri:build": "cd .. && tauri build --target x86_64-pc-windows-msvc"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "@tauri-apps/api": "^2.0.0",
     "@types/node": "^25.0.3",
     "typescript": "^5.3.0",
