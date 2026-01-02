@@ -33,6 +33,16 @@ fs.writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + '\n');
 tauriConf.version = newVersion;
 fs.writeFileSync(tauriConfPath, JSON.stringify(tauriConf, null, 4));
 
+// Update Cargo.toml (simple regex replace to avoid TOML parser dependency)
+const cargoTomlPath = path.join(__dirname, '../../src-tauri/Cargo.toml');
+if (fs.existsSync(cargoTomlPath)) {
+    let cargoContent = fs.readFileSync(cargoTomlPath, 'utf8');
+    // Replace version = "x.y.z" under [package]
+    // We assume the first version assignment is for the package
+    cargoContent = cargoContent.replace(/version = "[^"]+"/, `version = "${newVersion}"`);
+    fs.writeFileSync(cargoTomlPath, cargoContent);
+}
+
 // Output new version for GitHub Actions to capture
 // We use a special marker or just console.log the raw version if piped
 console.log(`::set-output name=new_version::${newVersion}`);

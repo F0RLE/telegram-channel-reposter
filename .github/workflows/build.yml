@@ -73,6 +73,6 @@ jobs:
           body: "Automated portable release v${{ env.NEW_VERSION }}"
           draft: false
           prerelease: false
-          files: src-tauri/target/release/flux-platform.exe
+          files: src-tauri/target/x86_64-pc-windows-msvc/release/flux-platform.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
