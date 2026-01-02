@@ -23,6 +23,7 @@ export default defineConfig({
         alias: {
             '@': fileURLToPath(new URL('./', import.meta.url)),
             '@app': fileURLToPath(new URL('./app', import.meta.url)),
+            '@core': fileURLToPath(new URL('./core', import.meta.url)),
             '@features': fileURLToPath(new URL('./features', import.meta.url)),
             '@shared': fileURLToPath(new URL('./shared', import.meta.url)),
         }

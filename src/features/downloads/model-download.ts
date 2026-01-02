@@ -1,5 +1,5 @@
 import { removeQuotes } from '../../shared/lib/utils/string';
-import { invoke, listen } from '@shared/api/tauri';
+import { invoke, listen } from '@core/api';
 
 declare function showToast(message: string, type: string, duration?: number, title?: string): void;
 declare function t(key: string, fallback?: string): string;

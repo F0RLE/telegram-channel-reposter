@@ -103,10 +103,11 @@ The `./dev.ps1` script automates dependency checks, compilation, and debug launc
 
 ### Архитектура ядра
 
--   **Бэкенд на Rust**: Бизнес-логика реализована на Rust, что гарантирует безопасность памяти и отсутствие пауз на сборку мусора (GC).
--   **Tauri v2 IPC**: Используется оптимизированный асинхронный мост для обмена данными между UI и ядром с минимальными задержками.
--   **Изоляция потоков**: Критические сервисы (мониторинг, проверка лицензий) работают в независимых потоках, не блокируя основной цикл приложения.
--   **Модульный дизайн**: Архитектура ядра изначально проектировалась с поддержкой модульного жизненного цикла сервисов и строгой изоляции компонентов.
+-   **Бэкенд на Rust**: Вся бизнес-логика (мониторинг, чат, загрузки) выполняется в Rust — безопасно, без GC.
+-   **WebView только для UI**: Frontend исключительно для отображения — никакой логики.
+-   **Tauri v2 IPC**: Асинхронный мост для обмена данными через команды и события.
+-   **Event-Driven**: Обновления в реальном времени через Tauri events.
+-   **11+ Rust сервисов**: `system_monitor`, `chat`, `downloader`, `settings`, `license` и др.
 
 ### Система мониторинга
 
@@ -131,10 +132,17 @@ The `./dev.ps1` script automates dependency checks, compilation, and debug launc
 
 ### Стек технологий
 
--   **Backend**: Rust (Tokio, Serde, Tauri, Sysinfo, NVML-Wrapper)
--   **Frontend**: TypeScript, Vite, CSS
+-   **Backend**: Rust (Tokio, Serde, Tauri, Sysinfo, NVML-Wrapper, Reqwest, rusqlite)
+-   **Frontend**: TypeScript, Vite, CSS (только UI)
+-   **Данные**: SQLite (история чата), .env файлы (конфиг)
 -   **Build**: Cargo, NPM, PowerShell Automation
 -   **Installer**: WiX Toolset (MSI), NSIS (EXE)
+
+### Чат и AI интеграция
+
+-   **SQLite история**: Сообщения сохраняются локально в `chat.db`
+-   **Python AI бэкенд**: Rust вызывает внешний AI API через `reqwest`
+-   **Настраиваемый URL**: `API_BASE_URL` в `.env` файле
 
 ### Запуск (Development)
 

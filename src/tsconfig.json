@@ -23,6 +23,8 @@
         "paths": {
             "@/*": ["./*"],
             "@app/*": ["app/*"],
+            "@core": ["core/index.ts"],
+            "@core/*": ["core/*"],
             "@features/*": ["features/*"],
             "@shared/*": ["shared/*"]
         },

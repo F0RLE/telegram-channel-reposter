@@ -9,6 +9,10 @@ edition = "2021"
 name = "flux_platform_lib"
 path = "src/lib.rs"
 
+[[bin]]
+name = "export-types"
+path = "src/bin/export_types.rs"
+
 [dependencies]
 tauri = { version = "2.1.0", features = ["image-ico", "image-png", "tray-icon"] }
 tauri-plugin-shell = "2.1.0"
@@ -34,6 +38,8 @@ indexmap = { version = "1.9", features = ["std", "serde-1", "serde"] }
 nvml-wrapper = "0.10"
 rusqlite = { version = "0.31", features = ["bundled"] }
 uuid = { version = "1.10", features = ["v4", "fast-rng", "macro-diagnostics"] }
+specta = { version = "2.0.0-rc.20", features = ["derive"] }
+tauri-specta = { version = "2.0.0-rc.20", features = ["derive", "typescript"] }
 
 [build-dependencies]
 tauri-build = { version = "2.1.0", features = [] }

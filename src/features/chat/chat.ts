@@ -1,6 +1,6 @@
 ﻿// Chat Feature - Model Management, Voice Input, System Stats
 import { removeQuotes } from '../../shared/lib/utils/string';
-import { invoke } from '@shared/api/tauri';
+import { invoke } from '@core/api';
 
 declare function showToast(message: string, type: string, duration?: number, title?: string): void;
 declare function t(key: string, fallback?: string): string;
@@ -272,12 +272,7 @@ window.sendChat = async function (): Promise<void> {
     appendChatMessage('user', (text || '') + fileNote);
     if (chatInput) chatInput.value = '';
 
-    // Save user message to backend
-    if (text) {
-        invoke('save_chat_message', { role: 'user', content: text }).catch(console.error);
-    }
-
-    const attachments = [];
+    const attachments: ChatAttachment[] = [];
     const maxTotalBytes = 15 * 1024 * 1024;
     const maxFileBytes = 10 * 1024 * 1024;
     let totalBytes = 0;
@@ -288,14 +283,7 @@ window.sendChat = async function (): Promise<void> {
     try {
         if (btn) btn.disabled = true;
 
-        // Auto-start LLM logic (simplified for brevity, removed heavy polling blocks for now or kept if critical?)
-        // In migration, we usually want to keep logic. I'll omit the heavy startup check code for now to keep this concise as it wasn't requested to change,
-        // BUT the prompt implies moving logic TO rust.
-        // For now, I will keep the fetch to /api/chat/send because that's the inference backend.
-        // The migration goal was state management.
-
-        // ... (Omitting startup checks for brevity in this replace block, assume running)
-
+        // Prepare attachments
         for (const f of chatFiles) {
             if (!f) continue;
             if (f.size > maxFileBytes) throw new Error(`${t('ui.launcher.web.chat_file_too_large', 'File too large')}: ${f.name}`);
@@ -305,42 +293,41 @@ window.sendChat = async function (): Promise<void> {
             attachments.push({ name: f.name, type: f.type || 'application/octet-stream', size: f.size, data_base64: b64 });
         }
 
-        // We need history for context. API expects it.
-        // We can either fetch it from Rust or pass what we have.
-        // Since we removed local `chatHistory`, we should fetch it or let backend handle context.
-        // If the python backend needs history in the JSON, we need to fetch it.
+        // Fetch history for context (backend needs it for API call)
         const historyList = await invoke<ChatMessage[]>('get_chat_history', { limit: 10 });
-        // Map back to API format
-        const apiHistory = historyList.reverse().map(m => ({ role: m.role, content: m.content }));
+        const history = historyList.reverse().map(m => ({
+            id: m.id ?? null,
+            role: m.role,
+            content: m.content,
+            timestamp: m.timestamp ?? Date.now()
+        }));
 
-        const payload = { mode, text, history: apiHistory, attachments };
-
-        const res = await fetch('/api/chat/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+        // Use centralized send_message command
+        // This handles: 1) Saving user message 2) Calling AI API 3) Saving assistant message
+        const response = await invoke<{
+            ok: boolean;
+            reply?: { text?: string | null; type?: string | null; images?: string[] | null };
+            error?: string | null;
+        }>('send_message', {
+            text,
+            mode,
+            attachments,
+            history
         });
-
-        let data = null;
-        try {
-            data = await res.json();
-        } catch (e) {
-            throw new Error('Invalid server response');
-        }
 
         removeTypingIndicator(typingId);
 
-        if (data && data.ok) {
-            const reply = data.reply || {};
+        if (response.ok) {
+            const reply = response.reply || {};
             const content = reply.text || '';
-            const images = reply.type === 'image' ? reply.images : undefined;
+            const images = reply.type === 'image' ? reply.images?.map(img => ({
+                mime: 'image/png',
+                data_base64: img
+            })) : undefined;
 
             appendChatMessage('assistant', content, { images });
-
-            // Save assistant message
-            invoke('save_chat_message', { role: 'assistant', content: content || '[image]' }).catch(console.error);
         } else {
-            appendChatMessage('assistant', (data && data.error) ? String(data.error) : 'Error', { error: true });
+            appendChatMessage('assistant', response.error || 'Error', { error: true });
         }
 
     } catch (e: any) {

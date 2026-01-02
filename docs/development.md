@@ -253,3 +253,46 @@ cargo build
 -   `release/FluxPlatform.exe`
 -   `release/dist/*.msi`
 -   `release/dist/*.exe` (NSIS installer)
+
+---
+
+## Автогенерация типов (Rust → TypeScript)
+
+Проект использует **specta** для генерации TypeScript интерфейсов из Rust моделей.
+
+### Добавление нового типа
+
+1. Добавить `specta::Type` derive к struct:
+
+```rust
+use specta::Type;
+
+#[derive(Debug, Serialize, Type)]
+pub struct MyNewType {
+    pub field: String,
+}
+```
+
+2. Обновить `src/bin/export_types.rs`:
+
+```rust
+use flux_platform_lib::models::MyNewType;
+// ...добавить в tuple типов
+```
+
+3. Запустить генерацию:
+
+```powershell
+cd src-tauri
+cargo run --bin export-types
+```
+
+Результат: `src/shared/types/generated.ts`
+
+### Типы с поддержкой specta
+
+| Модуль        | Типы                                                    |
+| ------------- | ------------------------------------------------------- |
+| `system.rs`   | `SystemStats`, `CpuStats`, `RamStats`, `GpuStats`, etc. |
+| `settings.rs` | `AppSettings`                                           |
+| `chat.rs`     | `ChatMessage`, `ChatApiResponse`, `ChatApiReply`        |

@@ -2,11 +2,12 @@ use crate::services::settings::get_settings;
 use reqwest::Client;
 use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
+use specta::Type;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, Runtime, State};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Type)]
 pub struct ChatMessage {
     pub id: Option<i64>,
     pub role: String,
@@ -14,7 +15,7 @@ pub struct ChatMessage {
     pub timestamp: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Type)]
 pub struct ChatAttachment {
     pub name: String,
     pub r#type: String,
@@ -30,14 +31,14 @@ pub struct ChatApiRequest {
     pub attachments: Vec<ChatAttachment>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Type)]
 pub struct ChatApiResponse {
     pub ok: bool,
     pub reply: Option<ChatApiReply>,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Type)]
 pub struct ChatApiReply {
     pub text: Option<String>,
     pub r#type: Option<String>,
@@ -64,6 +65,15 @@ impl ChatManager {
 
     fn init_db(&self) -> Result<()> {
         let conn = Connection::open(&self.db_path)?;
+
+        // Enable WAL mode for better concurrent read/write performance
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA cache_size=10000;
+             PRAGMA temp_store=MEMORY;",
+        )?;
+
         conn.execute(
             "CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY,

@@ -1,6 +1,11 @@
+//! Monitoring Domain Models
+//!
+//! System resource statistics types.
+
 use serde::Serialize;
 use specta::Type;
 
+/// Complete system statistics
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct SystemStats {
     pub cpu: CpuStats,
@@ -12,6 +17,7 @@ pub struct SystemStats {
     pub pid: u32,
 }
 
+/// GPU statistics from NVML
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct GpuStats {
     pub usage: u32,
@@ -21,6 +27,7 @@ pub struct GpuStats {
     pub name: String,
 }
 
+/// VRAM usage statistics
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct VramStats {
     pub percent: f32,
@@ -28,6 +35,7 @@ pub struct VramStats {
     pub total_gb: f32,
 }
 
+/// CPU statistics
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct CpuStats {
     pub percent: f32,
@@ -35,6 +43,7 @@ pub struct CpuStats {
     pub name: String,
 }
 
+/// RAM statistics
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct RamStats {
     pub percent: f32,
@@ -43,6 +52,7 @@ pub struct RamStats {
     pub available_gb: f32,
 }
 
+/// Disk I/O and usage statistics
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct DiskStats {
     pub read_rate: f64,
@@ -52,6 +62,7 @@ pub struct DiskStats {
     pub used_gb: f32,
 }
 
+/// Network throughput statistics
 #[derive(Debug, Clone, Serialize, Type)]
 pub struct NetworkStats {
     pub download_rate: f64,

@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod domain; // NEW: Domain-driven structure
 pub mod errors;
 pub mod models;
 pub mod services;
